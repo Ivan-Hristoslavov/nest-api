@@ -9,6 +9,7 @@
       content="Автоматизиран мониторинг на цени зад парола и складови стени за електронни магазини."
     />
 
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -1621,6 +1622,191 @@
       </div>
     </div>
 
+
+    <!-- ================================================================== -->
+    <!-- MODAL — destructive action confirmation                             -->
+    <!-- ================================================================== -->
+    <div
+      id="confirm-modal"
+      class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-message"
+    >
+      <div class="w-full max-w-md rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl">
+        <div class="flex items-start gap-4">
+          <span
+            id="confirm-icon-wrap"
+            class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-red-500/12 ring-1 ring-red-500/30"
+          >
+            <i class="fa-solid fa-triangle-exclamation text-[16px] text-red-400"></i>
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 id="confirm-title" class="text-[16px] font-semibold text-slate-200"></h3>
+            <p id="confirm-message" class="mt-2 text-[13.5px] leading-relaxed text-slate-400"></p>
+            <p id="confirm-note" class="mt-2.5 hidden text-[12.5px] text-amber-400"></p>
+          </div>
+        </div>
+
+        <div class="mt-6 flex flex-col-reverse gap-2.5 sm:flex-row">
+          <button
+            type="button"
+            id="confirm-cancel"
+            class="flex-1 rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-200"
+          >
+            Отказ
+          </button>
+          <button
+            type="button"
+            id="confirm-accept"
+            class="flex-1 rounded-xl bg-red-600 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span id="confirm-accept-label">Изтрий</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ================================================================== -->
+    <!-- MODAL — edit product                                                -->
+    <!-- ================================================================== -->
+    <div
+      id="edit-product-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-product-title"
+    >
+      <div class="my-8 w-full max-w-xl rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7">
+        <div class="flex items-start justify-between gap-4">
+          <h3 id="edit-product-title" class="text-[16px] font-semibold text-slate-200">
+            Редакция на продукт
+          </h3>
+          <button
+            type="button"
+            data-close-modal="edit-product-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="edit-product-form" class="mt-6 space-y-4" novalidate>
+          <div>
+            <label for="edit-product-name" class="mb-2 block text-[13px] font-medium text-slate-300">
+              Име <span class="text-accent-500">*</span>
+            </label>
+            <input
+              type="text"
+              id="edit-product-name"
+              maxlength="255"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="edit-product-sku" class="mb-2 block text-[13px] font-medium text-slate-300">
+                SKU
+              </label>
+              <input
+                type="text"
+                id="edit-product-sku"
+                maxlength="64"
+                class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[13px] text-slate-200 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+            <div>
+              <label
+                for="edit-product-interval"
+                class="mb-2 block text-[13px] font-medium text-slate-300"
+              >
+                Проверка на всеки (минути)
+              </label>
+              <input
+                type="number"
+                id="edit-product-interval"
+                min="5"
+                max="10080"
+                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label
+                for="edit-product-our-price"
+                class="mb-2 block text-[13px] font-medium text-slate-300"
+              >
+                Вашата цена
+              </label>
+              <input
+                type="number"
+                id="edit-product-our-price"
+                step="0.01"
+                min="0"
+                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+            <div>
+              <label
+                for="edit-product-target"
+                class="mb-2 block text-[13px] font-medium text-slate-300"
+              >
+                Праг за аларма
+              </label>
+              <input
+                type="number"
+                id="edit-product-target"
+                step="0.01"
+                min="0"
+                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+          </div>
+
+          <label
+            class="flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-ink-900 px-4 py-3"
+          >
+            <input
+              type="checkbox"
+              id="edit-product-active"
+              class="h-4 w-4 rounded border-white/20 bg-ink-800 accent-accent-500"
+            />
+            <span class="text-[13.5px] text-slate-300">
+              Активно следене
+              <span class="block text-[12px] text-slate-500">
+                Изключено — продуктът се пропуска от всички проверки, но данните се пазят.
+              </span>
+            </span>
+          </label>
+
+          <p id="edit-product-status" class="hidden text-[12.5px]"></p>
+
+          <div class="flex flex-col gap-2.5 pt-1 sm:flex-row">
+            <button
+              type="submit"
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+            >
+              <i id="edit-product-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+              Запази промените
+            </button>
+            <button
+              type="button"
+              data-close-modal="edit-product-modal"
+              class="rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/25"
+            >
+              Отказ
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Toast -->
     <div
       id="toast"
@@ -2220,7 +2406,7 @@
         button.addEventListener('click', () => closeModal(button.dataset.closeModal));
       });
 
-      ['key-modal', 'supplier-modal', 'product-modal'].forEach(function (id) {
+      ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal'].forEach(function (id) {
         // Clicking the backdrop closes; clicking the panel must not.
         document.getElementById(id).addEventListener('click', function (event) {
           if (event.target === this) closeModal(id);
@@ -2229,7 +2415,100 @@
 
       document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape') return;
-        ['key-modal', 'supplier-modal', 'product-modal'].forEach(closeModal);
+
+        // A pending confirmation must be *answered*, not merely hidden —
+        // leaving the promise unresolved would hang the action forever.
+        if (!document.getElementById('confirm-modal').classList.contains('hidden')) {
+          settleConfirm(false);
+          return;
+        }
+
+        ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal'].forEach(closeModal);
+      });
+
+      /* ------------------------------------------------------------------ *
+       * Confirmation dialog
+       * ------------------------------------------------------------------ */
+
+      let confirmResolve = null;
+      let confirmTimer = null;
+
+      /**
+       * Asks before something irreversible.
+       *
+       * `countdownSeconds` holds the confirm button disabled for a moment. The
+       * point is not to be annoying — it is that deleting a product destroys
+       * its whole price history, and the muscle memory of clicking through
+       * dialogs is exactly what makes that happen by accident.
+       *
+       * Returns a promise resolving true only on an explicit confirmation.
+       */
+      function confirmDialog(title, message, confirmLabel, options) {
+        const settings = options || {};
+
+        $('#confirm-title').textContent = title;
+        $('#confirm-message').innerHTML = message;
+        $('#confirm-accept-label').textContent = confirmLabel || 'Потвърди';
+
+        const note = $('#confirm-note');
+        if (settings.note) {
+          note.textContent = settings.note;
+          note.classList.remove('hidden');
+        } else {
+          note.classList.add('hidden');
+        }
+
+        const accept = $('#confirm-accept');
+        const seconds = settings.countdownSeconds || 0;
+        let remaining = seconds;
+
+        window.clearInterval(confirmTimer);
+
+        if (remaining > 0) {
+          accept.disabled = true;
+          $('#confirm-accept-label').textContent =
+            (confirmLabel || 'Потвърди') + ' (' + remaining + ')';
+
+          confirmTimer = window.setInterval(function () {
+            remaining -= 1;
+            if (remaining > 0) {
+              $('#confirm-accept-label').textContent =
+                (confirmLabel || 'Потвърди') + ' (' + remaining + ')';
+              return;
+            }
+            window.clearInterval(confirmTimer);
+            accept.disabled = false;
+            $('#confirm-accept-label').textContent = confirmLabel || 'Потвърди';
+          }, 1000);
+        } else {
+          accept.disabled = false;
+        }
+
+        openModal('confirm-modal');
+        // Focus lands on Cancel, so a stray Enter cancels rather than destroys.
+        window.setTimeout(() => $('#confirm-cancel').focus(), 60);
+
+        return new Promise(function (resolve) {
+          confirmResolve = resolve;
+        });
+      }
+
+      function settleConfirm(result) {
+        window.clearInterval(confirmTimer);
+        closeModal('confirm-modal');
+
+        if (confirmResolve) {
+          const resolve = confirmResolve;
+          confirmResolve = null;
+          resolve(result);
+        }
+      }
+
+      $('#confirm-accept').addEventListener('click', () => settleConfirm(true));
+      $('#confirm-cancel').addEventListener('click', () => settleConfirm(false));
+
+      document.getElementById('confirm-modal').addEventListener('click', function (event) {
+        if (event.target === this) settleConfirm(false);
       });
 
       /* ------------------------------------------------------------------ *
@@ -2838,6 +3117,9 @@
                 name: product.name,
                 sku: product.sku,
                 marketPrice: product.ourPrice == null ? null : Number(product.ourPrice),
+                targetPrice: product.targetPrice == null ? null : Number(product.targetPrice),
+                checkIntervalMinutes: product.checkIntervalMinutes,
+                isActive: product.isActive,
                 suppliers: listings.map(function (competitor) {
                   return {
                     id: competitor.id,
@@ -2928,7 +3210,9 @@
       function openSupplierModal(productId) {
         const product = products.find((item) => item.id === productId);
         supplierTargetId = productId;
+        editingSupplier = null;
 
+        $('#supplier-modal-title').textContent = 'Добави склад';
         $('#supplier-modal-product').textContent = product ? product.name : '';
         $('#supplier-status').classList.add('hidden');
         $('#supplier-form').reset();
@@ -2957,9 +3241,18 @@
         $('#supplier-spinner').classList.remove('hidden');
         $('#supplier-icon').classList.add('hidden');
 
+        const editing = editingSupplier !== null;
+        const endpoint = editing
+          ? ENDPOINTS.products +
+            '/' +
+            editingSupplier.productId +
+            '/competitors/' +
+            editingSupplier.supplierId
+          : ENDPOINTS.products + '/' + supplierTargetId + '/competitors';
+
         try {
-          const response = await fetch(ENDPOINTS.products + '/' + supplierTargetId + '/competitors', {
-            method: 'POST',
+          const response = await fetch(endpoint, {
+            method: editing ? 'PATCH' : 'POST',
             headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               name: name,
@@ -2974,14 +3267,20 @@
             throw new Error('HTTP ' + response.status + ' ' + detail.slice(0, 140));
           }
 
-          showSupplierStatus('Складът е добавен. Първата проверка тръгва при следващия sweep.', 'success');
-          toast('Складът е добавен.', 'success');
+          showSupplierStatus(
+            editing ? 'Складът е обновен.' : 'Складът е добавен. Първата проверка тръгва при следващия sweep.',
+            'success',
+          );
+          toast(editing ? 'Складът е обновен.' : 'Складът е добавен.', 'success');
           window.setTimeout(function () {
             closeModal('supplier-modal');
             loadProducts();
           }, 800);
         } catch (error) {
-          showSupplierStatus('Не бе добавен: ' + error.message, 'error');
+          showSupplierStatus(
+            (editing ? 'Не бе обновен: ' : 'Не бе добавен: ') + error.message,
+            'error',
+          );
         } finally {
           $('#supplier-spinner').classList.add('hidden');
           $('#supplier-icon').classList.remove('hidden');
@@ -3265,12 +3564,19 @@
 
         if (action === 'delete-product') {
           const product = findProduct(id);
+          const view = product ? analyse(product) : { count: 0 };
           const confirmed = await confirmDialog(
             'Изтриване на продукт',
-            'Продуктът „' +
-              (product ? product.name : '') +
-              '" ще бъде изтрит заедно с всичките му складове и цялата ценова история. Това е необратимо.',
-            'Изтрий',
+            'Ще бъде изтрит <strong class="text-slate-200">' +
+              escapeHtml(product ? product.name : '') +
+              '</strong>, заедно с <strong class="text-slate-200">' +
+              view.count +
+              ' склада</strong> и цялата ценова история към тях.',
+            'Изтрий продукта',
+            {
+              countdownSeconds: 3,
+              note: 'Действието е необратимо — историята на цените не може да се възстанови.',
+            },
           );
           if (!confirmed) return;
 
@@ -3317,12 +3623,12 @@
 
           const confirmed = await confirmDialog(
             'Изтриване на склад',
-            '„' +
-              found.supplier.name +
-              '" ще бъде премахнат от „' +
-              found.product.name +
-              '", заедно с историята му на цени.',
-            'Изтрий',
+            '<strong class="text-slate-200">' +
+              escapeHtml(found.supplier.name) +
+              '</strong> ще бъде премахнат от „' +
+              escapeHtml(found.product.name) +
+              '", заедно с историята му на цени. Другите складове остават.',
+            'Изтрий склада',
           );
           if (!confirmed) return;
 
@@ -3338,6 +3644,101 @@
         if (action === 'edit-supplier') {
           openSupplierEditor(found.product, found.supplier);
         }
+      }
+
+      /* --- Editors -------------------------------------------------------- */
+
+      let editingProductId = null;
+
+      function openProductEditor(product) {
+        if (!product) return;
+
+        editingProductId = product.id;
+        $('#edit-product-name').value = product.name || '';
+        $('#edit-product-sku').value = product.sku || '';
+        $('#edit-product-interval').value = product.checkIntervalMinutes || 60;
+        $('#edit-product-our-price').value = product.marketPrice == null ? '' : product.marketPrice;
+        $('#edit-product-target').value = product.targetPrice == null ? '' : product.targetPrice;
+        $('#edit-product-active').checked = product.isActive !== false;
+        $('#edit-product-status').classList.add('hidden');
+
+        openModal('edit-product-modal');
+      }
+
+      $('#edit-product-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const status = $('#edit-product-status');
+        function show(message, tone) {
+          const palette = { success: 'text-emerald-500', error: 'text-red-500', info: 'text-slate-400' };
+          status.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+          status.textContent = message;
+          status.classList.remove('hidden');
+        }
+
+        const name = $('#edit-product-name').value.trim();
+        if (!name) {
+          show('Името не може да е празно.', 'error');
+          return;
+        }
+
+        // Only fields the user can actually see are sent. Posting the whole
+        // object back would overwrite prices the scraper wrote in the meantime.
+        const payload = {
+          name: name,
+          sku: $('#edit-product-sku').value.trim() || undefined,
+          checkIntervalMinutes: Number($('#edit-product-interval').value) || undefined,
+          ourPrice: $('#edit-product-our-price').value === ''
+            ? undefined
+            : Number($('#edit-product-our-price').value),
+          targetPrice: $('#edit-product-target').value === ''
+            ? undefined
+            : Number($('#edit-product-target').value),
+          isActive: $('#edit-product-active').checked,
+        };
+
+        $('#edit-product-spinner').classList.remove('hidden');
+
+        try {
+          const response = await fetch(ENDPOINTS.products + '/' + editingProductId, {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ' ' + (await response.text()).slice(0, 140));
+          }
+
+          toast('Продуктът е обновен.', 'success');
+          closeModal('edit-product-modal');
+          await loadProducts();
+        } catch (error) {
+          show('Неуспешно: ' + error.message, 'error');
+        } finally {
+          $('#edit-product-spinner').classList.add('hidden');
+        }
+      });
+
+      let editingSupplier = null;
+
+      /**
+       * Reuses the add-warehouse dialog in edit mode: the fields are identical,
+       * and a second near-copy of the same form is a second thing to keep in sync.
+       */
+      function openSupplierEditor(product, supplier) {
+        editingSupplier = { productId: product.id, supplierId: supplier.id };
+        supplierTargetId = product.id;
+
+        $('#supplier-modal-title').textContent = 'Редакция на склад';
+        $('#supplier-modal-product').textContent = product.name;
+        $('#supplier-name').value = supplier.name || '';
+        $('#supplier-url').value = supplier.url || '';
+        $('#supplier-currency').value = supplier.currency || 'EUR';
+        $('#supplier-selector').value = supplier.priceSelector || '';
+        $('#supplier-status').classList.add('hidden');
+
+        openModal('supplier-modal');
       }
 
       /* --- CSV export ---------------------------------------------------- */
