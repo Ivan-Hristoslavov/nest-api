@@ -85,6 +85,15 @@ export class QueryProductsDto extends PaginationQueryDto {
   undercutOnly?: boolean;
 
   @ApiPropertyOptional({
+    description: 'Embed the competitor listings of each product in the response.',
+    example: false,
+  })
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  @IsOptional()
+  includeCompetitors?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Field to sort by.',
     enum: ProductSortField,
     enumName: 'ProductSortField',

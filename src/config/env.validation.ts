@@ -12,6 +12,20 @@ import {
   validateSync,
 } from 'class-validator';
 
+/** Merchant of record handling payments. */
+export enum BillingProvider {
+  Paddle = 'paddle',
+  LemonSqueezy = 'lemonsqueezy',
+}
+
+/** Which price source the scraper uses. */
+export enum ScraperDriver {
+  /** Fetch and parse real competitor pages. */
+  Http = 'http',
+  /** Generate plausible movement without network access. */
+  Simulation = 'simulation',
+}
+
 export enum NodeEnvironment {
   Development = 'development',
   Test = 'test',
@@ -89,6 +103,32 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   API_KEYS?: string;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  API_KEY_CACHE_TTL_MS = 30000;
+
+  // --- Billing -------------------------------------------------------------
+  @IsEnum(BillingProvider)
+  @IsOptional()
+  BILLING_PROVIDER: BillingProvider = BillingProvider.Paddle;
+
+  @IsString()
+  @IsOptional()
+  PADDLE_WEBHOOK_SECRET?: string;
+
+  @IsString()
+  @IsOptional()
+  LEMONSQUEEZY_WEBHOOK_SECRET?: string;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(5)
+  @Max(3600)
+  @IsOptional()
+  BILLING_SIGNATURE_TOLERANCE_SECONDS = 300;
 
   // --- Database ------------------------------------------------------------
   @IsString()
@@ -205,7 +245,7 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(100)
   @IsOptional()
-  SCRAPER_TIMEOUT_MS = 10000;
+  SCRAPER_TIMEOUT_MS = 5000;
 
   @Transform(toNumber)
   @IsInt()
@@ -219,6 +259,63 @@ export class EnvironmentVariables {
   @Max(100)
   @IsOptional()
   SCRAPER_ALERT_THRESHOLD_PERCENT = 5;
+
+  @IsEnum(ScraperDriver)
+  @IsOptional()
+  SCRAPER_DRIVER: ScraperDriver = ScraperDriver.Simulation;
+
+  @IsString()
+  @IsOptional()
+  SCRAPER_USER_AGENT =
+    'PriceIntelligenceBot/1.0 (+https://example.com/bot; compatible; contact@example.com)';
+
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  SCRAPER_RESPECT_ROBOTS = true;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  @IsOptional()
+  SCRAPER_MAX_RETRIES = 2;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(100)
+  @IsOptional()
+  SCRAPER_RETRY_BASE_DELAY_MS = 1000;
+
+  // --- Alerting ------------------------------------------------------------
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  ALERTS_ENABLED = true;
+
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  ALERT_SLACK_WEBHOOK_URL?: string;
+
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  ALERT_WEBHOOK_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  ALERT_WEBHOOK_SECRET?: string;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1000)
+  @IsOptional()
+  ALERT_DELIVERY_TIMEOUT_MS = 8000;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  ALERT_COOLDOWN_MINUTES = 60;
 
   // --- Rate limiting -------------------------------------------------------
   @Transform(toNumber)
@@ -235,7 +332,14 @@ export class EnvironmentVariables {
 }
 
 export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables {
-  const validated = plainToInstance(EnvironmentVariables, raw, {
+  // An env var set to the empty string means "not configured" — `.env` files
+  // habitually carry `ALERT_WEBHOOK_URL=` as a placeholder. Without this, an
+  // empty value reaches @IsUrl and fails validation at boot.
+  const withoutBlanks = Object.fromEntries(
+    Object.entries(raw).filter(([, value]) => !(typeof value === 'string' && value.trim() === '')),
+  );
+
+  const validated = plainToInstance(EnvironmentVariables, withoutBlanks, {
     enableImplicitConversion: false,
     exposeDefaultValues: true,
   });

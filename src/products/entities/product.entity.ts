@@ -11,6 +11,7 @@ import {
 
 import { numericTransformer } from '../../common/transformers/numeric-column.transformer';
 import { ScrapeStatus } from '../enums/scrape-status.enum';
+import { Competitor } from './competitor.entity';
 import { PriceHistory } from './price-history.entity';
 
 /**
@@ -59,7 +60,8 @@ export class Product {
   targetUrl!: string;
 
   @ApiProperty({
-    description: 'Competitor product page that the scraper fetches.',
+    description:
+      'Primary competitor page. Denormalised from the primary row in `competitors` and kept in sync by ProductsService — a product may track several rivals.',
     format: 'uri',
     example: 'https://competitor.example.com/audio/sony-wh-1000xm5',
   })
@@ -76,7 +78,8 @@ export class Product {
   currency!: string;
 
   @ApiPropertyOptional({
-    description: 'Latest scraped competitor price. Null until the first successful scrape.',
+    description:
+      'Cheapest price across all active competitors — the market price we react to. Null until the first successful scrape.',
     type: Number,
     format: 'double',
     example: 289.99,
@@ -226,6 +229,41 @@ export class Product {
   @ApiProperty({ type: String, format: 'date-time' })
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
+
+  @ApiPropertyOptional({
+    description: 'Competitor listing currently offering the lowest price.',
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ name: 'cheapest_competitor_id', type: 'uuid', nullable: true })
+  cheapestCompetitorId!: string | null;
+
+  @ApiProperty({ description: 'Number of active competitor listings tracked.', example: 3 })
+  @Column({ name: 'competitor_count', type: 'int', default: 0 })
+  competitorCount!: number;
+
+  @ApiPropertyOptional({
+    description: 'Our own price, for margin and undercut reporting.',
+    type: Number,
+    nullable: true,
+    example: 299.0,
+  })
+  @Column({
+    name: 'our_price',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  ourPrice!: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Competitor listings tracked for this product.',
+    type: () => [Competitor],
+  })
+  @OneToMany(() => Competitor, (competitor) => competitor.product)
+  competitors?: Competitor[];
 
   @OneToMany(() => PriceHistory, (priceHistory) => priceHistory.product)
   priceHistory?: PriceHistory[];

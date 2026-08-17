@@ -127,6 +127,43 @@ describe('Price Intelligence API (e2e)', () => {
       .expect(400);
   });
 
+  it('creates a product together with its primary competitor listing', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/products')
+      .set('X-API-KEY', apiKey)
+      .send({
+        name: 'E2E Competitor Test',
+        targetUrl: 'https://shop.example.com/e2e-competitors',
+        competitorUrl: 'https://competitor.example.com/e2e-competitors',
+        currentPrice: 200,
+      })
+      .expect(201);
+
+    const { id } = created.body as ProductBody;
+
+    const listings = await request(app.getHttpServer())
+      .get(`/api/v1/products/${id}/competitors`)
+      .set('X-API-KEY', apiKey)
+      .expect(200);
+
+    const competitors = listings.body as Array<{ isPrimary: boolean; url: string }>;
+    expect(competitors).toHaveLength(1);
+    expect(competitors[0].isPrimary).toBe(true);
+    expect(competitors[0].url).toBe('https://competitor.example.com/e2e-competitors');
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/products/${id}`)
+      .set('X-API-KEY', apiKey)
+      .expect(204);
+  });
+
+  it('rejects an unsigned billing webhook', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/billing/webhook')
+      .send({ event_type: 'subscription.created', data: { id: 'sub_forged' } })
+      .expect(401);
+  });
+
   it('creates, scrapes and deletes a product', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/v1/products')
@@ -141,14 +178,19 @@ describe('Price Intelligence API (e2e)', () => {
 
     const { id } = created.body as ProductBody;
 
-    const refreshed = await request(app.getHttpServer())
-      .post(`/api/v1/scraper/products/${id}/refresh`)
+    // The trigger endpoint checks every listing of the product and returns one
+    // result each. With SCRAPER_DRIVER=http the example.com URL cannot resolve,
+    // which is exactly the point: a dead retailer must produce a recorded
+    // failure, not an exception.
+    const triggered = await request(app.getHttpServer())
+      .post(`/api/v1/scraper/trigger/${id}`)
       .set('X-API-KEY', apiKey)
       .expect(200);
 
-    const check = refreshed.body as PriceCheckBody;
-    expect(check.productId).toBe(id);
-    expect(['success', 'failed']).toContain(check.status);
+    const checks = triggered.body as PriceCheckBody[];
+    expect(checks).toHaveLength(1);
+    expect(checks[0].productId).toBe(id);
+    expect(['success', 'failed']).toContain(checks[0].status);
 
     await request(app.getHttpServer())
       .get(`/api/v1/products/${id}/history`)

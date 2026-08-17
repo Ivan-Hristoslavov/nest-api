@@ -1,4 +1,10 @@
-import { EnvironmentVariables, NodeEnvironment, validateEnv } from './env.validation';
+import {
+  BillingProvider,
+  EnvironmentVariables,
+  NodeEnvironment,
+  ScraperDriver,
+  validateEnv,
+} from './env.validation';
 
 export interface AppConfig {
   nodeEnv: NodeEnvironment;
@@ -12,7 +18,16 @@ export interface AppConfig {
 
 export interface AuthConfig {
   apiKeyHeader: string;
+  /** Operator keys from the environment; customer keys live in the database. */
   apiKeys: string[];
+  keyCacheTtlMs: number;
+}
+
+export interface BillingConfig {
+  provider: BillingProvider;
+  /** Secret for the active provider. */
+  webhookSecret?: string;
+  signatureToleranceSeconds: number;
 }
 
 export interface DatabaseConfig {
@@ -46,6 +61,20 @@ export interface ScraperConfig {
   timeoutMs: number;
   minDelayMs: number;
   alertThresholdPercent: number;
+  driver: ScraperDriver;
+  userAgent: string;
+  respectRobots: boolean;
+  maxRetries: number;
+  retryBaseDelayMs: number;
+}
+
+export interface AlertsConfig {
+  enabled: boolean;
+  slackWebhookUrl?: string;
+  webhookUrl?: string;
+  webhookSecret?: string;
+  deliveryTimeoutMs: number;
+  cooldownMinutes: number;
 }
 
 export interface ThrottleConfig {
@@ -59,6 +88,8 @@ export interface Configuration {
   database: DatabaseConfig;
   supabase: SupabaseConfig;
   scraper: ScraperConfig;
+  billing: BillingConfig;
+  alerts: AlertsConfig;
   throttle: ThrottleConfig;
 }
 
@@ -105,6 +136,15 @@ export const configuration = (): Configuration => {
     auth: {
       apiKeyHeader: env.API_KEY_HEADER.toLowerCase(),
       apiKeys: collectApiKeys(env),
+      keyCacheTtlMs: env.API_KEY_CACHE_TTL_MS,
+    },
+    billing: {
+      provider: env.BILLING_PROVIDER,
+      webhookSecret:
+        env.BILLING_PROVIDER === BillingProvider.Paddle
+          ? env.PADDLE_WEBHOOK_SECRET
+          : env.LEMONSQUEEZY_WEBHOOK_SECRET,
+      signatureToleranceSeconds: env.BILLING_SIGNATURE_TOLERANCE_SECONDS,
     },
     database: {
       host: env.DB_HOST,
@@ -135,6 +175,19 @@ export const configuration = (): Configuration => {
       timeoutMs: env.SCRAPER_TIMEOUT_MS,
       minDelayMs: env.SCRAPER_MIN_DELAY_MS,
       alertThresholdPercent: env.SCRAPER_ALERT_THRESHOLD_PERCENT,
+      driver: env.SCRAPER_DRIVER,
+      userAgent: env.SCRAPER_USER_AGENT,
+      respectRobots: env.SCRAPER_RESPECT_ROBOTS,
+      maxRetries: env.SCRAPER_MAX_RETRIES,
+      retryBaseDelayMs: env.SCRAPER_RETRY_BASE_DELAY_MS,
+    },
+    alerts: {
+      enabled: env.ALERTS_ENABLED,
+      slackWebhookUrl: env.ALERT_SLACK_WEBHOOK_URL,
+      webhookUrl: env.ALERT_WEBHOOK_URL,
+      webhookSecret: env.ALERT_WEBHOOK_SECRET,
+      deliveryTimeoutMs: env.ALERT_DELIVERY_TIMEOUT_MS,
+      cooldownMinutes: env.ALERT_COOLDOWN_MINUTES,
     },
     throttle: {
       ttlMs: env.THROTTLE_TTL_MS,

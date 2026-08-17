@@ -1,8 +1,10 @@
 import { Logger } from '@nestjs/common';
 
+import { Competitor } from '../products/entities/competitor.entity';
 import { PriceHistory } from '../products/entities/price-history.entity';
 import { Product } from '../products/entities/product.entity';
 import { ScrapeStatus } from '../products/enums/scrape-status.enum';
+import { retailerNameForHost } from '../scraper/parsers/site-profiles';
 import dataSource from './data-source';
 
 /**
@@ -19,6 +21,16 @@ import dataSource from './data-source';
 type DemoProduct = Partial<Product> & { sku: string };
 
 const DEMO_PRODUCTS: DemoProduct[] = [
+  {
+    // A real, scrapeable listing: use it to verify the http driver end to end.
+    name: 'Crucial T710 SSD 1TB CT1000T710SSD8',
+    sku: 'SKU-CRUCIAL-T710-1TB',
+    targetUrl: 'https://shop.example.com/products/crucial-t710-1tb',
+    competitorUrl: 'https://www.vario.bg/crucial-t710-ssd-1tb-ct1000t710ssd8',
+    currency: 'BGN',
+    targetPrice: 400.0,
+    checkIntervalMinutes: 60,
+  },
   {
     name: 'Sony WH-1000XM5 Wireless Headphones',
     sku: 'SKU-SONY-WH1000XM5',
@@ -110,6 +122,7 @@ async function seed(): Promise<void> {
 
   try {
     const products = dataSource.getRepository(Product);
+    const competitors = dataSource.getRepository(Competitor);
     const history = dataSource.getRepository(PriceHistory);
 
     if (reset) {
@@ -153,10 +166,32 @@ async function seed(): Promise<void> {
         }),
       );
 
+      // Every product needs its primary listing: the scraper iterates
+      // competitors, so a product without one is silently never checked.
+      const host = new URL(product.competitorUrl).host;
+      const competitor = await competitors.save(
+        competitors.create({
+          productId: product.id,
+          name: retailerNameForHost(host),
+          url: product.competitorUrl,
+          host,
+          currency: product.currency,
+          currentPrice: product.currentPrice,
+          isPrimary: true,
+          isActive: true,
+          scrapeStatus: ScrapeStatus.Pending,
+        }),
+      );
+
+      product.cheapestCompetitorId = competitor.id;
+      product.competitorCount = 1;
+      await products.save(product);
+
       // Seed the first history point so charts start from a known price.
       if (product.currentPrice !== null) {
         await history.insert({
           productId: product.id,
+          competitorId: competitor.id,
           price: product.currentPrice,
           previousPrice: null,
           changePercent: null,

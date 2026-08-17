@@ -35,13 +35,17 @@ import { RecordPriceDto } from './dto/record-price.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PriceHistory } from './entities/price-history.entity';
 import { Product } from './entities/product.entity';
+import { CompetitorsService } from './competitors.service';
 import { ProductStats, ProductsService } from './products.service';
 
 @ApiTags('Products')
 @ApiKeyAuth()
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly competitorsService: CompetitorsService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -87,6 +91,7 @@ export class ProductsController {
         neverScraped: { type: 'number', example: 3 },
         failing: { type: 'number', example: 2 },
         undercut: { type: 'number', example: 11 },
+        competitors: { type: 'number', example: 312 },
         averagePrice: { type: 'number', nullable: true, example: 241.37 },
         lastScrapeAt: {
           type: 'string',
@@ -102,12 +107,15 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get one tracked product' })
+  @ApiOperation({
+    summary: 'Get one tracked product',
+    description: 'Includes every competitor listing tracked for the product.',
+  })
   @ApiParam({ name: 'id', format: 'uuid', description: 'Product identifier.' })
   @ApiOkResponse({ description: 'The requested product.', type: Product })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Product> {
-    return this.productsService.findOne(id);
+    return this.productsService.findOne(id, true);
   }
 
   @Patch(':id')
@@ -159,20 +167,22 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Record a price observation manually',
     description:
-      'Applies an externally obtained price to the product exactly as the scraper would: updates the product row and appends to the price history in one transaction.',
+      'Applies an externally obtained price to the *primary* competitor listing, exactly as the scraper would. Use `POST /products/{id}/competitors/{competitorId}/prices` to target a specific rival.',
   })
   @ApiParam({ name: 'id', format: 'uuid', description: 'Product identifier.' })
   @ApiOkResponse({ description: 'Observation applied.', type: PriceCheckResultDto })
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
-  recordPrice(
+  async recordPrice(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() recordPriceDto: RecordPriceDto,
   ): Promise<PriceCheckResultDto> {
-    return this.productsService.applyPriceObservation(
-      id,
-      recordPriceDto.price,
-      recordPriceDto.source ?? 'manual',
-    );
+    const primary = await this.productsService.findPrimaryCompetitor(id);
+
+    return this.competitorsService.applyPriceObservation(primary.id, {
+      price: recordPriceDto.price,
+      source: recordPriceDto.source ?? 'manual',
+      strategy: 'manual',
+    });
   }
 }

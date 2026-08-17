@@ -2,13 +2,19 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { ScrapeStatus } from '../enums/scrape-status.enum';
 
-/** Result of applying one price observation to a product. */
+/** Result of applying one price observation to a competitor listing. */
 export class PriceCheckResultDto {
   @ApiProperty({ description: 'Product that was checked.', format: 'uuid' })
   productId!: string;
 
   @ApiProperty({ description: 'Product name, for readable logs and dashboards.' })
   productName!: string;
+
+  @ApiProperty({ description: 'Competitor listing that was checked.', format: 'uuid' })
+  competitorId!: string;
+
+  @ApiProperty({ description: 'Competitor name.', example: 'Competitor A' })
+  competitorName!: string;
 
   @ApiProperty({
     description: 'Outcome of the check.',
@@ -18,7 +24,7 @@ export class PriceCheckResultDto {
   status!: ScrapeStatus;
 
   @ApiPropertyOptional({
-    description: 'Price before this check.',
+    description: 'Price at this listing before the check.',
     type: Number,
     example: 309.0,
     nullable: true,
@@ -26,7 +32,7 @@ export class PriceCheckResultDto {
   previousPrice!: number | null;
 
   @ApiPropertyOptional({
-    description: 'Price after this check.',
+    description: 'Price at this listing after the check.',
     type: Number,
     example: 289.99,
     nullable: true,
@@ -51,10 +57,30 @@ export class PriceCheckResultDto {
   significantChange!: boolean;
 
   @ApiProperty({
-    description: 'Whether the competitor price is below our configured target price.',
+    description: "Whether the price is below the product's configured target price.",
     example: false,
   })
   undercutsTargetPrice!: boolean;
+
+  @ApiProperty({
+    description: 'Whether this is the lowest price ever recorded for the product.',
+    example: false,
+  })
+  allTimeLow!: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Availability reported by the page, when it reported any.',
+    nullable: true,
+    example: true,
+  })
+  inStock!: boolean | null;
+
+  @ApiPropertyOptional({
+    description: 'Extraction strategy that produced the price (json-ld, selector, meta, ...).',
+    nullable: true,
+    example: 'json-ld',
+  })
+  strategy!: string | null;
 
   @ApiPropertyOptional({
     description: 'Failure reason when status is "failed".',

@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 
 import { numericTransformer } from '../../common/transformers/numeric-column.transformer';
+import { Competitor } from './competitor.entity';
 import { Product } from './product.entity';
 
 /**
@@ -21,6 +22,7 @@ import { Product } from './product.entity';
  */
 @Entity('price_history')
 @Index('idx_price_history_product_recorded', ['productId', 'recordedAt'])
+@Index('idx_price_history_competitor_recorded', ['competitorId', 'recordedAt'])
 export class PriceHistory {
   @ApiProperty({ format: 'uuid' })
   @PrimaryGeneratedColumn('uuid')
@@ -36,6 +38,19 @@ export class PriceHistory {
   })
   @JoinColumn({ name: 'product_id' })
   product?: Product;
+
+  @ApiPropertyOptional({
+    description:
+      'Competitor listing the price came from. Null for manual entries and rows written before multi-competitor tracking.',
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ name: 'competitor_id', type: 'uuid', nullable: true })
+  competitorId!: string | null;
+
+  @ManyToOne(() => Competitor, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'competitor_id' })
+  competitor?: Competitor;
 
   @ApiProperty({ description: 'Observed price.', type: Number, example: 289.99 })
   @Column({

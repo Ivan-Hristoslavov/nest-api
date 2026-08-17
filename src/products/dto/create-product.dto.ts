@@ -88,6 +88,42 @@ export class CreateProductDto {
   currentPrice?: number;
 
   @ApiPropertyOptional({
+    description: 'Name for the primary competitor listing. Defaults to its hostname.',
+    maxLength: 120,
+    example: 'Competitor A',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  competitorName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'CSS selector for the price on the primary competitor page. Only needed when the page exposes no structured data.',
+    maxLength: 255,
+    example: '.product-price__amount',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  @Transform(trimString)
+  priceSelector?: string;
+
+  @ApiPropertyOptional({
+    description: 'Our own selling price, used for margin and undercut reporting.',
+    type: Number,
+    minimum: 0,
+    example: 299.0,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(9_999_999_999)
+  @IsOptional()
+  ourPrice?: number;
+
+  @ApiPropertyOptional({
     description: 'Price floor. Competitor prices below this value are flagged as undercutting.',
     type: Number,
     minimum: 0,

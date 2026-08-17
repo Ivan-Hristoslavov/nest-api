@@ -15,6 +15,10 @@ async function bootstrap(): Promise<void> {
     // Buffer startup logs until the app is ready, so nothing is lost when
     // initialization fails (e.g. a bad Supabase connection string).
     bufferLogs: true,
+    // Keeps the untouched request bytes on `request.rawBody`. Billing webhook
+    // signatures are computed over exactly those bytes: parsing and
+    // re-serialising the JSON reorders keys and breaks every signature check.
+    rawBody: true,
   });
 
   const logger = new Logger('Bootstrap');

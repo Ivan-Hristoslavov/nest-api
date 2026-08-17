@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,11 +6,12 @@ import { CronJob } from 'cron';
 import { Repository } from 'typeorm';
 
 import { Configuration, ScraperConfig } from '../config/configuration';
+import { CompetitorsService } from '../products/competitors.service';
 import { PriceCheckResultDto } from '../products/dto/price-check-result.dto';
+import { Competitor } from '../products/entities/competitor.entity';
 import { Product } from '../products/entities/product.entity';
-import { ProductsService } from '../products/products.service';
 import { ScrapeRunResultDto, ScraperStatusDto } from './dto/scrape-run-result.dto';
-import { PriceFetchError, PriceFetcherService } from './price-fetcher.service';
+import { PRICE_SOURCE, PriceFetchError, PriceSource } from './fetchers/price-source.interface';
 
 export const SCRAPER_CRON_JOB = 'competitor-price-sweep';
 
@@ -21,26 +22,33 @@ export const SCRAPER_CRON_JOB = 'competitor-price-sweep';
  * - The cron expression comes from configuration, so the schedule is changed
  *   with an env var and a restart — not a code change. The job is therefore
  *   registered dynamically through `SchedulerRegistry` instead of the static
- *   `@Cron()` decorator, which can only take a compile-time constant.
- * - `isRunning` prevents overlapping sweeps: with a slow competitor site a
- *   sweep can outlive its interval, and two concurrent sweeps would double the
- *   request rate against the same hosts.
- * - Work is done in bounded batches with limited concurrency so a large catalog
- *   cannot exhaust the (pooled) Supabase connections or hammer a competitor.
+ *   `@Cron()` decorator, which only accepts a compile-time constant.
+ * - `isRunning` prevents overlapping sweeps: with a slow retailer a sweep can
+ *   outlive its interval, and two concurrent sweeps would double the request
+ *   rate against the same hosts.
+ * - Work is bounded per sweep and concurrency-limited, so a large catalog
+ *   cannot exhaust the Supabase connection pool. Per-host politeness is handled
+ *   one level down, in the HTTP fetcher.
+ * - The unit of work is a *competitor listing*, not a product: a product with
+ *   five rivals is five independent checks, and one broken retailer never hides
+ *   the other four.
  */
 @Injectable()
-export class ScraperService implements OnModuleInit {
+export class ScraperService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(ScraperService.name);
   private readonly config: ScraperConfig;
   private isRunning = false;
+  private shuttingDown = false;
+  private currentSweep: Promise<ScrapeRunResultDto> | null = null;
   private lastRun: ScrapeRunResultDto | null = null;
   private lastRunAt: Date | null = null;
 
   constructor(
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
-    private readonly productsService: ProductsService,
-    private readonly priceFetcher: PriceFetcherService,
+    private readonly competitorsService: CompetitorsService,
+    @Inject(PRICE_SOURCE)
+    private readonly priceSource: PriceSource,
     private readonly schedulerRegistry: SchedulerRegistry,
     configService: ConfigService<Configuration, true>,
   ) {
@@ -48,6 +56,8 @@ export class ScraperService implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    this.logger.log(`Price source driver: ${this.priceSource.driver}`);
+
     if (!this.config.enabled) {
       this.logger.warn('Scheduled price sweep is disabled (SCRAPER_ENABLED=false).');
       return;
@@ -64,14 +74,32 @@ export class ScraperService implements OnModuleInit {
   }
 
   /**
-   * Runs one sweep over the products that are due for a check.
+   * Lets an in-flight sweep finish before the process exits, so a listing is
+   * never left with a half-applied observation and the connection pool is not
+   * torn down mid-transaction.
+   */
+  async onApplicationShutdown(signal?: string): Promise<void> {
+    this.shuttingDown = true;
+
+    if (this.currentSweep) {
+      this.logger.log(`${signal ?? 'Shutdown'} received — waiting for the in-flight sweep.`);
+      await this.currentSweep.catch(() => undefined);
+      this.logger.log('In-flight sweep finished.');
+    }
+  }
+
+  /**
+   * Runs one sweep over the listings that are due for a check.
    * Safe to call concurrently — overlapping invocations return immediately.
-   *
-   * @param trigger Where the run came from, for log correlation.
    */
   async runSweep(trigger: 'schedule' | 'manual'): Promise<ScrapeRunResultDto> {
     const startedAt = new Date();
     const runId = `sweep_${startedAt.toISOString()}`;
+
+    if (this.shuttingDown) {
+      this.logger.warn(`Refusing ${trigger} sweep ${runId}: application is shutting down.`);
+      return this.emptyRun(runId, startedAt);
+    }
 
     if (this.isRunning) {
       this.logger.warn(`Skipping ${trigger} sweep ${runId}: a sweep is already running.`);
@@ -79,75 +107,159 @@ export class ScraperService implements OnModuleInit {
     }
 
     this.isRunning = true;
+    this.currentSweep = this.executeSweep(runId, trigger, startedAt);
 
     try {
-      const due = await this.productsService.findDueForScrape(this.config.batchSize);
-
-      if (due.length === 0) {
-        this.logger.log(`Sweep ${runId} (${trigger}): no products due.`);
-        return this.finish(this.emptyRun(runId, startedAt));
-      }
-
-      this.logger.log(`Sweep ${runId} (${trigger}): checking ${due.length} product(s).`);
-
-      const results = await this.mapWithConcurrency(due, this.config.concurrency, (product) =>
-        this.checkProduct(product),
-      );
-
-      const summary: ScrapeRunResultDto = {
-        runId,
-        processed: results.length,
-        succeeded: results.filter((result) => result.error === null).length,
-        failed: results.filter((result) => result.error !== null).length,
-        changed: results.filter((result) => result.priceChanged).length,
-        significantChanges: results.filter((result) => result.significantChange).length,
-        durationMs: Date.now() - startedAt.getTime(),
-        startedAt: startedAt.toISOString(),
-        results,
-      };
-
-      this.logger.log(
-        `Sweep ${runId} done in ${summary.durationMs}ms: ` +
-          `${summary.succeeded} ok, ${summary.failed} failed, ${summary.changed} price change(s).`,
-      );
-
-      return this.finish(summary);
+      return await this.currentSweep;
     } finally {
       this.isRunning = false;
+      this.currentSweep = null;
     }
   }
 
   /**
-   * Checks a single product on demand, ignoring its check interval.
-   * Loads the entity through the TypeORM repository directly so the caller only
-   * needs an id.
+   * Scrapes every active listing of one product and writes the result.
+   *
+   * Loads the product through the TypeORM repository, checks each of its
+   * competitor listings, and lets `CompetitorsService` update `current_price`
+   * and `last_updated` on the product row from the cheapest result.
+   *
+   * Never throws. A missing product, a 403, a 404, a timeout or a redesigned
+   * page are all logged and recorded on the listing — the caller (a cron tick,
+   * a manual trigger) must not be able to crash the application.
    */
-  async scrapeProductById(productId: string): Promise<PriceCheckResultDto> {
-    const product = await this.productsService.findOne(productId);
-    return this.checkProduct(product);
+  async scrapeProductPrice(productId: string): Promise<void> {
+    const product = await this.productsRepository.findOne({ where: { id: productId } });
+
+    if (!product) {
+      this.logger.warn(`Scrape requested for unknown product ${productId} — nothing to do.`);
+      return;
+    }
+
+    try {
+      const results = await this.scrapeProductById(productId);
+
+      if (results.length === 0) {
+        this.logger.warn(`Product ${product.name} (${productId}) has no active listings.`);
+        return;
+      }
+
+      const succeeded = results.filter((result) => result.error === null);
+      const cheapest = succeeded.reduce<number | null>(
+        (lowest, result) =>
+          result.currentPrice !== null && (lowest === null || result.currentPrice < lowest)
+            ? result.currentPrice
+            : lowest,
+        null,
+      );
+
+      this.logger.log(
+        `Scraped ${product.name}: ${succeeded.length}/${results.length} listing(s) ok` +
+          (cheapest !== null ? `, market price ${cheapest} ${product.currency}` : ''),
+      );
+    } catch (error) {
+      // Defence in depth: checkCompetitor already swallows per-listing errors,
+      // so reaching here means something unexpected (a database failure, a bug).
+      this.logger.error(
+        `Unexpected failure scraping product ${productId}: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
   }
 
-  getStatus(): Promise<ScraperStatusDto> {
-    return this.buildStatus();
+  /** Checks a single listing on demand, ignoring its check interval. */
+  async scrapeCompetitorById(competitorId: string): Promise<PriceCheckResultDto> {
+    const competitor = await this.competitorsService.findOne(competitorId);
+    return this.checkCompetitor(competitor);
+  }
+
+  /** Checks every active listing of a product, ignoring check intervals. */
+  async scrapeProductById(productId: string): Promise<PriceCheckResultDto[]> {
+    const competitors = await this.competitorsService.findAllForProduct(productId);
+    const active = competitors.filter((competitor) => competitor.isActive);
+
+    return this.mapWithConcurrency(active, this.config.concurrency, (competitor) =>
+      this.checkCompetitor(competitor),
+    );
+  }
+
+  async getStatus(): Promise<ScraperStatusDto> {
+    return {
+      enabled: this.config.enabled,
+      driver: this.priceSource.driver,
+      cron: this.config.cron,
+      running: this.isRunning,
+      batchSize: this.config.batchSize,
+      concurrency: this.config.concurrency,
+      respectRobots: this.config.respectRobots,
+      dueNow: await this.competitorsService.countDueForScrape(),
+      lastRunAt: this.lastRunAt?.toISOString() ?? null,
+      lastRun: this.lastRun,
+    };
+  }
+
+  private async executeSweep(
+    runId: string,
+    trigger: 'schedule' | 'manual',
+    startedAt: Date,
+  ): Promise<ScrapeRunResultDto> {
+    const due = await this.competitorsService.findDueForScrape(this.config.batchSize);
+
+    if (due.length === 0) {
+      this.logger.log(`Sweep ${runId} (${trigger}): no listings due.`);
+      return this.finish(this.emptyRun(runId, startedAt));
+    }
+
+    this.logger.log(`Sweep ${runId} (${trigger}): checking ${due.length} listing(s).`);
+
+    const results = await this.mapWithConcurrency(due, this.config.concurrency, (competitor) =>
+      this.checkCompetitor(competitor),
+    );
+
+    const summary: ScrapeRunResultDto = {
+      runId,
+      processed: results.length,
+      succeeded: results.filter((result) => result.error === null).length,
+      failed: results.filter((result) => result.error !== null).length,
+      changed: results.filter((result) => result.priceChanged).length,
+      significantChanges: results.filter((result) => result.significantChange).length,
+      undercuts: results.filter((result) => result.undercutsTargetPrice).length,
+      durationMs: Date.now() - startedAt.getTime(),
+      startedAt: startedAt.toISOString(),
+      results,
+    };
+
+    this.logger.log(
+      `Sweep ${runId} done in ${summary.durationMs}ms: ` +
+        `${summary.succeeded} ok, ${summary.failed} failed, ${summary.changed} price change(s), ` +
+        `${summary.undercuts} undercut(s).`,
+    );
+
+    return this.finish(summary);
   }
 
   /**
    * Fetches one competitor price and persists the outcome.
-   * Never throws: a single broken product must not abort the sweep.
+   * Never throws: a single broken listing must not abort the sweep.
    */
-  private async checkProduct(product: Product): Promise<PriceCheckResultDto> {
+  private async checkCompetitor(competitor: Competitor): Promise<PriceCheckResultDto> {
     try {
-      const fetched = await this.priceFetcher.fetch(
-        product.competitorUrl,
-        product.currentPrice,
-        product.currency,
-      );
+      const observation = await this.priceSource.fetch({
+        url: competitor.url,
+        host: competitor.host,
+        selector: competitor.priceSelector,
+        attribute: competitor.priceAttribute,
+        lastPrice: competitor.currentPrice,
+        currency: competitor.currency,
+      });
 
-      return await this.productsService.applyPriceObservation(
-        product.id,
-        fetched.price,
-        fetched.source,
-      );
+      return await this.competitorsService.applyPriceObservation(competitor.id, {
+        price: observation.price,
+        currency: observation.currency,
+        inStock: observation.inStock,
+        strategy: observation.strategy,
+        source: observation.source,
+      });
     } catch (error) {
       const reason =
         error instanceof PriceFetchError
@@ -156,8 +268,10 @@ export class ScraperService implements OnModuleInit {
             ? error.message
             : 'Unknown scrape error';
 
-      this.logger.warn(`Scrape failed for product ${product.id} (${product.name}): ${reason}`);
-      return this.productsService.markScrapeFailure(product.id, reason);
+      this.logger.warn(
+        `Scrape failed for listing ${competitor.id} (${competitor.name}): ${reason}`,
+      );
+      return this.competitorsService.markScrapeFailure(competitor.id, reason);
     }
   }
 
@@ -187,28 +301,6 @@ export class ScraperService implements OnModuleInit {
     return results;
   }
 
-  private async buildStatus(): Promise<ScraperStatusDto> {
-    // Direct repository use: cheap count of products whose interval has elapsed.
-    const dueNow = await this.productsRepository
-      .createQueryBuilder('product')
-      .where('product.isActive = true')
-      .andWhere(
-        "(product.last_checked_at IS NULL OR product.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute'))",
-      )
-      .getCount();
-
-    return {
-      enabled: this.config.enabled,
-      cron: this.config.cron,
-      running: this.isRunning,
-      batchSize: this.config.batchSize,
-      concurrency: this.config.concurrency,
-      dueNow,
-      lastRunAt: this.lastRunAt?.toISOString() ?? null,
-      lastRun: this.lastRun,
-    };
-  }
-
   private finish(summary: ScrapeRunResultDto): ScrapeRunResultDto {
     this.lastRun = summary;
     this.lastRunAt = new Date();
@@ -223,6 +315,7 @@ export class ScraperService implements OnModuleInit {
       failed: 0,
       changed: 0,
       significantChanges: 0,
+      undercuts: 0,
       durationMs: Date.now() - startedAt.getTime(),
       startedAt: startedAt.toISOString(),
       results: [],

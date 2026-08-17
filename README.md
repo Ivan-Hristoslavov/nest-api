@@ -1,202 +1,264 @@
 # nest-api — Price Intelligence API
 
-Competitor price tracking service. NestJS + TypeORM connected directly to a cloud Supabase PostgreSQL instance, documented with OpenAPI, protected by an API-key guard.
+Competitor price tracking as a paid API. NestJS + TypeORM on Supabase PostgreSQL, real web scraping, alerting, analytics, and self-service accounts provisioned by payment webhooks.
 
 ---
 
-## 1. Stack
+## 1. What it does
 
-| Concern        | Choice                                                  |
-| -------------- | ------------------------------------------------------- |
-| Framework      | NestJS 11 (TypeScript, strict null checks)              |
-| Database       | Supabase PostgreSQL 17 via the session pooler           |
-| ORM            | TypeORM 0.3 (`@nestjs/typeorm`), repository pattern     |
-| Validation     | `class-validator` + `class-transformer` DTOs            |
-| Docs           | OpenAPI 3 / Swagger UI at `/api/docs`                   |
-| Scheduling     | `@nestjs/schedule` dynamic cron job                     |
-| Auth           | `X-API-KEY` header, constant-time comparison            |
-| Hardening      | `helmet`, CORS allowlist, `@nestjs/throttler`           |
+1. You register products and the competitor listings you want watched.
+2. A scheduled sweep fetches each listing, extracts the price and stores it.
+3. Movements beyond a threshold, undercuts and all-time lows raise alerts and go out to Slack or a webhook.
+4. Analytics endpoints answer "who sets the market price, which way is it moving, where are we losing".
+5. Customers pay through Paddle or Lemon Squeezy; the webhook activates their account and issues their API key.
 
 ---
 
-## 2. Setup
+## 2. Stack
 
-### 2.1 Install
+| Concern | Choice |
+| --- | --- |
+| Framework | NestJS 11 (TypeScript, strict null checks) |
+| Database | Supabase PostgreSQL 17 via the session pooler |
+| ORM | TypeORM 0.3, migrations, repository pattern |
+| Scraping | axios + cheerio, robots.txt aware, per-host rate limiting |
+| Scheduling | `@nestjs/schedule` dynamic cron |
+| Payments | Paddle / Lemon Squeezy webhooks (merchant of record) |
+| Auth | `X-API-KEY`, hashed in the database, constant-time operator keys |
+| Docs | OpenAPI 3 at `/api/docs` |
+| Hardening | helmet, CORS allowlist, `@nestjs/throttler`, HMAC webhook signatures |
+
+---
+
+## 3. Setup
 
 ```bash
 npm install
 ```
 
-### 2.2 Configure
-
-`.env` is already filled in with your Supabase credentials. The only value that is not obvious from the dashboard is the pooler host, which was verified against the live pooler:
+`.env` is filled in. The values that matter most:
 
 ```
-DB_HOST=aws-1-eu-west-3.pooler.supabase.com   # project hvbmnlvknptlclhxlxbi lives in eu-west-3
-DB_PORT=5432                                   # session pooler (DDL + synchronize)
-DB_USERNAME=postgres.hvbmnlvknptlclhxlxbi
-DB_NAME=postgres
+DB_HOST=aws-1-eu-west-3.pooler.supabase.com   # verified against the live pooler
+SCRAPER_DRIVER=http                            # http = real pages, simulation = generated
+PADDLE_WEBHOOK_SECRET=...                      # required for billing
 ```
 
-Use port `6543` instead if you deploy to a serverless platform — that is the transaction pooler; it does not support prepared statements, so keep `DB_SYNCHRONIZE=false` and use migrations there.
+Apply the schema, seed a demo catalog, run:
 
-### 2.3 Run
+```bash
+npm run migration:run
+```
+
+```bash
+npm run seed
+```
 
 ```bash
 npm run start:dev
 ```
 
-On first boot `DB_SYNCHRONIZE=true` creates `products`, `price_history` and the `products_scrape_status_enum` type in your Supabase database.
-
-| URL                                  | What                              |
-| ------------------------------------ | --------------------------------- |
-| http://localhost:3000/api/docs       | Swagger UI (click **Authorize**)  |
-| http://localhost:3000/api/docs-json  | Raw OpenAPI document              |
-| http://localhost:3000/api/v1         | REST API                          |
-| http://localhost:3000/health         | Public probe (no API key)         |
-
-### 2.4 Try it
-
-```bash
-curl -X POST http://localhost:3000/api/v1/products \
-  -H "X-API-KEY: pk_dev_9f2b7c41a5e84d16b0c3ee77a1d24f80" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Sony WH-1000XM5","targetUrl":"https://shop.example.com/p/1","competitorUrl":"https://competitor.example.com/p/1","currentPrice":309.00,"targetPrice":279.00}'
-```
-
-Then trigger a price check for that product:
-
-```bash
-curl -X POST "http://localhost:3000/api/v1/scraper/products/<PRODUCT_ID>/refresh" -H "X-API-KEY: pk_dev_9f2b7c41a5e84d16b0c3ee77a1d24f80"
-```
+| URL | What |
+| --- | --- |
+| http://localhost:3000/api/docs | Swagger UI — click **Authorize**, paste `API_KEY` |
+| http://localhost:3000/api/v1 | REST API |
+| http://localhost:3000/health | Public probe |
 
 ---
 
-## 3. Project structure
+## 4. Project structure
 
 ```
 src/
-├── main.ts                     # bootstrap: helmet, CORS, prefix, ValidationPipe, Swagger
-├── app.module.ts               # ConfigModule, TypeOrmModule.forRootAsync, global guards/filter
-├── swagger.ts                  # OpenAPI document + Swagger UI setup
-├── config/
-│   ├── env.validation.ts       # whitelist + validation of every env var (fails fast at boot)
-│   └── configuration.ts        # typed, nested runtime configuration
+├── main.ts                     # bootstrap: rawBody, helmet, CORS, prefix, pipes, Swagger
+├── app.module.ts               # config, TypeORM, global guards/filter
+├── config/                     # env whitelist + validation, typed configuration
 ├── database/
-│   ├── typeorm-options.factory.ts  # shared connection options (app + CLI)
-│   └── data-source.ts          # DataSource for the TypeORM migration CLI
-├── common/
-│   ├── guards/api-key.guard.ts # global X-API-KEY guard
-│   ├── decorators/             # @Public(), @ApiKeyAuth()
-│   ├── dto/                    # pagination, page envelope, error shape
-│   ├── filters/                # exception -> consistent JSON, PG error codes -> HTTP
-│   ├── interceptors/           # access log
-│   ├── swagger/                # generic paginated-response schema helper
-│   └── transformers/           # numeric column -> number
+│   ├── migrations/             # InitialSchema, CompetitorsAlertsBilling, backfill
+│   ├── data-source.ts          # TypeORM CLI entrypoint
+│   └── seed.ts                 # demo catalog, idempotent
+├── common/                     # guard, decorators, DTOs, filter, access-log middleware
 ├── products/
-│   ├── entities/product.entity.ts
-│   ├── entities/price-history.entity.ts
-│   ├── dto/                    # create, update, query, record-price, price-check-result
-│   ├── products.service.ts     # CRUD + transactional price application
-│   ├── products.controller.ts
-│   └── products.module.ts
+│   ├── entities/               # Product, Competitor, PriceHistory
+│   ├── products.service.ts     # CRUD, stats
+│   ├── competitors.service.ts  # listings + the transactional price write path
+│   └── *.controller.ts
 ├── scraper/
-│   ├── price-fetcher.service.ts  # simulated competitor fetch — the swap-in seam
-│   ├── scraper.service.ts        # cron sweep, concurrency, overlap protection
-│   ├── scraper.controller.ts
-│   └── scraper.module.ts
-└── health/                     # public liveness + Supabase probe
+│   ├── fetchers/               # http (axios) and simulation drivers behind one interface
+│   ├── parsers/                # price extraction + per-retailer site profiles
+│   ├── http/                   # robots.txt client, per-host rate limiter
+│   └── scraper.service.ts      # cron sweep, concurrency, graceful shutdown
+├── alerts/                     # Alert entity, Slack and webhook notifiers
+├── analytics/                  # per-product and portfolio analytics
+├── billing/                    # User, BillingEvent, webhook signatures, key issuance
+└── health/
 ```
 
 ---
 
-## 4. Endpoints
+## 5. Endpoints
 
-All routes require `X-API-KEY` except `/health`.
+Everything except `/health` and the billing webhook needs `X-API-KEY`.
 
-| Method | Path                                       | Purpose                                              |
-| ------ | ------------------------------------------ | ---------------------------------------------------- |
-| POST   | `/api/v1/products`                         | Track a new product                                  |
-| GET    | `/api/v1/products`                         | List — search, filters, sorting, pagination          |
-| GET    | `/api/v1/products/stats`                   | Aggregate counters for dashboards                    |
-| GET    | `/api/v1/products/:id`                     | One product                                          |
-| PATCH  | `/api/v1/products/:id`                     | Partial update                                       |
-| DELETE | `/api/v1/products/:id`                     | Delete product + history (cascade)                   |
-| GET    | `/api/v1/products/:id/history`             | Price observations, newest first                     |
-| POST   | `/api/v1/products/:id/prices`              | Record a price observed elsewhere                    |
-| GET    | `/api/v1/scraper/status`                   | Scheduler state, products due, last sweep summary    |
-| POST   | `/api/v1/scraper/run`                      | Run a sweep now                                      |
-| POST   | `/api/v1/scraper/products/:id/refresh`     | Re-check one product, ignoring its interval          |
-| GET    | `/health`                                  | Public liveness + database probe                     |
-
-List query parameters: `search`, `isActive`, `scrapeStatus`, `minPrice`, `maxPrice`, `undercutOnly`, `sortBy`, `sortOrder`, `limit`, `offset`.
-
----
-
-## 5. How the pieces work
-
-### API key guard
-
-`ApiKeyGuard` is registered globally through `APP_GUARD`, so **every** route is protected unless it carries `@Public()`. It hashes both the presented key and the configured keys with SHA-256 and compares with `timingSafeEqual`, which keeps the comparison constant-time and immune to length-based probing. `API_KEYS` accepts a comma-separated list so a key can be rotated without downtime: add the new key, let clients migrate, then drop the old one.
-
-### Data model
-
-`products` holds the current state; `price_history` is an append-only log of observations. That split is what makes this a price *intelligence* API rather than a price *storage* API — trends, undercut detection and repricing rules all read from the history.
-
-Money is stored as `numeric(12,2)`, never floating point, and converted to `number` at the entity boundary by `NumericColumnTransformer`.
-
-### Applying a price
-
-`ProductsService.applyPriceObservation()` is the single write path used by both the scraper and the manual endpoint. It runs in one transaction with a `SELECT ... FOR UPDATE` on the product row, so two concurrent checks cannot interleave and produce inconsistent history. It writes a history row **only when the price actually changed** — otherwise an hourly sweep would append millions of identical rows per year. It also maintains `lowestPrice` / `highestPrice`, resets the failure state, and flags moves beyond `SCRAPER_ALERT_THRESHOLD_PERCENT` plus undercuts of `targetPrice`.
-
-### Scraper
-
-`ScraperService` registers its cron job dynamically from `SCRAPER_CRON`, so the schedule changes with an env var rather than a code change. Per sweep it takes the products whose own `checkIntervalMinutes` has elapsed, oldest first, up to `SCRAPER_BATCH_SIZE`, and processes them through a fixed worker pool of `SCRAPER_CONCURRENCY`. Overlapping sweeps are skipped. A product that fails 10 checks in a row is deactivated so a dead URL stops burning requests.
-
-`PriceFetcherService.fetch()` is the **only** simulated part: a bounded random walk around the last known price with a 5% simulated failure rate. Replace its body with a real HTTP request plus a per-retailer parser (or a scraping provider) and nothing else in the codebase changes.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/api/v1/products` | Track a product (creates its primary listing) |
+| GET | `/api/v1/products` | Search, filter, sort, paginate |
+| GET | `/api/v1/products/stats` | Aggregate counters |
+| GET/PATCH/DELETE | `/api/v1/products/:id` | Read, update, delete |
+| GET | `/api/v1/products/:id/history` | Price observations |
+| POST | `/api/v1/products/:id/prices` | Manual price for the primary listing |
+| GET/POST | `/api/v1/products/:id/competitors` | List / add rival listings |
+| PATCH/DELETE | `…/competitors/:competitorId` | Update / remove a listing |
+| PATCH | `…/competitors/:competitorId/promote` | Make it the primary listing |
+| POST | `…/competitors/:competitorId/prices` | Manual price for one rival |
+| GET | `/api/v1/scraper/status` | Driver, schedule, listings due, last sweep |
+| POST | `/api/v1/scraper/run` | Sweep everything that is due |
+| **POST** | **`/api/v1/scraper/trigger/:id`** | **Scrape one product now (real fetch)** |
+| POST | `/api/v1/scraper/competitors/:id/refresh` | Re-check one listing now |
+| GET | `/api/v1/analytics/products/:id?days=30` | Min/max/avg, volatility, trend, series |
+| GET | `/api/v1/analytics/overview` | Portfolio position and biggest movers |
+| GET | `/api/v1/alerts` | Price alerts, newest first |
+| PATCH | `/api/v1/alerts/:id/acknowledge` | Mark handled |
+| POST | `/api/v1/billing/webhook` | Paddle / Lemon Squeezy events |
+| GET | `/api/v1/billing/events` | Recent webhooks, for support |
+| GET | `/health` | Public liveness + database probe |
 
 ---
 
-## 6. Moving off `synchronize`
+## 6. Scraping
 
-`synchronize: true` is fine for this first boot and dangerous afterwards — it will silently drop columns to match the entities. Once the schema exists:
+### Drivers
+
+`SCRAPER_DRIVER=http` fetches real pages. `simulation` generates plausible movement without touching the network — used by the demo and the e2e suite, so neither depends on a retailer being reachable.
+
+### Extraction
+
+`PriceParserService` tries, in order:
+
+1. **selector** — CSS selector configured on the listing;
+2. **site-profile** — a per-retailer entry in [site-profiles.ts](src/scraper/parsers/site-profiles.ts);
+3. **json-ld** — `schema.org/Product` offers;
+4. **microdata** — `itemprop="price"`;
+5. **meta** — OpenGraph / `product:price:amount`;
+6. **heuristic** — selectors common across storefronts.
+
+The amount parser handles locale ambiguity: `1.299,00 €`, `1,299.00 USD` and `1 299,00 лв.` all become `1299`.
+
+### vario.bg
+
+Verified against a live page. It publishes **two** prices — 428.00 лв. and 218.83 € — so the generic microdata strategy would silently store euros in a BGN column. The profile pins the BGN node:
+
+```ts
+{
+  host: 'vario.bg',
+  priceSelectors: ['#subtotal_price_bgn', 'em.current_price', '.current_price'],
+  currency: 'BGN',
+}
+```
+
+Adding a retailer means one entry in that file. A `priceSelector` stored on a listing always overrides it.
+
+### Manners
+
+`robots.txt` is honoured including `Crawl-delay`; requests to one host are serialised with a minimum gap while different hosts run in parallel; 429/5xx are retried with backoff and honour `Retry-After`; 403/404 and unparsable pages are not retried. A listing that fails ten times in a row is deactivated and raises an alert.
+
+**Scraping is not automatically legal.** robots.txt is a technical signal, not permission — many retailers forbid it in their terms of service regardless. Check the terms of every site you add.
+
+---
+
+## 7. Alerting
+
+`price_drop`, `price_rise`, `undercut`, `all_time_low`, `out_of_stock`, `scrape_failing`.
+
+Alerts are **persisted before delivery**, so a Slack outage cannot lose one, and a failed alert can be inspected and retried. Channels are independent — Slack failing does not stop the webhook. A cooldown (`ALERT_COOLDOWN_MINUTES`) stops a listing oscillating around the threshold from paging someone hourly.
+
+```
+ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+ALERT_WEBHOOK_URL=https://your-app.example.com/hooks/price
+ALERT_WEBHOOK_SECRET=...   # payloads signed HMAC-SHA256 in X-Signature
+```
+
+With neither set, alerts are still stored, with `deliveryStatus: "skipped"`.
+
+---
+
+## 8. Billing and API keys
+
+### Flow
+
+```
+customer pays on your frontend
+        ↓
+Paddle / Lemon Squeezy → POST /api/v1/billing/webhook
+        ↓
+signature verified over the RAW body (HMAC-SHA256, constant time, freshness window)
+        ↓
+event id claimed under a unique index  → retries collapse into one
+        ↓
+user found or created → status=active, plan + limits applied
+        ↓
+first time only: a 256-bit API key is generated, hashed, stored
+        ↓
+plaintext returned once — email it here; it can never be retrieved again
+```
+
+### Keys are never stored in plaintext
+
+The `users` table holds a SHA-256 hash plus a display prefix. A database leak does not compromise anyone's account. Rotation is destructive on purpose: issuing a new key kills the old one immediately.
+
+### Two kinds of key
+
+- **Customer keys** — issued by billing, looked up in the database, must belong to an `active` account whose access window has not lapsed. A genuine key on a lapsed account gets **403 with a "renew your subscription" message**, not 401 — so a client can tell "pay us" from "check your credentials".
+- **Operator keys** — `API_KEY` / `API_KEYS` from the environment. They exist because the system must be administrable before the first customer exists. Compared in constant time, never hit the database.
+
+Lookups are cached for `API_KEY_CACHE_TTL_MS` (default 30s), including misses, so an invalid-key flood cannot become a database flood.
+
+### Testing the webhook locally
 
 ```bash
-# 1. turn it off
-#    .env: DB_SYNCHRONIZE=false
+node -e "const c=require('crypto'),b=JSON.stringify({event_id:'evt_'+Date.now(),event_type:'subscription.created',data:{id:'sub_1',customer:{email:'you@example.com'}}}),t=Math.floor(Date.now()/1000);require('fs').writeFileSync('/tmp/wh.json',b);console.log('ts='+t+';h1='+c.createHmac('sha256',process.env.PADDLE_WEBHOOK_SECRET).update(t+':'+b).digest('hex'))"
+```
 
-# 2. capture the current schema as the baseline migration
-npm run migration:generate -- src/database/migrations/InitialSchema
+Then POST `/tmp/wh.json` with that value as the `Paddle-Signature` header.
 
-# 3. apply migrations from now on
+---
+
+## 9. Migrations
+
+`DB_SYNCHRONIZE` is **false**. Schema changes go through migrations:
+
+```bash
+npm run migration:generate -- src/database/migrations/YourChange
+```
+
+```bash
 npm run migration:run
 ```
 
-The CLI uses `src/database/data-source.ts`, which reuses the same connection options and forces `synchronize: false`.
+Three migrations ship: the baseline schema (idempotent, so an existing `synchronize`-built database adopts it cleanly), the competitors/alerts/billing tables, and a data backfill that gives every pre-existing product its primary listing — without it those products would be silently skipped by every sweep.
 
 ---
 
-## 7. Scripts
+## 10. Scripts
 
 ```bash
 npm run start:dev        # watch mode
 npm run build            # compile to dist/
-npm run start:prod       # run the compiled build
-npm test                 # unit tests (no database needed)
-npm run test:e2e         # end-to-end tests (needs a reachable database)
+npm test                 # unit tests, no database needed
+npm run test:e2e         # end-to-end, needs a reachable database
 npm run lint             # eslint --fix
+npm run seed             # demo catalog (add -- --reset to wipe first)
 npm run migration:run    # apply pending migrations
 ```
 
 ---
 
-## 8. Security notes
+## 11. Before this earns money
 
-- `.env` is gitignored. The credentials in it were shared in plain text during setup — **rotate the database password** (Supabase → Project Settings → Database → Reset password) and replace the sample `API_KEY` with a long random secret before this touches anything real:
-  ```bash
-  node -e "console.log('pk_' + require('crypto').randomBytes(24).toString('hex'))"
-  ```
-- `DB_SSL_REJECT_UNAUTHORIZED=false` accepts Supabase's pooler certificate without verifying the chain. For strict verification, download the project CA certificate from the dashboard and pass it as `ssl.ca` in `typeorm-options.factory.ts`.
-- `CORS_ORIGINS=*` is a development default. Set an explicit comma-separated allowlist before deploying.
-- The API key is a service-to-service secret. It is never logged — the access-log interceptor deliberately records no headers.
-- `SUPABASE_JWKS_URL` is present in `.env` for the next step: verifying Supabase Auth JWTs for end-user requests, alongside the API key used for machine clients.
+- **Rotate the credentials.** The database password and Supabase keys were shared in plain text during setup, and `API_KEY` is a sample.
+- **Set a real `PADDLE_WEBHOOK_SECRET`.** Without it the webhook rejects everything — which is the correct failure mode, but it means no customer is ever provisioned.
+- **Send the key to the customer.** `BillingService` issues it and logs that it must be delivered; wiring the actual email is the one deliberate gap, because it needs an email provider you choose.
+- **Set `CORS_ORIGINS`** to your frontend instead of `*`.
+- **Check each retailer's terms** before adding it.
+- **Enforce `productLimit`.** The plan limits are stored on the user; the check at product-creation time is not wired up yet.

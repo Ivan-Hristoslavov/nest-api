@@ -5,6 +5,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AlertsModule } from './alerts/alerts.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { BillingModule } from './billing/billing.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 import { Configuration, configuration } from './config/configuration';
@@ -46,8 +49,13 @@ import { ScraperModule } from './scraper/scraper.module';
     // Powers the recurring competitor price sweep in ScraperModule.
     ScheduleModule.forRoot(),
 
+    // BillingModule first: ApiKeyGuard resolves customer keys through the
+    // UsersService it exports.
+    BillingModule,
     ProductsModule,
+    AlertsModule,
     ScraperModule,
+    AnalyticsModule,
     HealthModule,
   ],
   providers: [
