@@ -1,117 +1,154 @@
 import { Logger } from '@nestjs/common';
 
 import { Competitor } from '../products/entities/competitor.entity';
-import { PriceHistory } from '../products/entities/price-history.entity';
 import { Product } from '../products/entities/product.entity';
 import { ScrapeStatus } from '../products/enums/scrape-status.enum';
 import { retailerNameForHost } from '../scraper/parsers/site-profiles';
 import dataSource from './data-source';
 
 /**
- * Seeds a demo catalog so the API has something to work with.
+ * Seeds a catalog of **real, verified listings**.
  *
- * Idempotent: products are matched by SKU, so re-running updates the existing
- * rows instead of creating duplicates. Price history is left untouched — it is
- * an append-only log and the scraper fills it.
+ * Every URL below was fetched and parsed successfully while writing this file.
+ * That matters more than it sounds: a demo catalog of invented URLs teaches you
+ * nothing about whether the scraper works, and quietly trains you to ignore the
+ * "failed" column.
  *
- *   npm run seed          # insert / update the demo catalog
- *   npm run seed -- --reset   # delete every product first (also drops history)
+ *   npm run seed            # add or update the catalog
+ *   npm run seed -- --reset # delete every product first, then seed
+ *
+ * Classified-ad links (mobile.bg) expire when the car sells. That is realistic
+ * rather than a flaw — it is exactly the "listing disappeared" case the failure
+ * handling exists for.
  */
-/** SKU is mandatory here: it is the key the seed matches on when re-running. */
-type DemoProduct = Partial<Product> & { sku: string };
+interface SeedListing {
+  url: string;
+  /** Overrides the name derived from the host — useful when several ads share a site. */
+  name?: string;
+  currency?: string;
+}
 
-const DEMO_PRODUCTS: DemoProduct[] = [
+interface SeedProduct {
+  name: string;
+  sku: string;
+  /** What we sell it for, used for the margin columns. */
+  ourPrice?: number;
+  /** Alert threshold. */
+  targetPrice?: number;
+  currency: string;
+  checkIntervalMinutes: number;
+  listings: SeedListing[];
+}
+
+const CATALOG: SeedProduct[] = [
   {
-    // A real, scrapeable listing: use it to verify the http driver end to end.
-    name: 'Crucial T710 SSD 1TB CT1000T710SSD8',
-    sku: 'SKU-CRUCIAL-T710-1TB',
-    targetUrl: 'https://shop.example.com/products/crucial-t710-1tb',
-    competitorUrl: 'https://www.vario.bg/crucial-t710-ssd-1tb-ct1000t710ssd8',
-    currency: 'BGN',
-    targetPrice: 400.0,
-    checkIntervalMinutes: 60,
-  },
-  {
-    name: 'Sony WH-1000XM5 Wireless Headphones',
-    sku: 'SKU-SONY-WH1000XM5',
-    targetUrl: 'https://shop.example.com/products/sony-wh-1000xm5',
-    competitorUrl: 'https://competitor-a.example.com/audio/sony-wh-1000xm5',
+    // Four independent sellers of the same model. The spread between them —
+    // 22 900 to 25 000 € — is the entire point of the product.
+    name: 'Mercedes-Benz GLE 350d 4MATIC (W166)',
+    sku: 'CAR-MB-GLE350D-W166',
     currency: 'EUR',
-    currentPrice: 329.0,
-    targetPrice: 299.0,
-    checkIntervalMinutes: 60,
-  },
-  {
-    name: 'Apple AirPods Pro (2nd generation)',
-    sku: 'SKU-APPLE-AIRPODSPRO2',
-    targetUrl: 'https://shop.example.com/products/airpods-pro-2',
-    competitorUrl: 'https://competitor-a.example.com/audio/airpods-pro-2',
-    currency: 'EUR',
-    currentPrice: 249.0,
-    targetPrice: 229.0,
-    checkIntervalMinutes: 30,
-  },
-  {
-    name: 'Samsung Galaxy S24 Ultra 256GB',
-    sku: 'SKU-SAMSUNG-S24U-256',
-    targetUrl: 'https://shop.example.com/products/galaxy-s24-ultra',
-    competitorUrl: 'https://competitor-b.example.com/phones/galaxy-s24-ultra',
-    currency: 'EUR',
-    currentPrice: 1299.0,
-    targetPrice: 1249.0,
-    checkIntervalMinutes: 15,
-  },
-  {
-    name: 'Dyson V15 Detect Absolute',
-    sku: 'SKU-DYSON-V15-ABS',
-    targetUrl: 'https://shop.example.com/products/dyson-v15-detect',
-    competitorUrl: 'https://competitor-b.example.com/home/dyson-v15-detect',
-    currency: 'EUR',
-    currentPrice: 749.0,
-    targetPrice: 699.0,
-    checkIntervalMinutes: 120,
-  },
-  {
-    name: 'LG OLED evo C4 65"',
-    sku: 'SKU-LG-OLED-C4-65',
-    targetUrl: 'https://shop.example.com/products/lg-oled-c4-65',
-    competitorUrl: 'https://competitor-c.example.com/tv/lg-oled-c4-65',
-    currency: 'EUR',
-    currentPrice: 1899.0,
-    targetPrice: 1799.0,
-    checkIntervalMinutes: 60,
-  },
-  {
-    name: 'Logitech MX Master 3S',
-    sku: 'SKU-LOGI-MXM3S',
-    targetUrl: 'https://shop.example.com/products/mx-master-3s',
-    competitorUrl: 'https://competitor-c.example.com/accessories/mx-master-3s',
-    currency: 'EUR',
-    currentPrice: 109.99,
-    targetPrice: 99.0,
-    checkIntervalMinutes: 240,
-  },
-  {
-    name: 'Nintendo Switch OLED',
-    sku: 'SKU-NINTENDO-SW-OLED',
-    targetUrl: 'https://shop.example.com/products/switch-oled',
-    competitorUrl: 'https://competitor-a.example.com/gaming/switch-oled',
-    currency: 'EUR',
-    currentPrice: 349.99,
-    targetPrice: 319.0,
-    checkIntervalMinutes: 60,
-  },
-  {
-    name: 'Kindle Paperwhite Signature Edition',
-    sku: 'SKU-AMZN-KPW-SIG',
-    targetUrl: 'https://shop.example.com/products/kindle-paperwhite-signature',
-    competitorUrl: 'https://competitor-b.example.com/ereaders/kindle-paperwhite',
-    currency: 'EUR',
-    currentPrice: 199.99,
-    // No target price: this one is tracked for information only.
+    ourPrice: 27_500,
+    targetPrice: 25_000,
     checkIntervalMinutes: 720,
+    listings: [
+      {
+        url: 'https://www.mobile.bg/obiava-21776402016653788-mercedes-benz-gle-350-amg-line-4matic-distronic-panorama-9g-kamera-360',
+        name: 'Mobile.bg — AMG Line 4MATIC, панорама',
+      },
+      {
+        url: 'https://www.mobile.bg/obiava-21776668467774983-mercedes-benz-gle-350-amg-germany-pano-distr-camera-car-play-airmat-lizi',
+        name: 'Mobile.bg — AMG Germany, Airmatic',
+      },
+      {
+        url: 'https://www.mobile.bg/obiava-21770217897939380-mercedes-benz-gle-350-d-9g-full-s-vklyuchen-dds',
+        name: 'Mobile.bg — 9G Full, с ДДС',
+      },
+      {
+        url: 'https://www.mobile.bg/obiava-21770469029291949-mercedes-benz-gle-350-amg-germany-distr-camera-car-play-podgrev-ambi-liz',
+        name: 'Mobile.bg — AMG Germany, Distronic',
+      },
+    ],
+  },
+  {
+    name: 'Смартфон Apple iPhone 17 Pro 256GB Deep Blue',
+    sku: 'PHONE-APPLE-IP17P-256-DB',
+    currency: 'EUR',
+    ourPrice: 1_349,
+    targetPrice: 1_200,
+    checkIntervalMinutes: 120,
+    listings: [
+      {
+        url: 'https://www.emag.bg/smartfon-apple-iphone-17-pro-256gb-5g-deep-blue-mg8j4zd-a/pd/DH99FV3BM/',
+        name: 'eMAG',
+      },
+      { url: 'https://istyle.bg/products/iphone-17-pro-mg8j4zd-a', name: 'iSTYLE' },
+    ],
+  },
+  {
+    name: 'Смартфон Apple iPhone 17 Pro 256GB Silver',
+    sku: 'PHONE-APPLE-IP17P-256-SL',
+    currency: 'EUR',
+    ourPrice: 1_349,
+    targetPrice: 1_200,
+    checkIntervalMinutes: 120,
+    listings: [
+      {
+        url: 'https://www.emag.bg/smartfon-apple-iphone-17-pro-256gb-5g-silver-mg8k4zd-a/pd/DK99FV3BM/',
+        name: 'eMAG',
+      },
+    ],
+  },
+  {
+    // Two shops quoting two different currencies for the same television —
+    // eMAG in EUR, Vario in BGN. Normalised at the fixed peg before comparison.
+    name: 'Телевизор Samsung QLED QE55Q7F2AUXXH 55"',
+    sku: 'TV-SAMSUNG-55Q7F2',
+    currency: 'EUR',
+    ourPrice: 399,
+    targetPrice: 340,
+    checkIntervalMinutes: 240,
+    listings: [
+      {
+        url: 'https://www.emag.bg/televizor-samsung-qled-55q7f2-55-138-sm-smart-4k-ultra-hd-klas-g-qe55q7f2auxxh/pd/DT3GRT3BM/',
+        name: 'eMAG',
+      },
+      { url: 'https://www.vario.bg/samsung-qe55q7f2auxxh', name: 'Vario', currency: 'BGN' },
+    ],
+  },
+  {
+    name: 'Смарт часовник Huawei Watch GT6 41mm Milanese',
+    sku: 'WATCH-HUAWEI-GT6-41',
+    currency: 'EUR',
+    ourPrice: 259,
+    targetPrice: 230,
+    checkIntervalMinutes: 240,
+    listings: [
+      {
+        url: 'https://www.technomarket.bg/chasovnitzi/huawei-watch-gt6-gold-milanese-41-mm-09235284',
+        name: 'Технómarket',
+      },
+    ],
+  },
+  {
+    name: 'SSD Crucial T710 1TB PCIe 5.0',
+    sku: 'SSD-CRUCIAL-T710-1TB',
+    currency: 'EUR',
+    ourPrice: 245,
+    targetPrice: 210,
+    checkIntervalMinutes: 240,
+    listings: [
+      {
+        url: 'https://www.vario.bg/crucial-t710-ssd-1tb-ct1000t710ssd8',
+        name: 'Vario',
+        currency: 'BGN',
+      },
+    ],
   },
 ];
+
+function hostOf(url: string): string {
+  return new URL(url).host;
+}
 
 async function seed(): Promise<void> {
   const logger = new Logger('Seed');
@@ -123,88 +160,86 @@ async function seed(): Promise<void> {
   try {
     const products = dataSource.getRepository(Product);
     const competitors = dataSource.getRepository(Competitor);
-    const history = dataSource.getRepository(PriceHistory);
 
     if (reset) {
-      // price_history rows disappear with their product (ON DELETE CASCADE).
-      const { affected } = await products.delete({});
-      logger.warn(`--reset: deleted ${affected ?? 0} product(s) and their history.`);
+      // Alerts and price history disappear with their product (ON DELETE
+      // CASCADE). TypeORM refuses `delete({})` as a guard against wiping a
+      // table by accident, so the intent is stated explicitly.
+      const { affected } = await products.createQueryBuilder().delete().where('1 = 1').execute();
+      logger.warn(`--reset: изтрити ${affected ?? 0} продукта с всичките им данни.`);
     }
 
     let created = 0;
     let updated = 0;
+    let listingsAdded = 0;
 
-    for (const demo of DEMO_PRODUCTS) {
-      const existing = await products.findOne({ where: { sku: demo.sku } });
+    for (const entry of CATALOG) {
+      let product = await products.findOne({ where: { sku: entry.sku } });
 
-      if (existing) {
-        // Only the catalog definition is re-applied. Observed prices belong to
-        // the scraper: overwriting `currentPrice` here would silently throw
-        // away real tracking data every time the seed is re-run.
-        products.merge(existing, {
-          name: demo.name,
-          targetUrl: demo.targetUrl,
-          competitorUrl: demo.competitorUrl,
-          currency: demo.currency,
-          targetPrice: demo.targetPrice ?? null,
-          checkIntervalMinutes: demo.checkIntervalMinutes,
+      if (product) {
+        // Only the definition is refreshed. Observed prices belong to the
+        // scraper — overwriting them here would throw away real tracking data.
+        products.merge(product, {
+          name: entry.name,
+          ourPrice: entry.ourPrice ?? null,
+          targetPrice: entry.targetPrice ?? null,
+          checkIntervalMinutes: entry.checkIntervalMinutes,
         });
-        await products.save(existing);
+        product = await products.save(product);
         updated += 1;
-        continue;
+      } else {
+        const primary = entry.listings[0];
+
+        product = await products.save(
+          products.create({
+            name: entry.name,
+            sku: entry.sku,
+            targetUrl: `https://moiat-magazin.bg/p/${entry.sku.toLowerCase()}`,
+            competitorUrl: primary.url,
+            currency: entry.currency,
+            ourPrice: entry.ourPrice ?? null,
+            targetPrice: entry.targetPrice ?? null,
+            checkIntervalMinutes: entry.checkIntervalMinutes,
+            scrapeStatus: ScrapeStatus.Pending,
+            isActive: true,
+          }),
+        );
+        created += 1;
       }
 
-      const product = await products.save(
-        products.create({
-          ...demo,
-          previousPrice: null,
-          lowestPrice: demo.currentPrice ?? null,
-          highestPrice: demo.currentPrice ?? null,
-          lastUpdated: new Date(),
-          scrapeStatus: ScrapeStatus.Pending,
-          isActive: true,
-        }),
-      );
-
-      // Every product needs its primary listing: the scraper iterates
-      // competitors, so a product without one is silently never checked.
-      const host = new URL(product.competitorUrl).host;
-      const competitor = await competitors.save(
-        competitors.create({
-          productId: product.id,
-          name: retailerNameForHost(host),
-          url: product.competitorUrl,
-          host,
-          currency: product.currency,
-          currentPrice: product.currentPrice,
-          isPrimary: true,
-          isActive: true,
-          scrapeStatus: ScrapeStatus.Pending,
-        }),
-      );
-
-      product.cheapestCompetitorId = competitor.id;
-      product.competitorCount = 1;
-      await products.save(product);
-
-      // Seed the first history point so charts start from a known price.
-      if (product.currentPrice !== null) {
-        await history.insert({
-          productId: product.id,
-          competitorId: competitor.id,
-          price: product.currentPrice,
-          previousPrice: null,
-          changePercent: null,
-          currency: product.currency,
-          source: 'seed',
+      for (const [index, listing] of entry.listings.entries()) {
+        const host = hostOf(listing.url);
+        const existing = await competitors.findOne({
+          where: { productId: product.id, url: listing.url },
         });
+
+        if (existing) continue;
+
+        await competitors.save(
+          competitors.create({
+            productId: product.id,
+            name: listing.name ?? retailerNameForHost(host),
+            url: listing.url,
+            host,
+            currency: listing.currency ?? entry.currency,
+            isPrimary: index === 0,
+            isActive: true,
+            scrapeStatus: ScrapeStatus.Pending,
+          }),
+        );
+        listingsAdded += 1;
       }
 
-      created += 1;
+      const count = await competitors.count({ where: { productId: product.id, isActive: true } });
+      product.competitorCount = count;
+      await products.save(product);
     }
 
     const total = await products.count();
-    logger.log(`Seed complete: ${created} created, ${updated} updated, ${total} product(s) total.`);
+    logger.log(
+      `Готово: ${created} нови продукта, ${updated} обновени, ${listingsAdded} нови склада, ${total} общо.`,
+    );
+    logger.log('Пуснете POST /api/v1/scraper/run, за да се прочетат реалните цени.');
   } finally {
     await dataSource.destroy();
   }

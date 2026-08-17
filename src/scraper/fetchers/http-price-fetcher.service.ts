@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 
 import { Configuration, ScraperConfig } from '../../config/configuration';
+import { decodeHtml } from '../http/html-decoder';
 import { HostRateLimiterService } from '../http/host-rate-limiter.service';
 import { RobotsService } from '../http/robots.service';
 import { PriceParserService } from '../parsers/price-parser.service';
@@ -80,7 +81,9 @@ export class HttpPriceFetcherService implements PriceSource {
       maxContentLength: MAX_BODY_BYTES,
       maxBodyLength: MAX_BODY_BYTES,
       decompress: true,
-      responseType: 'text',
+      // Bytes, not text: axios would decode as UTF-8 and quietly mangle the
+      // windows-1251 pages that much of the Bulgarian market still serves.
+      responseType: 'arraybuffer',
       headers: { ...BROWSER_HEADERS, 'User-Agent': this.config.userAgent },
     });
   }
@@ -168,10 +171,10 @@ export class HttpPriceFetcherService implements PriceSource {
   }
 
   private async fetchOnce(url: string): Promise<string> {
-    let response: AxiosResponse<string>;
+    let response: AxiosResponse<Buffer>;
 
     try {
-      response = await this.client.get<string>(url, {
+      response = await this.client.get<Buffer>(url, {
         headers: { Referer: new URL(url).origin },
       });
     } catch (error) {
@@ -199,12 +202,15 @@ export class HttpPriceFetcherService implements PriceSource {
       throw new PriceFetchError(`Unexpected content-type "${contentType}"`, url, false);
     }
 
-    const html = typeof response.data === 'string' ? response.data : String(response.data);
-    if (html.length === 0) {
+    const body = Buffer.from(response.data);
+    if (body.length === 0) {
       throw new PriceFetchError('Empty response body', url, true);
     }
+    if (body.length > MAX_BODY_BYTES) {
+      throw new PriceFetchError(`Response too large (${body.length} bytes)`, url, false);
+    }
 
-    return html;
+    return decodeHtml(body, String(response.headers['content-type'] ?? ''));
   }
 
   /** Honour `Retry-After`, which may be seconds or an HTTP date. */

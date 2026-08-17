@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
@@ -6,6 +12,7 @@ import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { AlertsService, RaiseAlertInput } from '../alerts/alerts.service';
 import { AlertSeverity, AlertType } from '../alerts/enums/alert.enums';
 import { Configuration } from '../config/configuration';
+import { convert, isConvertible } from './currency';
 import { CreateCompetitorDto } from './dto/create-competitor.dto';
 import { PriceCheckResultDto } from './dto/price-check-result.dto';
 import { UpdateCompetitorDto } from './dto/update-competitor.dto';
@@ -68,6 +75,21 @@ export class CompetitorsService {
 
   async create(productId: string, dto: CreateCompetitorDto): Promise<Competitor> {
     await this.assertProductExists(productId);
+
+    // Checked explicitly so the caller learns *which* URL collided. Left to the
+    // unique index, this surfaces as a generic "record already exists", which
+    // reads like a bug rather than "you already track this shop".
+    const duplicate = await this.competitorsRepository.findOne({
+      where: { productId, url: dto.url },
+    });
+
+    if (duplicate) {
+      throw new ConflictException(
+        `Този линк вече се следи за продукта като „${duplicate.name}"${
+          duplicate.isActive ? '' : ' (спрян — активирайте го вместо да го добавяте пак)'
+        }.`,
+      );
+    }
 
     const competitor = await this.competitorsRepository.save(
       this.competitorsRepository.create({
@@ -219,8 +241,20 @@ export class CompetitorsService {
       return this.applyToCompetitor(manager, competitor, product, observation);
     });
 
+    // Alerting is a side effect of a successful price check, never a condition
+    // of one. The price is already committed at this point; letting a failed
+    // alert insert bubble up would make the caller mark the listing as failed
+    // and discard a reading that is, in fact, safely stored.
     for (const alert of alerts) {
-      await this.alertsService.raise(alert);
+      try {
+        await this.alertsService.raise(alert);
+      } catch (error) {
+        this.logger.error(
+          `Цената е записана, но alert-ът (${alert.type}) не бе създаден: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     return result;
@@ -232,7 +266,33 @@ export class CompetitorsService {
    * stop burning requests and start being somebody's problem.
    */
   async markScrapeFailure(competitorId: string, reason: string): Promise<PriceCheckResultDto> {
-    const competitor = await this.findOne(competitorId);
+    // The listing can legitimately disappear mid-sweep — deleted from the UI,
+    // or its product removed. Recording a failure against a row that no longer
+    // exists is not an error worth propagating.
+    const competitor = await this.competitorsRepository.findOne({ where: { id: competitorId } });
+
+    if (!competitor) {
+      this.logger.warn(`Складът ${competitorId} е изчезнал по време на проверката — пропуснат.`);
+      return {
+        productId: '',
+        productName: '',
+        competitorId,
+        competitorName: '',
+        status: ScrapeStatus.Skipped,
+        previousPrice: null,
+        currentPrice: null,
+        changePercent: null,
+        priceChanged: false,
+        significantChange: false,
+        undercutsTargetPrice: false,
+        allTimeLow: false,
+        inStock: null,
+        strategy: null,
+        error: reason,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
     const product = await this.productsRepository.findOneOrFail({
       where: { id: competitor.productId },
     });
@@ -297,7 +357,12 @@ export class CompetitorsService {
     product: Product,
     observation: PriceObservationInput,
   ): Promise<{ result: PriceCheckResultDto; alerts: RaiseAlertInput[] }> {
-    const price = this.round(observation.price);
+    const observedCurrency = observation.currency?.toUpperCase() ?? competitor.currency;
+    const price = this.round(
+      isConvertible(observedCurrency, product.currency)
+        ? convert(observation.price, observedCurrency, product.currency)
+        : observation.price,
+    );
     const previousPrice = competitor.currentPrice;
     const priceChanged = previousPrice === null || previousPrice !== price;
     const changePercent =
@@ -306,13 +371,25 @@ export class CompetitorsService {
         : null;
     const now = new Date();
 
-    // A page stating its own currency wins: it is the authority on what it charges.
-    if (observation.currency && observation.currency !== competitor.currency) {
-      this.logger.warn(
-        `Competitor ${competitor.id} reported ${observation.currency}, configured as ${competitor.currency}. Using the page value.`,
+    // The page is the authority on what it charges, but the product is the
+    // authority on the currency everything is compared in. A shop quoting BGN
+    // against a EUR product is converted at the fixed peg; anything else is a
+    // failure rather than a silent apples-to-oranges comparison.
+    const observed = observation.currency?.toUpperCase() ?? competitor.currency;
+
+    if (observed !== product.currency) {
+      if (!isConvertible(observed, product.currency)) {
+        throw new BadRequestException(
+          `${competitor.name} обявява цената в ${observed}, а продуктът се води в ${product.currency}. Няма фиксиран курс между тях.`,
+        );
+      }
+
+      this.logger.debug(
+        `${competitor.name}: ${price} ${observed} → ${convert(price, observed, product.currency)} ${product.currency}`,
       );
-      competitor.currency = observation.currency;
     }
+
+    competitor.currency = product.currency;
 
     competitor.previousPrice = previousPrice;
     competitor.currentPrice = price;

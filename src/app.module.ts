@@ -8,6 +8,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AlertsModule } from './alerts/alerts.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BillingModule } from './billing/billing.module';
+import { DiscoveryModule } from './discovery/discovery.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
 import { Configuration, configuration } from './config/configuration';
@@ -55,6 +56,7 @@ import { ScraperModule } from './scraper/scraper.module';
     ProductsModule,
     AlertsModule,
     ScraperModule,
+    DiscoveryModule,
     AnalyticsModule,
     HealthModule,
   ],

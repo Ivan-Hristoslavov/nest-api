@@ -25,30 +25,45 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <script>
+      // Every colour resolves through a CSS variable, so switching the theme is
+      // one class on <html> rather than a second set of utility classes on
+      // every element. `<alpha-value>` keeps Tailwind's /opacity modifiers working.
+      const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
             colors: {
               ink: {
-                950: '#08090B',
-                900: '#0C0E12',
-                850: '#111319',
-                800: '#161921',
-                700: '#1E222C',
-                600: '#2A2F3B',
-                500: '#3A4150',
+                950: token('bg-base'),
+                900: token('bg-panel'),
+                850: token('bg-raised'),
+                800: token('bg-hover'),
+                700: token('bg-active'),
+                600: token('border-strong'),
+                500: token('border-subtle'),
+              },
+              slate: {
+                200: token('text-primary'),
+                300: token('text-secondary'),
+                400: token('text-muted'),
+                500: token('text-faint'),
+                600: token('text-ghost'),
+                700: token('border-strong'),
               },
               accent: {
-                400: '#5EEAD4',
-                500: '#2DD4BF',
-                600: '#14B8A6',
-                700: '#0F9488',
+                300: token('accent-soft'),
+                400: token('accent-light'),
+                500: token('accent'),
+                600: token('accent-deep'),
+                700: token('accent-deepest'),
               },
             },
             boxShadow: {
-              panel: '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 20px 50px -24px rgba(0,0,0,0.9)',
-              glow: '0 0 0 1px rgba(45,212,191,0.25), 0 18px 60px -20px rgba(45,212,191,0.35)',
+              panel: 'var(--shadow-panel)',
+              glow: 'var(--shadow-glow)',
             },
           },
         },
@@ -56,39 +71,117 @@
     </script>
 
     <style>
+      /* Light is the default so the page never flashes dark for someone who
+         prefers light; the theme script below flips it before first paint. */
+      :root {
+        --bg-base: 250 250 251;
+        --bg-panel: 255 255 255;
+        --bg-raised: 248 249 251;
+        --bg-hover: 241 243 246;
+        --bg-active: 232 235 240;
+        --border-subtle: 226 230 236;
+        --border-strong: 203 209 219;
+
+        --text-primary: 17 20 27;
+        --text-secondary: 45 51 63;
+        --text-muted: 92 100 115;
+        --text-faint: 128 137 152;
+        --text-ghost: 168 176 189;
+
+        --accent: 13 148 136;
+        --accent-light: 15 168 154;
+        --accent-soft: 8 116 106;
+        --accent-deep: 12 130 120;
+        --accent-deepest: 10 110 101;
+
+        --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
+        --shadow-glow: 0 0 0 1px rgba(13, 148, 136, 0.2), 0 16px 40px -16px rgba(13, 148, 136, 0.35);
+        --grid-line: rgba(16, 24, 40, 0.045);
+        --hero-wash: rgba(13, 148, 136, 0.07);
+        --row-hover: rgba(16, 24, 40, 0.028);
+      }
+
+      .dark {
+        --bg-base: 8 9 11;
+        --bg-panel: 12 14 18;
+        --bg-raised: 17 19 25;
+        --bg-hover: 22 25 33;
+        --bg-active: 30 34 44;
+        --border-subtle: 42 47 59;
+        --border-strong: 58 65 80;
+
+        --text-primary: 226 232 240;
+        --text-secondary: 203 213 225;
+        --text-muted: 148 163 184;
+        --text-faint: 108 120 138;
+        --text-ghost: 76 86 102;
+
+        --accent: 45 212 191;
+        --accent-light: 94 234 212;
+        --accent-soft: 153 246 228;
+        --accent-deep: 20 184 166;
+        --accent-deepest: 15 148 136;
+
+        --shadow-panel: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
+          0 20px 50px -24px rgba(0, 0, 0, 0.9);
+        --shadow-glow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 18px 60px -20px rgba(45, 212, 191, 0.35);
+        --grid-line: rgba(255, 255, 255, 0.035);
+        --hero-wash: rgba(45, 212, 191, 0.09);
+        --row-hover: rgba(255, 255, 255, 0.025);
+      }
+
+      html {
+        background-color: rgb(var(--bg-base));
+      }
+
       body {
         font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
         -webkit-font-smoothing: antialiased;
+        /* Colour changes are animated so the theme switch reads as one motion
+           rather than a jump cut. Transforms are excluded — animating those on
+           every element would make the whole page lurch. */
+        transition:
+          background-color 0.35s ease,
+          color 0.35s ease;
       }
+
       h1,
       h2,
       h3 {
         letter-spacing: -0.022em;
       }
+
       .grid-bg {
         background-image:
-          radial-gradient(60rem 40rem at 50% -10%, rgba(45, 212, 191, 0.09), transparent 70%),
-          linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+          radial-gradient(60rem 40rem at 50% -10%, var(--hero-wash), transparent 70%),
+          linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+          linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
         background-size:
           100% 100%,
           64px 64px,
           64px 64px;
       }
+
       .view[hidden] {
         display: none;
       }
+
       .tab-active {
-        color: #fff;
-        background-color: #1e222c;
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        color: rgb(var(--text-primary));
+        background-color: rgb(var(--bg-active));
+        box-shadow: inset 0 0 0 1px rgb(var(--border-subtle));
       }
+
       .num {
         font-variant-numeric: tabular-nums;
       }
-      /* Blur the wholesale column until the user opts to reveal it — these are
-         commercially sensitive figures that should not sit on screen in an
-         office or a screen share by default. */
+
+      tbody tr:hover {
+        background-color: var(--row-hover);
+      }
+
+      /* Wholesale figures stay blurred until deliberately revealed: they are
+         commercially sensitive and should not sit on screen during a call. */
       .masked {
         filter: blur(6px);
         user-select: none;
@@ -98,6 +191,61 @@
         filter: none;
         user-select: auto;
       }
+
+      /* --- Theme toggle ------------------------------------------------- */
+      .theme-toggle {
+        position: relative;
+        width: 3.25rem;
+        height: 1.75rem;
+        border-radius: 999px;
+        background-color: rgb(var(--bg-active));
+        box-shadow: inset 0 0 0 1px rgb(var(--border-subtle));
+        transition: background-color 0.3s ease;
+        flex-shrink: 0;
+      }
+      .theme-toggle__thumb {
+        position: absolute;
+        top: 0.1875rem;
+        left: 0.1875rem;
+        display: grid;
+        place-items: center;
+        width: 1.375rem;
+        height: 1.375rem;
+        border-radius: 999px;
+        background-color: rgb(var(--bg-panel));
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        transition: transform 0.42s cubic-bezier(0.34, 1.4, 0.5, 1);
+      }
+      .dark .theme-toggle__thumb {
+        transform: translateX(1.5rem);
+      }
+      .theme-toggle__icon {
+        position: absolute;
+        font-size: 0.7rem;
+        transition:
+          opacity 0.28s ease,
+          transform 0.42s cubic-bezier(0.34, 1.4, 0.5, 1);
+      }
+      .theme-toggle__sun {
+        color: #d97706;
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+      }
+      .theme-toggle__moon {
+        color: #64748b;
+        opacity: 0;
+        transform: rotate(-90deg) scale(0.4);
+      }
+      .dark .theme-toggle__sun {
+        opacity: 0;
+        transform: rotate(90deg) scale(0.4);
+      }
+      .dark .theme-toggle__moon {
+        color: #a5b4fc;
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+      }
+
       @keyframes fade-up {
         from {
           opacity: 0;
@@ -111,18 +259,44 @@
       .fade-up {
         animation: fade-up 0.35s ease both;
       }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
       ::-webkit-scrollbar {
         height: 10px;
         width: 10px;
       }
       ::-webkit-scrollbar-thumb {
-        background: #2a2f3b;
+        background: rgb(var(--border-strong));
         border-radius: 99px;
       }
       ::-webkit-scrollbar-track {
         background: transparent;
       }
     </style>
+
+    <script>
+      // Applied before first paint: reading the stored choice after render is
+      // what causes the white flash people notice on dark-themed sites.
+      (function () {
+        try {
+          const stored = localStorage.getItem('priceguard.theme');
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (stored === 'dark' || (stored === null && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (error) {
+          /* private mode — fall back to the light default */
+        }
+      })();
+    </script>
   </head>
 
   <body class="bg-ink-950 text-slate-200 font-sans antialiased">
@@ -134,14 +308,15 @@
         <button
           type="button"
           data-view="landing"
-          class="nav-link flex shrink-0 items-center gap-2.5 text-left"
+          data-logo
+          class="nav-link group flex shrink-0 items-center gap-2.5 text-left"
         >
           <span
-            class="grid h-8 w-8 place-items-center rounded-lg bg-accent-500/15 ring-1 ring-accent-500/30"
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25 transition group-hover:bg-accent-500/20"
           >
-            <i class="fa-solid fa-shield-halved text-[13px] text-accent-400"></i>
+            <i class="fa-solid fa-shield-halved text-[15px] leading-none text-accent-500"></i>
           </span>
-          <span class="text-[15px] font-semibold tracking-tight text-white">PriceGuard</span>
+          <span class="text-[16px] font-bold tracking-tight text-slate-200">PriceGuard</span>
         </button>
 
         <nav
@@ -172,6 +347,20 @@
         </nav>
 
         <div class="ml-auto flex items-center gap-2 md:ml-0">
+          <button
+            type="button"
+            id="theme-toggle"
+            class="theme-toggle"
+            role="switch"
+            aria-checked="false"
+            aria-label="Смени между светла и тъмна тема"
+            title="Светла / тъмна тема"
+          >
+            <span class="theme-toggle__thumb">
+              <i class="fa-solid fa-sun theme-toggle__icon theme-toggle__sun"></i>
+              <i class="fa-solid fa-moon theme-toggle__icon theme-toggle__moon"></i>
+            </span>
+          </button>
           <button
             type="button"
             id="api-key-button"
@@ -229,35 +418,44 @@
           <div class="mx-auto max-w-7xl px-5 pb-24 pt-20 sm:px-8 sm:pt-28">
             <div class="mx-auto max-w-3xl text-center">
               <span
-                class="inline-flex items-center gap-2 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1 text-[12px] font-medium text-accent-300"
+                class="inline-flex items-center gap-2 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1 text-[12px] font-medium text-accent-600 dark:text-accent-400"
               >
                 <span class="relative flex h-1.5 w-1.5">
                   <span
-                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75"
+                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75"
                   ></span>
-                  <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-400"></span>
+                  <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-500"></span>
                 </span>
-                Мониторинг на 4 200+ артикула в реално време
+                4 200+ артикула следени в момента
               </span>
 
               <h1
-                class="mt-7 text-[2.6rem] font-extrabold leading-[1.08] text-white sm:text-6xl sm:leading-[1.05]"
+                class="mt-7 text-[2.5rem] font-extrabold leading-[1.07] tracking-tight text-slate-200 sm:text-[3.75rem] sm:leading-[1.04]"
               >
-                Автоматизиран мониторинг на цени зад парола и складови стени
+                Спрете да обикаляте
+                <span class="relative whitespace-nowrap">
+                  <span class="relative z-10">складовете</span>
+                  <span
+                    class="absolute inset-x-0 bottom-1 -z-0 h-3 rounded bg-accent-500/25 sm:bottom-2 sm:h-4"
+                  ></span>
+                </span>
+                всяка сутрин
               </h1>
 
-              <p class="mx-auto mt-6 max-w-2xl text-[17px] leading-relaxed text-slate-400">
-                Вашите доставчици крият истинските цени на едро зад логин. PriceGuard влиза с
-                <span class="text-slate-200">вашите собствени търговски достъпи</span>, следи цените
-                и наличностите denonощно и ви казва кога маржът ви се променя — преди клиентът да
-                е поръчал на стара цена.
+              <p class="mx-auto mt-7 max-w-2xl text-[17px] leading-relaxed text-slate-400">
+                Влизате в пет портала на едро, сравнявате ръчно, записвате в Excel — и до обяд
+                цените вече са други. PriceGuard прави тази обиколка вместо вас
+                <span class="font-semibold text-slate-200">на всеки час</span>, включително зад
+                логин стените, и ви казва само едно:
+                <span class="font-semibold text-slate-200">къде да купите днес и колко
+                  спестявате</span>.
               </p>
 
               <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <button
                   type="button"
                   data-view="dashboard"
-                  class="nav-link group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-ink-950 shadow-glow transition hover:bg-accent-400 sm:w-auto"
+                  class="nav-link group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-white shadow-glow transition hover:bg-accent-600 sm:w-auto"
                 >
                   Стартирай безплатен тест
                   <i
@@ -267,9 +465,9 @@
                 <button
                   type="button"
                   data-view="credentials"
-                  class="nav-link inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-6 py-3.5 text-[15px] font-semibold text-slate-200 transition hover:border-white/20 hover:text-white sm:w-auto"
+                  class="nav-link inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/40 bg-ink-900 px-6 py-3.5 text-[15px] font-semibold text-slate-300 transition hover:border-accent-500/40 hover:text-slate-200 sm:w-auto"
                 >
-                  <i class="fa-solid fa-lock text-[13px] text-accent-400"></i>
+                  <i class="fa-solid fa-lock text-[13px] text-accent-500"></i>
                   Как пазим достъпите
                 </button>
               </div>
@@ -277,6 +475,36 @@
               <p class="mt-5 text-[13px] text-slate-500">
                 14 дни безплатно · Без карта · Отказ по всяко време
               </p>
+            </div>
+
+            <!-- The problem, stated as the reader lives it -->
+            <div class="mx-auto mt-16 grid max-w-4xl gap-4 sm:grid-cols-3">
+              <div class="rounded-2xl border border-slate-700/25 bg-ink-900 p-5 text-left">
+                <span class="text-[11.5px] font-semibold uppercase tracking-wide text-red-500">
+                  Досега
+                </span>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  40 минути всяка сутрин в пет портала, за да разберете, че един артикул е
+                  поскъпнал.
+                </p>
+              </div>
+              <div class="rounded-2xl border border-slate-700/25 bg-ink-900 p-5 text-left">
+                <span class="text-[11.5px] font-semibold uppercase tracking-wide text-amber-500">
+                  Цената на пропуска
+                </span>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  Продавате на стара цена цяла седмица, преди някой да забележи изядения марж.
+                </p>
+              </div>
+              <div class="rounded-2xl border border-accent-500/30 bg-accent-500/[0.06] p-5 text-left">
+                <span class="text-[11.5px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">
+                  С PriceGuard
+                </span>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-300">
+                  Отваряте едно табло. Виждате кой склад е най-евтин днес и колко печелите от
+                  смяната.
+                </p>
+              </div>
             </div>
 
             <!-- Trust strip -->
@@ -1010,6 +1238,7 @@
                     <th scope="col" class="px-5 py-3.5 font-semibold">Най-евтин склад</th>
                     <th scope="col" class="px-5 py-3.5 font-semibold">Статус</th>
                     <th scope="col" class="px-5 py-3.5 font-semibold">Обновено</th>
+                    <th scope="col" class="px-5 py-3.5 text-right font-semibold">Действия</th>
                   </tr>
                 </thead>
                 <tbody id="products-body" class="text-[13.5px]"></tbody>
@@ -1420,6 +1649,9 @@
         credentialsPublicKey: API_BASE + '/scraper/credentials/public-key',
         credentialsTest: API_BASE + '/scraper/credentials/test',
         scraperTrigger: API_BASE + '/scraper/trigger',
+        scraperRefresh: API_BASE + '/scraper/competitors',
+        discoverySearch: API_BASE + '/discovery/search',
+        discoveryShops: API_BASE + '/discovery/shops',
       };
 
       /**
@@ -1472,7 +1704,7 @@
 
       function formatRelative(isoString) {
         if (!isoString) return '—';
-        const then = new Date(isoString).getTime();
+        const then = typeof isoString === 'number' ? isoString : new Date(isoString).getTime();
         if (Number.isNaN(then)) return '—';
 
         const diffMinutes = Math.round((then - Date.now()) / 60000);
@@ -1549,7 +1781,11 @@
 
         $$('.nav-link').forEach(function (button) {
           const active = button.dataset.view === name;
-          button.classList.toggle('tab-active', active && !button.classList.contains('bg-white'));
+          // The logo and the solid call-to-action are navigation too, but they
+          // must never take the pill background — on the logo it renders as a
+          // grey box clipping the mark.
+          const stylable = !button.hasAttribute('data-logo') && !button.dataset.plan;
+          button.classList.toggle('tab-active', active && stylable);
           if (active) button.setAttribute('aria-current', 'page');
           else button.removeAttribute('aria-current');
         });
@@ -1923,6 +2159,46 @@
       renderEmptyVendorList();
 
       /* ------------------------------------------------------------------ *
+       * Theme
+       * ------------------------------------------------------------------ */
+
+      const THEME_STORAGE = 'priceguard.theme';
+      const themeToggle = $('#theme-toggle');
+
+      function syncThemeControl() {
+        themeToggle.setAttribute(
+          'aria-checked',
+          document.documentElement.classList.contains('dark') ? 'true' : 'false',
+        );
+      }
+
+      themeToggle.addEventListener('click', function () {
+        const dark = document.documentElement.classList.toggle('dark');
+        try {
+          window.localStorage.setItem(THEME_STORAGE, dark ? 'dark' : 'light');
+        } catch (error) {
+          /* private mode — the choice simply does not persist */
+        }
+        syncThemeControl();
+      });
+
+      // Follow the OS only while the visitor has expressed no preference here.
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (event) {
+        let stored = null;
+        try {
+          stored = window.localStorage.getItem(THEME_STORAGE);
+        } catch (error) {
+          /* ignore */
+        }
+        if (stored !== null) return;
+
+        document.documentElement.classList.toggle('dark', event.matches);
+        syncThemeControl();
+      });
+
+      syncThemeControl();
+
+      /* ------------------------------------------------------------------ *
        * Modals
        * ------------------------------------------------------------------ */
 
@@ -2161,8 +2437,25 @@
         const buyable = priced.filter((s) => s.inStock !== false);
         const pool = buyable.length > 0 ? buyable : priced;
 
+        // `count` is the number of warehouses, never the number of *priced*
+        // warehouses. Conflating the two made a product with five listings and
+        // no scrape yet report "0 склада" — and hid the list that would have
+        // let you fix it.
         if (pool.length === 0) {
-          return { best: null, worst: null, spread: 0, margin: null, status: 'error', updatedAt: null, count: 0 };
+          return {
+            best: null,
+            worst: null,
+            spread: 0,
+            margin: null,
+            status: product.suppliers.some((s) => s.status === 'error') ? 'error' : 'warning',
+            updatedAt:
+              product.suppliers.reduce(function (latest, supplier) {
+                const time = new Date(supplier.updatedAt).getTime();
+                return Number.isNaN(time) ? latest : Math.max(latest, time);
+              }, 0) || null,
+            count: product.suppliers.length,
+            sorted: [],
+          };
         }
 
         const sorted = pool.slice().sort((a, b) => a.price - b.price);
@@ -2221,9 +2514,44 @@
         });
       }
 
+      function addSupplierButton(product) {
+        return (
+          '<button type="button" data-add-supplier="' +
+          escapeHtml(product.id) +
+          '" class="inline-flex items-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:border-accent-500/50 hover:text-accent-300">' +
+          '<i class="fa-solid fa-plus text-[11px]"></i>Добави склад</button>'
+        );
+      }
+
+      /** A small square action button. Icon-only, so the row stays readable. */
+      function iconButton(action, id, icon, title, extraClass) {
+        return (
+          '<button type="button" data-action="' +
+          action +
+          '" data-id="' +
+          escapeHtml(id) +
+          '" title="' +
+          escapeHtml(title) +
+          '" aria-label="' +
+          escapeHtml(title) +
+          '" class="grid h-8 w-8 place-items-center rounded-lg text-[11px] text-slate-500 transition hover:bg-white/5 hover:text-white ' +
+          (extraClass || '') +
+          '"><i class="fa-solid ' +
+          icon +
+          '"></i></button>'
+        );
+      }
+
       function supplierRowsHtml(product, view) {
+        // The empty state used to return early, *before* the add button — so the
+        // one moment you most need it, it was missing.
         if (view.count === 0) {
-          return '<div class="px-5 py-4 text-[13px] text-slate-500">Няма свързани складове.</div>';
+          return (
+            '<div class="px-5 py-5"><p class="mb-3 text-[13px] text-slate-500">' +
+            'Няма свързани складове. Добавете поне един, за да започне следенето.</p>' +
+            addSupplierButton(product) +
+            '</div>'
+          );
         }
 
         const ordered = product.suppliers.slice().sort(function (a, b) {
@@ -2249,12 +2577,21 @@
               '"><i class="fa-solid fa-warehouse text-[12px] ' +
               (isBest ? 'text-emerald-400' : 'text-slate-500') +
               '"></i></span>' +
-              '<span class="min-w-0 flex-1"><span class="block truncate text-[13px] font-medium text-white">' +
+              '<span class="min-w-0 flex-1">' +
+              (supplier.url
+                ? '<a href="' +
+                  escapeHtml(supplier.url) +
+                  '" target="_blank" rel="noopener noreferrer" class="group/link block truncate text-[13px] font-medium text-slate-200 hover:text-accent-500 hover:underline" title="Отвори страницата в магазина">'
+                : '<span class="block truncate text-[13px] font-medium text-slate-200">') +
               escapeHtml(supplier.name) +
+              (supplier.url
+                ? '<i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[9px] opacity-0 transition group-hover/link:opacity-100"></i>'
+                : '') +
               (isBest
                 ? '<span class="ml-2 rounded-md bg-emerald-500/15 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-emerald-400">най-евтин</span>'
                 : '') +
-              '</span><span class="block truncate font-mono text-[11.5px] text-slate-500">' +
+              (supplier.url ? '</a>' : '</span>') +
+              '<span class="block truncate font-mono text-[11.5px] text-slate-500">' +
               escapeHtml(supplier.host) +
               '</span></span>' +
               '<span class="shrink-0 text-right"><span class="num block text-[14px] font-semibold ' +
@@ -2269,26 +2606,40 @@
                 : '') +
               '</span>' +
               '<span class="w-24 shrink-0 text-right text-[11.5px] ' +
-              (supplier.inStock === false ? 'text-amber-400' : 'text-slate-500') +
+              (supplier.isActive === false
+                ? 'text-slate-600'
+                : supplier.inStock === false
+                  ? 'text-amber-400'
+                  : 'text-slate-500') +
               '">' +
-              (supplier.inStock === false ? 'изчерпан' : 'наличен') +
+              (supplier.isActive === false
+                ? 'спрян'
+                : supplier.inStock === false
+                  ? 'изчерпан'
+                  : 'наличен') +
               '</span>' +
-              '<span class="w-28 shrink-0 text-right text-[11.5px] text-slate-500">' +
+              '<span class="w-24 shrink-0 text-right text-[11.5px] text-slate-500">' +
               escapeHtml(formatRelative(supplier.updatedAt)) +
               '</span>' +
+              (supplier.id
+                ? '<span class="flex shrink-0 items-center gap-1">' +
+                  iconButton('refresh-supplier', supplier.id, 'fa-rotate', 'Провери сега') +
+                  iconButton('edit-supplier', supplier.id, 'fa-pen', 'Редактирай') +
+                  (supplier.isPrimary
+                    ? '<span class="grid h-8 w-8 place-items-center text-[11px] text-accent-400" title="Основен склад"><i class="fa-solid fa-star"></i></span>'
+                    : iconButton('promote-supplier', supplier.id, 'fa-star', 'Направи основен')) +
+                  iconButton('delete-supplier', supplier.id, 'fa-trash', 'Изтрий', 'hover:text-red-400') +
+                  '</span>'
+                : '') +
               '</div>'
             );
           })
           .join('');
 
         return (
-          '<div class="space-y-2 px-5 py-4">' +
-          items +
-          '<button type="button" data-add-supplier="' +
-          escapeHtml(product.id) +
-          '" class="mt-1 inline-flex items-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:border-accent-500/50 hover:text-accent-300">' +
-          '<i class="fa-solid fa-plus text-[11px]"></i>Добави още един склад</button>' +
-          '</div>'
+          '<div class="space-y-2 px-5 py-4">' + items + '<div class="pt-1">' +
+          addSupplierButton(product) +
+          '</div></div>'
         );
       }
 
@@ -2341,10 +2692,17 @@
               '"><span class="masked">' +
               (view.margin === null ? '—' : view.margin.toFixed(1) + '%') +
               '</span></td>' +
-              '<td class="px-5 py-4"><span class="inline-flex items-center gap-2 text-[12.5px] text-slate-400">' +
-              '<i class="fa-solid fa-lock text-[10px] text-slate-600"></i>' +
-              escapeHtml(view.best ? view.best.host : '—') +
-              '</span></td>' +
+              '<td class="px-5 py-4">' +
+              (view.best && view.best.url
+                ? '<a href="' +
+                  escapeHtml(view.best.url) +
+                  '" target="_blank" rel="noopener noreferrer" data-external class="inline-flex items-center gap-1.5 text-[12.5px] text-slate-400 transition hover:text-accent-500 hover:underline">' +
+                  escapeHtml(view.best.host) +
+                  '<i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a>'
+                : '<span class="text-[12.5px] text-slate-400">' +
+                  escapeHtml(view.best ? view.best.host : '—') +
+                  '</span>') +
+              '</td>' +
               '<td class="px-5 py-4"><span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 ' +
               badge.className +
               '"><i class="fa-solid ' +
@@ -2354,9 +2712,14 @@
               '</span></td>' +
               '<td class="px-5 py-4 text-[12.5px] text-slate-400">' +
               escapeHtml(formatRelative(view.updatedAt)) +
-              '</td></tr>' +
+              '</td>' +
+              '<td class="px-5 py-4"><span class="flex items-center justify-end gap-1">' +
+              iconButton('refresh-product', product.id, 'fa-rotate', 'Провери всички складове') +
+              iconButton('edit-product', product.id, 'fa-pen', 'Редактирай продукта') +
+              iconButton('delete-product', product.id, 'fa-trash', 'Изтрий продукта', 'hover:text-red-400') +
+              '</span></td></tr>' +
               (open
-                ? '<tr class="border-b border-white/[0.06] bg-ink-950/40"><td colspan="8">' +
+                ? '<tr class="border-b border-white/[0.06] bg-ink-950/40"><td colspan="9">' +
                   supplierRowsHtml(product, view) +
                   '</td></tr>'
                 : '')
@@ -2370,10 +2733,20 @@
         body.querySelectorAll('[data-row]').forEach(function (row) {
           row.addEventListener('click', function (event) {
             if (event.target.closest('[data-add-supplier]')) return;
+            if (event.target.closest('[data-action]')) return;
+            // A link is a link: opening the shop must not also collapse the row.
+            if (event.target.closest('a')) return;
             const id = row.dataset.row;
             if (expandedRows.has(id)) expandedRows.delete(id);
             else expandedRows.add(id);
             renderTable();
+          });
+        });
+
+        body.querySelectorAll('[data-action]').forEach(function (button) {
+          button.addEventListener('click', function (event) {
+            event.stopPropagation();
+            handleAction(button.dataset.action, button.dataset.id);
           });
         });
 
@@ -2467,6 +2840,12 @@
                 marketPrice: product.ourPrice == null ? null : Number(product.ourPrice),
                 suppliers: listings.map(function (competitor) {
                   return {
+                    id: competitor.id,
+                    isPrimary: competitor.isPrimary,
+                    isActive: competitor.isActive,
+                    url: competitor.url,
+                    priceSelector: competitor.priceSelector,
+                    currency: competitor.currency,
                     name: competitor.name,
                     host: competitor.host,
                     price: competitor.currentPrice == null ? null : Number(competitor.currentPrice),
@@ -2841,6 +3220,125 @@
           $('#product-icon').classList.remove('hidden');
         }
       });
+
+      /* --- Row and warehouse actions -------------------------------------- */
+
+      function findProduct(id) {
+        return products.find((product) => product.id === id) || null;
+      }
+
+      function findSupplier(id) {
+        for (const product of products) {
+          const supplier = product.suppliers.find((item) => item.id === id);
+          if (supplier) return { product: product, supplier: supplier };
+        }
+        return null;
+      }
+
+      /** Wraps a mutating call: toast on success, toast on failure, reload once. */
+      async function mutate(description, request) {
+        try {
+          const response = await request();
+
+          if (!response.ok) {
+            const detail = await response.text();
+            throw new Error('HTTP ' + response.status + ' ' + detail.slice(0, 140));
+          }
+
+          toast(description + ' — готово.', 'success');
+          await loadProducts();
+          return true;
+        } catch (error) {
+          toast(description + ' не успя: ' + error.message, 'error');
+          return false;
+        }
+      }
+
+      async function handleAction(action, id) {
+        if (action === 'refresh-product') {
+          toast('Проверявам всички складове…', 'info');
+          await mutate('Проверката', () =>
+            fetch(ENDPOINTS.scraperTrigger + '/' + id, { method: 'POST', headers: authHeaders() }),
+          );
+          return;
+        }
+
+        if (action === 'delete-product') {
+          const product = findProduct(id);
+          const confirmed = await confirmDialog(
+            'Изтриване на продукт',
+            'Продуктът „' +
+              (product ? product.name : '') +
+              '" ще бъде изтрит заедно с всичките му складове и цялата ценова история. Това е необратимо.',
+            'Изтрий',
+          );
+          if (!confirmed) return;
+
+          await mutate('Изтриването', () =>
+            fetch(ENDPOINTS.products + '/' + id, { method: 'DELETE', headers: authHeaders() }),
+          );
+          return;
+        }
+
+        if (action === 'edit-product') {
+          openProductEditor(findProduct(id));
+          return;
+        }
+
+        if (action === 'refresh-supplier') {
+          toast('Проверявам склада…', 'info');
+          await mutate('Проверката', () =>
+            fetch(ENDPOINTS.scraperRefresh + '/' + id + '/refresh', {
+              method: 'POST',
+              headers: authHeaders(),
+            }),
+          );
+          return;
+        }
+
+        const found = findSupplier(id);
+        if (!found) return;
+
+        if (action === 'promote-supplier') {
+          await mutate('Смяната на основен склад', () =>
+            fetch(
+              ENDPOINTS.products + '/' + found.product.id + '/competitors/' + id + '/promote',
+              { method: 'PATCH', headers: authHeaders() },
+            ),
+          );
+          return;
+        }
+
+        if (action === 'delete-supplier') {
+          if (found.supplier.isPrimary) {
+            toast('Основният склад не може да се трие. Направете друг основен първо.', 'error');
+            return;
+          }
+
+          const confirmed = await confirmDialog(
+            'Изтриване на склад',
+            '„' +
+              found.supplier.name +
+              '" ще бъде премахнат от „' +
+              found.product.name +
+              '", заедно с историята му на цени.',
+            'Изтрий',
+          );
+          if (!confirmed) return;
+
+          await mutate('Изтриването', () =>
+            fetch(ENDPOINTS.products + '/' + found.product.id + '/competitors/' + id, {
+              method: 'DELETE',
+              headers: authHeaders(),
+            }),
+          );
+          return;
+        }
+
+        if (action === 'edit-supplier') {
+          openSupplierEditor(found.product, found.supplier);
+        }
+      }
 
       /* --- CSV export ---------------------------------------------------- */
 

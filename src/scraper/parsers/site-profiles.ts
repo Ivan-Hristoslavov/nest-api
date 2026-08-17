@@ -92,6 +92,24 @@ export const SITE_PROFILES: SiteProfile[] = [
     outOfStockText: ['Изчерпан', 'Не е наличен', 'Изчерпана наличност'],
   },
   {
+    host: 'mobile.bg',
+    name: 'Mobile.bg',
+    // Verified 2026-08. Two things make this site a good test of the pipeline:
+    // the price class is capitalised (`.Price`, and CSS class matching is
+    // case-sensitive), and the page is served as windows-1251 — decoded as
+    // UTF-8 it turns to mojibake and appears to have no price at all.
+    priceSelectors: ['.Price', '#details .price', '.price'],
+    currency: 'EUR',
+    outOfStockText: ['Обявата е изтекла', 'Обявата не е активна'],
+  },
+  {
+    host: 'cars.bg',
+    name: 'Cars.bg',
+    priceSelectors: ['.offer-price', '.price', '.OfferPrice'],
+    currency: 'EUR',
+    outOfStockText: ['Обявата е изтекла'],
+  },
+  {
     host: 'ozone.bg',
     name: 'Ozone',
     priceSelectors: ['.product-price .price', '.price'],
