@@ -849,6 +849,14 @@
             <div class="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
+                id="add-product"
+                class="inline-flex items-center gap-2 rounded-xl border border-accent-500/40 bg-accent-500/10 px-4 py-2.5 text-[13px] font-semibold text-accent-300 transition hover:bg-accent-500/20"
+              >
+                <i class="fa-solid fa-plus text-[12px]"></i>
+                Добави продукт
+              </button>
+              <button
+                type="button"
                 id="toggle-reveal"
                 class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
               >
@@ -890,7 +898,7 @@
                 <i class="fa-solid fa-boxes-stacked text-[13px] text-slate-600"></i>
               </div>
               <div id="stat-total" class="num mt-3 text-3xl font-bold text-white">—</div>
-              <div class="mt-1.5 text-[12px] text-slate-500">в 3 портала на едро</div>
+              <div id="stat-total-note" class="mt-1.5 text-[12px] text-slate-500">в 0 склада</div>
             </div>
 
             <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
@@ -904,11 +912,11 @@
 
             <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
               <div class="flex items-center justify-between">
-                <span class="text-[12.5px] font-medium text-slate-500">Поскъпнали при доставчик</span>
-                <i class="fa-solid fa-arrow-trend-up text-[13px] text-slate-600"></i>
+                <span class="text-[12.5px] font-medium text-slate-500">Възможни спестявания</span>
+                <i class="fa-solid fa-piggy-bank text-[13px] text-slate-600"></i>
               </div>
-              <div id="stat-risen" class="num mt-3 text-3xl font-bold text-amber-400">—</div>
-              <div class="mt-1.5 text-[12px] text-slate-500">за последните 7 дни</div>
+              <div id="stat-risen" class="num mt-3 text-3xl font-bold text-emerald-400">—</div>
+              <div class="mt-1.5 text-[12px] text-slate-500">ако купувате от най-евтиния</div>
             </div>
 
             <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
@@ -921,33 +929,72 @@
             </div>
           </div>
 
-          <!-- Table -->
-          <div class="mt-8 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
-            <div
-              class="flex flex-col gap-3 border-b border-white/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+          <!-- Filters -->
+          <div class="mt-8 flex flex-wrap items-center gap-2">
+            <div class="relative min-w-[260px] flex-1 sm:max-w-md">
+              <i
+                class="fa-solid fa-magnifying-glass pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+              ></i>
+              <input
+                type="search"
+                id="table-search"
+                placeholder="Търси по продукт, SKU или склад…"
+                class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-11 pr-4 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+              />
+            </div>
+
+            <select
+              id="filter-supplier"
+              class="appearance-none rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[13px] text-slate-300 outline-none transition focus:border-accent-500/60"
             >
-              <div class="relative w-full sm:max-w-xs">
-                <i
-                  class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-500"
-                ></i>
-                <input
-                  type="search"
-                  id="table-search"
-                  placeholder="Търси продукт или доставчик…"
-                  class="w-full rounded-lg border border-white/10 bg-ink-850 py-2 pl-9 pr-3 text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                />
-              </div>
+              <option value="">Всички складове</option>
+            </select>
+
+            <button
+              type="button"
+              data-filter="savings"
+              class="filter-chip rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[13px] font-medium text-slate-400 transition hover:text-white"
+            >
+              <i class="fa-solid fa-piggy-bank mr-1.5 text-[11px]"></i>Има какво да спестя
+            </button>
+            <button
+              type="button"
+              data-filter="problems"
+              class="filter-chip rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[13px] font-medium text-slate-400 transition hover:text-white"
+            >
+              <i class="fa-solid fa-triangle-exclamation mr-1.5 text-[11px]"></i>Проблемни
+            </button>
+            <button
+              type="button"
+              id="expand-all"
+              class="ml-auto rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[13px] font-medium text-slate-400 transition hover:text-white"
+            >
+              <i class="fa-solid fa-angles-down mr-1.5 text-[11px]"></i
+              ><span id="expand-label">Разгъни всички</span>
+            </button>
+          </div>
+
+          <!-- Table -->
+          <div class="mt-4 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
+            <div
+              class="flex flex-col gap-2 border-b border-white/8 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p class="text-[12.5px] text-slate-500">
+                Кликнете върху ред, за да видите всички складове за този артикул.
+              </p>
               <div class="flex items-center gap-2 text-[12px] text-slate-500">
                 <span id="table-count">—</span>
                 <span class="text-slate-700">·</span>
-                <span id="data-source-label" class="text-slate-500">демо данни</span>
+                <span id="data-source-label">демо данни</span>
               </div>
             </div>
 
             <div class="overflow-x-auto">
-              <table class="w-full min-w-[1080px] text-left">
+              <table class="w-full min-w-[1120px] text-left">
                 <thead>
-                  <tr class="border-b border-white/8 text-[11.5px] uppercase tracking-wider text-slate-500">
+                  <tr
+                    class="border-b border-white/8 text-[11.5px] uppercase tracking-wider text-slate-500"
+                  >
                     <th scope="col" class="px-5 py-3.5 font-semibold">Продукт</th>
                     <th scope="col" class="px-5 py-3.5 text-right font-semibold">
                       Текуща пазарна цена
@@ -955,30 +1002,29 @@
                     <th scope="col" class="px-5 py-3.5 text-right font-semibold">
                       <span class="inline-flex items-center gap-1.5">
                         <i class="fa-solid fa-lock text-[10px] text-accent-400"></i>
-                        Скрита цена на едро
+                        Най-добра цена на едро
                       </span>
                     </th>
+                    <th scope="col" class="px-5 py-3.5 text-right font-semibold">Спестявате</th>
                     <th scope="col" class="px-5 py-3.5 text-right font-semibold">Марж</th>
-                    <th scope="col" class="px-5 py-3.5 font-semibold">Източник</th>
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Най-евтин склад</th>
                     <th scope="col" class="px-5 py-3.5 font-semibold">Статус</th>
-                    <th scope="col" class="px-5 py-3.5 font-semibold">Последно обновяване</th>
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Обновено</th>
                   </tr>
                 </thead>
-                <tbody id="products-body" class="divide-y divide-white/[0.06] text-[13.5px]"></tbody>
+                <tbody id="products-body" class="text-[13.5px]"></tbody>
               </table>
             </div>
 
-            <div
-              id="table-empty"
-              class="hidden px-5 py-16 text-center text-[13.5px] text-slate-500"
-            >
+            <div id="table-empty" class="hidden px-5 py-16 text-center text-[13.5px] text-slate-500">
               <i class="fa-solid fa-inbox mb-3 block text-2xl text-slate-700"></i>
               Няма артикули, отговарящи на търсенето.
             </div>
           </div>
 
           <p class="mt-4 text-[12px] text-slate-600">
-            Цените са в EUR без ДДС. Маржът се изчислява като (пазарна − на едро) / пазарна.
+            Цените са в EUR без ДДС. „Спестявате" е разликата между най-скъпия и най-евтиния склад
+            за същия артикул. Маржът се смята спрямо най-добрата цена на едро.
           </p>
         </div>
       </section>
@@ -1003,6 +1049,347 @@
         </div>
       </div>
     </footer>
+
+
+    <!-- ================================================================== -->
+    <!-- MODAL — API key                                                     -->
+    <!-- ================================================================== -->
+    <div
+      id="key-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="key-modal-title"
+    >
+      <div
+        class="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7"
+      >
+        <div class="flex items-start gap-4">
+          <span
+            class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/30"
+          >
+            <i class="fa-solid fa-key text-[16px] text-accent-400"></i>
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 id="key-modal-title" class="text-[16px] font-semibold text-white">API ключ</h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-slate-400">
+              Ключът се пази само в този браузър и се изпраща през хедъра
+              <code class="rounded bg-ink-900 px-1.5 py-0.5 font-mono text-[12px] text-slate-300"
+                >x-api-key</code
+              >. Никога не влиза в URL адрес.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="key-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="key-form" class="mt-6" novalidate>
+          <label for="key-input" class="mb-2 block text-[13px] font-medium text-slate-300">
+            Вашият ключ
+          </label>
+          <div class="relative">
+            <i
+              class="fa-solid fa-lock pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+            ></i>
+            <input
+              type="password"
+              id="key-input"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="pk_live_…"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 py-3 pl-10 pr-12 font-mono text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+            <button
+              type="button"
+              id="key-toggle"
+              aria-label="Покажи ключа"
+              class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 transition hover:text-white"
+            >
+              <i class="fa-solid fa-eye text-[13px]"></i>
+            </button>
+          </div>
+
+          <p id="key-hint" class="mt-2.5 text-[12px] leading-relaxed text-slate-500">
+            Получавате го по e-mail след плащане. За локални тестове използвайте
+            <code class="font-mono text-slate-400">API_KEY</code> от вашия
+            <code class="font-mono text-slate-400">.env</code>.
+          </p>
+          <p id="key-status" class="mt-2.5 hidden text-[12.5px]"></p>
+
+          <div class="mt-6 flex flex-col gap-2.5 sm:flex-row">
+            <button
+              type="submit"
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+            >
+              <i id="key-save-icon" class="fa-solid fa-check text-[13px]"></i>
+              <i id="key-save-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+              Провери и запази
+            </button>
+            <button
+              type="button"
+              id="key-remove"
+              class="rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-red-500/40 hover:text-red-300"
+            >
+              Изтрий
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- MODAL — add supplier to a product                                   -->
+    <!-- ================================================================== -->
+    <div
+      id="supplier-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="supplier-modal-title"
+    >
+      <div class="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h3 id="supplier-modal-title" class="text-[16px] font-semibold text-white">
+              Добави склад
+            </h3>
+            <p id="supplier-modal-product" class="mt-1 truncate text-[13px] text-slate-400"></p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="supplier-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="supplier-form" class="mt-6 space-y-4" novalidate>
+          <div>
+            <label for="supplier-name" class="mb-2 block text-[13px] font-medium text-slate-300">
+              Име на склада <span class="text-accent-400">*</span>
+            </label>
+            <input
+              type="text"
+              id="supplier-name"
+              maxlength="120"
+              placeholder="TacticalGear на едро"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <div>
+            <label for="supplier-url" class="mb-2 block text-[13px] font-medium text-slate-300">
+              Линк към артикула в склада <span class="text-accent-400">*</span>
+            </label>
+            <input
+              type="url"
+              id="supplier-url"
+              placeholder="https://wholesale.tacticalgear.bg/product/12345"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="supplier-currency" class="mb-2 block text-[13px] font-medium text-slate-300">
+                Валута
+              </label>
+              <select
+                id="supplier-currency"
+                class="w-full appearance-none rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-white outline-none transition focus:border-accent-500/60"
+              >
+                <option value="EUR">EUR</option>
+                <option value="BGN">BGN</option>
+                <option value="USD">USD</option>
+                <option value="CZK">CZK</option>
+              </select>
+            </div>
+            <div>
+              <label for="supplier-selector" class="mb-2 block text-[13px] font-medium text-slate-300">
+                CSS селектор (по избор)
+              </label>
+              <input
+                type="text"
+                id="supplier-selector"
+                placeholder=".price-wholesale"
+                class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+          </div>
+
+          <p class="text-[12px] leading-relaxed text-slate-500">
+            Селектор трябва само ако страницата няма структурирани данни. Скрейпърът първо опитва
+            JSON-LD, microdata и meta тагове сам.
+          </p>
+
+          <p id="supplier-status" class="hidden text-[12.5px]"></p>
+
+          <div class="flex flex-col gap-2.5 pt-1 sm:flex-row">
+            <button
+              type="submit"
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+            >
+              <i id="supplier-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+              <i id="supplier-icon" class="fa-solid fa-plus text-[13px]"></i>
+              Добави склад
+            </button>
+            <button
+              type="button"
+              data-close-modal="supplier-modal"
+              class="rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/20"
+            >
+              Отказ
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+
+    <!-- ================================================================== -->
+    <!-- MODAL — new product across several stores                           -->
+    <!-- ================================================================== -->
+    <div
+      id="product-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="product-modal-title"
+    >
+      <div class="my-8 w-full max-w-2xl rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="product-modal-title" class="text-[16px] font-semibold text-white">
+              Нов продукт за следене
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-slate-400">
+              Поставете линка към <strong class="text-slate-200">един и същи артикул</strong> в
+              всеки магазин. Системата сравнява цените и ви казва къде е най-евтино.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="product-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-white"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="product-form" class="mt-6 space-y-5" novalidate>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="product-name" class="mb-2 block text-[13px] font-medium text-slate-300">
+                Име на продукта <span class="text-accent-400">*</span>
+              </label>
+              <input
+                type="text"
+                id="product-name"
+                maxlength="255"
+                placeholder="Samsung QLED 55Q7F"
+                class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+              />
+            </div>
+            <div>
+              <label for="product-sku" class="mb-2 block text-[13px] font-medium text-slate-300">
+                Вашият SKU
+              </label>
+              <input
+                type="text"
+                id="product-sku"
+                maxlength="64"
+                placeholder="TV-SAM-55Q7F"
+                class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+              />
+            </div>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label for="product-our-price" class="mb-2 block text-[13px] font-medium text-slate-300">
+                Вашата продажна цена (EUR)
+              </label>
+              <input
+                type="number"
+                id="product-our-price"
+                step="0.01"
+                min="0"
+                placeholder="399.00"
+                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+            <div>
+              <label for="product-target" class="mb-2 block text-[13px] font-medium text-slate-300">
+                Праг за аларма (EUR)
+              </label>
+              <input
+                type="number"
+                id="product-target"
+                step="0.01"
+                min="0"
+                placeholder="350.00"
+                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-2 flex items-center justify-between">
+              <label for="product-urls" class="text-[13px] font-medium text-slate-300">
+                Линкове към магазините <span class="text-accent-400">*</span>
+              </label>
+              <span class="text-[11.5px] text-slate-500">по един на ред, до 10</span>
+            </div>
+            <textarea
+              id="product-urls"
+              rows="6"
+              spellcheck="false"
+              placeholder="https://www.emag.bg/televizor-samsung.../pd/DT3GRT3BM/&#10;https://www.technomarket.bg/televizori/samsung-...&#10;https://www.technopolis.bg/bg/.../p/305383&#10;https://www.vario.bg/samsung-..."
+              class="w-full resize-y rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[12.5px] leading-relaxed text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            ></textarea>
+            <div id="url-preview" class="mt-2.5 flex flex-wrap gap-1.5"></div>
+          </div>
+
+          <div class="rounded-xl border border-white/8 bg-ink-900 p-4">
+            <p class="text-[12.5px] leading-relaxed text-slate-400">
+              <i class="fa-solid fa-circle-info mr-1.5 text-[11px] text-slate-500"></i>
+              За eMAG, Технómarket, Технополис и Vario цените се разпознават автоматично. За
+              непознат магазин скрейпърът първо опитва структурираните данни на страницата; ако не
+              успее, добавете CSS селектор от реда на склада.
+            </p>
+          </div>
+
+          <p id="product-status" class="hidden text-[12.5px]"></p>
+
+          <div class="flex flex-col gap-2.5 sm:flex-row">
+            <button
+              type="submit"
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+            >
+              <i id="product-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+              <i id="product-icon" class="fa-solid fa-satellite-dish text-[13px]"></i>
+              Създай и провери сега
+            </button>
+            <button
+              type="button"
+              data-close-modal="product-modal"
+              class="rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/20"
+            >
+              Отказ
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- Toast -->
     <div
@@ -1031,6 +1418,7 @@
         credentials: API_BASE + '/scraper/credentials',
         credentialsPublicKey: API_BASE + '/scraper/credentials/public-key',
         credentialsTest: API_BASE + '/scraper/credentials/test',
+        scraperTrigger: API_BASE + '/scraper/trigger',
       };
 
       /**
@@ -1546,176 +1934,427 @@
       renderEmptyVendorList();
 
       /* ------------------------------------------------------------------ *
-       * SECTION 3 — dashboard
+       * Modals
        * ------------------------------------------------------------------ */
 
-      /**
-       * Demo rows for an airsoft / tactical store. Shown until the backend
-       * returns real data, so the dashboard is never an empty shell.
-       */
-      const DEMO_ROWS = [
-        {
-          name: 'Тактическа жилетка BlackAirsoft SECURITY',
-          sku: 'BA-VEST-SEC-BLK',
-          marketPrice: 189.0,
-          wholesalePrice: 94.5,
-          source: 'b2b.blackairsoft.eu',
-          status: 'active',
-          updatedAt: minutesAgo(42),
-        },
-        {
-          name: 'Нож Smith & Wesson HRT — фиксирано острие',
-          sku: 'SW-HRT-FB-01',
-          marketPrice: 42.9,
-          wholesalePrice: 21.3,
-          source: 'dealer.smith-wesson-eu.com',
-          status: 'active',
-          updatedAt: minutesAgo(58),
-        },
-        {
-          name: 'Реплика Specna Arms SA-C02 CORE',
-          sku: 'SPE-01-018315',
-          marketPrice: 269.0,
-          wholesalePrice: 158.4,
-          source: 'wholesale.tacticalgear.bg',
-          status: 'active',
-          updatedAt: minutesAgo(15),
-        },
-        {
-          name: 'Балистични очила ESS Crossbow 3LS',
-          sku: 'ESS-XBW-3LS',
-          marketPrice: 128.5,
-          wholesalePrice: 71.9,
-          source: 'wholesale.tacticalgear.bg',
-          status: 'active',
-          updatedAt: minutesAgo(15),
-        },
-        {
-          name: 'Каска FAST Maritime + NVG mount',
-          sku: 'TG-HLM-FAST-MT',
-          marketPrice: 214.0,
-          wholesalePrice: 132.8,
-          source: 'b2b.blackairsoft.eu',
-          status: 'warning',
-          updatedAt: minutesAgo(190),
-        },
-        {
-          name: 'Ръкавици Mechanix M-Pact Coyote',
-          sku: 'MX-MPACT-COY-L',
-          marketPrice: 46.9,
-          wholesalePrice: 27.4,
-          source: 'partner.airsoftpro.cz',
-          status: 'active',
-          updatedAt: minutesAgo(72),
-        },
-        {
-          name: 'Кобур Safariland 6354DO ALS',
-          sku: 'SAF-6354DO-G17',
-          marketPrice: 246.0,
-          wholesalePrice: 168.9,
-          source: 'dealer.smith-wesson-eu.com',
-          status: 'active',
-          updatedAt: minutesAgo(103),
-        },
-        {
-          name: 'Оптика Vector Optics Forester 1-5x24',
-          sku: 'VO-FRST-1524',
-          marketPrice: 315.0,
-          wholesalePrice: 199.0,
-          source: 'partner.airsoftpro.cz',
-          status: 'error',
-          updatedAt: minutesAgo(1490),
-        },
-        {
-          name: 'Гранула BLS Bio 0.28g (3600 бр.)',
-          sku: 'BLS-BIO-028-3600',
-          marketPrice: 24.9,
-          wholesalePrice: 12.6,
-          source: 'b2b.blackairsoft.eu',
-          status: 'active',
-          updatedAt: minutesAgo(42),
-        },
-        {
-          name: 'Радиостанция Baofeng UV-5R + PTT',
-          sku: 'BF-UV5R-PTT',
-          marketPrice: 58.0,
-          wholesalePrice: 31.2,
-          source: 'wholesale.tacticalgear.bg',
-          status: 'active',
-          updatedAt: minutesAgo(15),
-        },
-      ];
+      function openModal(id) {
+        const modal = document.getElementById(id);
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        const field = modal.querySelector('input, select, textarea');
+        if (field) window.setTimeout(() => field.focus(), 40);
+      }
+
+      function closeModal(id) {
+        const modal = document.getElementById(id);
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+
+      $$('[data-close-modal]').forEach(function (button) {
+        button.addEventListener('click', () => closeModal(button.dataset.closeModal));
+      });
+
+      ['key-modal', 'supplier-modal', 'product-modal'].forEach(function (id) {
+        // Clicking the backdrop closes; clicking the panel must not.
+        document.getElementById(id).addEventListener('click', function (event) {
+          if (event.target === this) closeModal(id);
+        });
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        ['key-modal', 'supplier-modal', 'product-modal'].forEach(closeModal);
+      });
+
+      /* ------------------------------------------------------------------ *
+       * API key modal
+       * ------------------------------------------------------------------ */
+
+      $('#api-key-button').addEventListener('click', function () {
+        $('#key-input').value = getApiKey();
+        $('#key-status').classList.add('hidden');
+        openModal('key-modal');
+      });
+
+      $('#key-toggle').addEventListener('click', function () {
+        const field = $('#key-input');
+        const icon = this.querySelector('i');
+        const hidden = field.type === 'password';
+        field.type = hidden ? 'text' : 'password';
+        icon.className = hidden ? 'fa-solid fa-eye-slash text-[13px]' : 'fa-solid fa-eye text-[13px]';
+      });
+
+      function showKeyStatus(message, tone) {
+        const element = $('#key-status');
+        const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
+        element.className = 'mt-2.5 text-[12.5px] ' + (palette[tone] || palette.info);
+        element.textContent = message;
+        element.classList.remove('hidden');
+      }
+
+      $('#key-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const candidate = $('#key-input').value.trim();
+        if (!candidate) {
+          showKeyStatus('Въведете ключ или натиснете „Изтрий".', 'error');
+          return;
+        }
+
+        $('#key-save-spinner').classList.remove('hidden');
+        $('#key-save-icon').classList.add('hidden');
+        showKeyStatus('Проверка срещу API-то…', 'info');
+
+        try {
+          // Verified against a real endpoint rather than just stored: a key that
+          // is wrong should say so here, not fail silently on every later call.
+          const response = await fetch(ENDPOINTS.products + '?limit=1', {
+            headers: { Accept: 'application/json', 'x-api-key': candidate },
+          });
+
+          if (response.status === 401) {
+            showKeyStatus('Ключът е невалиден. Проверете го и опитайте пак.', 'error');
+            return;
+          }
+          if (response.status === 403) {
+            showKeyStatus('Ключът е валиден, но абонаментът е изтекъл.', 'error');
+            return;
+          }
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          setApiKey(candidate);
+          showKeyStatus('Ключът е валиден и запазен в този браузър.', 'success');
+          toast('API ключът е активен.', 'success');
+          window.setTimeout(() => closeModal('key-modal'), 700);
+          loadProducts();
+        } catch (error) {
+          // The key may still be right while the server is down; store it and
+          // say exactly that rather than blaming the key.
+          setApiKey(candidate);
+          showKeyStatus('API-то не отговори (' + error.message + '). Ключът е запазен.', 'info');
+        } finally {
+          $('#key-save-spinner').classList.add('hidden');
+          $('#key-save-icon').classList.remove('hidden');
+        }
+      });
+
+      $('#key-remove').addEventListener('click', function () {
+        setApiKey('');
+        $('#key-input').value = '';
+        showKeyStatus('Ключът е премахнат от този браузър.', 'info');
+        loadProducts();
+      });
+
+      /* ------------------------------------------------------------------ *
+       * SECTION 3 — dashboard
+       * ------------------------------------------------------------------ */
 
       function minutesAgo(minutes) {
         return new Date(Date.now() - minutes * 60000).toISOString();
       }
 
-      let rows = DEMO_ROWS.slice();
+      /**
+       * Demo catalog: one product, several warehouses. This is the shape the
+       * whole comparison view is built around — the interesting number is never
+       * "the price", it is "the spread between the places that sell it".
+       */
+      const DEMO_PRODUCTS = [
+        {
+          id: 'demo-1',
+          name: 'Тактическа жилетка BlackAirsoft SECURITY',
+          sku: 'BA-VEST-SEC-BLK',
+          marketPrice: 189.0,
+          suppliers: [
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 94.5, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 101.2, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+            { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 88.9, inStock: true, status: 'active', updatedAt: minutesAgo(63) },
+            { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 112.0, inStock: false, status: 'active', updatedAt: minutesAgo(88) },
+          ],
+        },
+        {
+          id: 'demo-2',
+          name: 'Нож Smith & Wesson HRT — фиксирано острие',
+          sku: 'SW-HRT-FB-01',
+          marketPrice: 42.9,
+          suppliers: [
+            { name: 'S&W Dealer EU', host: 'dealer.smith-wesson-eu.com', price: 21.3, inStock: true, status: 'active', updatedAt: minutesAgo(58) },
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 24.8, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 23.15, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+          ],
+        },
+        {
+          id: 'demo-3',
+          name: 'Реплика Specna Arms SA-C02 CORE',
+          sku: 'SPE-01-018315',
+          marketPrice: 269.0,
+          suppliers: [
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 158.4, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+            { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 149.9, inStock: true, status: 'active', updatedAt: minutesAgo(63) },
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 171.0, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+            { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 163.5, inStock: true, status: 'active', updatedAt: minutesAgo(88) },
+            { name: 'S&W Dealer EU', host: 'dealer.smith-wesson-eu.com', price: 175.0, inStock: true, status: 'active', updatedAt: minutesAgo(58) },
+          ],
+        },
+        {
+          id: 'demo-4',
+          name: 'Балистични очила ESS Crossbow 3LS',
+          sku: 'ESS-XBW-3LS',
+          marketPrice: 128.5,
+          suppliers: [
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 71.9, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 74.4, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+          ],
+        },
+        {
+          id: 'demo-5',
+          name: 'Каска FAST Maritime + NVG mount',
+          sku: 'TG-HLM-FAST-MT',
+          marketPrice: 214.0,
+          suppliers: [
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 132.8, inStock: true, status: 'warning', updatedAt: minutesAgo(190) },
+            { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 128.0, inStock: false, status: 'active', updatedAt: minutesAgo(63) },
+            { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 141.9, inStock: true, status: 'active', updatedAt: minutesAgo(88) },
+          ],
+        },
+        {
+          id: 'demo-6',
+          name: 'Ръкавици Mechanix M-Pact Coyote',
+          sku: 'MX-MPACT-COY-L',
+          marketPrice: 46.9,
+          suppliers: [
+            { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 27.4, inStock: true, status: 'active', updatedAt: minutesAgo(63) },
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 26.15, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 29.9, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+          ],
+        },
+        {
+          id: 'demo-7',
+          name: 'Оптика Vector Optics Forester 1-5x24',
+          sku: 'VO-FRST-1524',
+          marketPrice: 315.0,
+          suppliers: [
+            { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 199.0, inStock: true, status: 'error', updatedAt: minutesAgo(1490) },
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 212.5, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+          ],
+        },
+        {
+          id: 'demo-8',
+          name: 'Гранула BLS Bio 0.28g (3600 бр.)',
+          sku: 'BLS-BIO-028-3600',
+          marketPrice: 24.9,
+          suppliers: [
+            { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 12.6, inStock: true, status: 'active', updatedAt: minutesAgo(42) },
+            { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 11.85, inStock: true, status: 'active', updatedAt: minutesAgo(88) },
+            { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 13.2, inStock: true, status: 'active', updatedAt: minutesAgo(15) },
+          ],
+        },
+      ];
+
+      let products = DEMO_PRODUCTS.slice();
       let revealed = false;
+      let activeFilters = { savings: false, problems: false, supplier: '' };
+      const expandedRows = new Set();
 
       const STATUS_BADGE = {
-        active: {
-          label: 'Активен',
-          className: 'bg-emerald-500/12 text-emerald-400 ring-emerald-500/25',
-          icon: 'fa-circle-check',
-        },
-        warning: {
-          label: 'Забавен',
-          className: 'bg-amber-500/12 text-amber-400 ring-amber-500/25',
-          icon: 'fa-triangle-exclamation',
-        },
-        error: {
-          label: 'Грешка',
-          className: 'bg-red-500/12 text-red-400 ring-red-500/25',
-          icon: 'fa-circle-xmark',
-        },
+        active: { label: 'Активен', className: 'bg-emerald-500/12 text-emerald-400 ring-emerald-500/25', icon: 'fa-circle-check' },
+        warning: { label: 'Забавен', className: 'bg-amber-500/12 text-amber-400 ring-amber-500/25', icon: 'fa-triangle-exclamation' },
+        error: { label: 'Грешка', className: 'bg-red-500/12 text-red-400 ring-red-500/25', icon: 'fa-circle-xmark' },
       };
 
-      function marginPercent(row) {
-        if (!row.marketPrice || row.wholesalePrice == null) return null;
-        return ((row.marketPrice - row.wholesalePrice) / row.marketPrice) * 100;
+      /**
+       * Everything the comparison view needs, derived once per product.
+       * Only in-stock listings can win: the cheapest price at a warehouse that
+       * cannot ship it is not a price you can actually buy at.
+       */
+      function analyse(product) {
+        const priced = product.suppliers.filter((s) => typeof s.price === 'number');
+        const buyable = priced.filter((s) => s.inStock !== false);
+        const pool = buyable.length > 0 ? buyable : priced;
+
+        if (pool.length === 0) {
+          return { best: null, worst: null, spread: 0, margin: null, status: 'error', updatedAt: null, count: 0 };
+        }
+
+        const sorted = pool.slice().sort((a, b) => a.price - b.price);
+        const best = sorted[0];
+        const worst = sorted[sorted.length - 1];
+
+        const newest = product.suppliers.reduce(function (latest, supplier) {
+          const time = new Date(supplier.updatedAt).getTime();
+          return Number.isNaN(time) ? latest : Math.max(latest, time);
+        }, 0);
+
+        return {
+          best: best,
+          worst: worst,
+          spread: worst.price - best.price,
+          margin: product.marketPrice ? ((product.marketPrice - best.price) / product.marketPrice) * 100 : null,
+          status: product.suppliers.some((s) => s.status === 'error')
+            ? 'error'
+            : product.suppliers.some((s) => s.status === 'warning')
+              ? 'warning'
+              : 'active',
+          updatedAt: newest ? new Date(newest).toISOString() : null,
+          count: product.suppliers.length,
+          sorted: sorted,
+        };
+      }
+
+      function matchesQuery(product, query) {
+        if (!query) return true;
+        const haystack = [
+          product.name,
+          product.sku || '',
+          product.suppliers.map((s) => s.name + ' ' + s.host).join(' '),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.indexOf(query) !== -1;
+      }
+
+      function visibleProducts() {
+        const query = $('#table-search').value.trim().toLowerCase();
+
+        return products.filter(function (product) {
+          if (!matchesQuery(product, query)) return false;
+
+          if (activeFilters.supplier) {
+            const has = product.suppliers.some((s) => s.host === activeFilters.supplier);
+            if (!has) return false;
+          }
+
+          const view = analyse(product);
+          if (activeFilters.savings && !(view.spread > 0.01)) return false;
+          if (activeFilters.problems && view.status === 'active') return false;
+
+          return true;
+        });
+      }
+
+      function supplierRowsHtml(product, view) {
+        if (view.count === 0) {
+          return '<div class="px-5 py-4 text-[13px] text-slate-500">Няма свързани складове.</div>';
+        }
+
+        const ordered = product.suppliers.slice().sort(function (a, b) {
+          if (typeof a.price !== 'number') return 1;
+          if (typeof b.price !== 'number') return -1;
+          return a.price - b.price;
+        });
+
+        const items = ordered
+          .map(function (supplier) {
+            const isBest = view.best && supplier.host === view.best.host && supplier.price === view.best.price;
+            const premium =
+              view.best && typeof supplier.price === 'number' && view.best.price > 0
+                ? ((supplier.price - view.best.price) / view.best.price) * 100
+                : null;
+
+            return (
+              '<div class="flex items-center gap-4 rounded-xl border px-4 py-3 ' +
+              (isBest ? 'border-emerald-500/35 bg-emerald-500/[0.06]' : 'border-white/8 bg-ink-850') +
+              '">' +
+              '<span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg ' +
+              (isBest ? 'bg-emerald-500/15' : 'bg-white/5') +
+              '"><i class="fa-solid fa-warehouse text-[12px] ' +
+              (isBest ? 'text-emerald-400' : 'text-slate-500') +
+              '"></i></span>' +
+              '<span class="min-w-0 flex-1"><span class="block truncate text-[13px] font-medium text-white">' +
+              escapeHtml(supplier.name) +
+              (isBest
+                ? '<span class="ml-2 rounded-md bg-emerald-500/15 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-emerald-400">най-евтин</span>'
+                : '') +
+              '</span><span class="block truncate font-mono text-[11.5px] text-slate-500">' +
+              escapeHtml(supplier.host) +
+              '</span></span>' +
+              '<span class="shrink-0 text-right"><span class="num block text-[14px] font-semibold ' +
+              (isBest ? 'text-emerald-400' : 'text-slate-200') +
+              '"><span class="masked">' +
+              (typeof supplier.price === 'number' ? euro.format(supplier.price) : '—') +
+              '</span></span>' +
+              (premium !== null && premium > 0.01
+                ? '<span class="num block text-[11.5px] text-slate-500"><span class="masked">+' +
+                  premium.toFixed(1) +
+                  '%</span></span>'
+                : '') +
+              '</span>' +
+              '<span class="w-24 shrink-0 text-right text-[11.5px] ' +
+              (supplier.inStock === false ? 'text-amber-400' : 'text-slate-500') +
+              '">' +
+              (supplier.inStock === false ? 'изчерпан' : 'наличен') +
+              '</span>' +
+              '<span class="w-28 shrink-0 text-right text-[11.5px] text-slate-500">' +
+              escapeHtml(formatRelative(supplier.updatedAt)) +
+              '</span>' +
+              '</div>'
+            );
+          })
+          .join('');
+
+        return (
+          '<div class="space-y-2 px-5 py-4">' +
+          items +
+          '<button type="button" data-add-supplier="' +
+          escapeHtml(product.id) +
+          '" class="mt-1 inline-flex items-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:border-accent-500/50 hover:text-accent-300">' +
+          '<i class="fa-solid fa-plus text-[11px]"></i>Добави още един склад</button>' +
+          '</div>'
+        );
       }
 
       function renderTable() {
-        const query = $('#table-search').value.trim().toLowerCase();
-        const visible = rows.filter(function (row) {
-          if (!query) return true;
-          return (
-            row.name.toLowerCase().indexOf(query) !== -1 ||
-            String(row.source).toLowerCase().indexOf(query) !== -1 ||
-            String(row.sku || '').toLowerCase().indexOf(query) !== -1
-          );
-        });
-
+        const list = visibleProducts();
         const body = $('#products-body');
-        body.innerHTML = visible
-          .map(function (row) {
-            const badge = STATUS_BADGE[row.status] || STATUS_BADGE.active;
-            const margin = marginPercent(row);
+
+        body.innerHTML = list
+          .map(function (product) {
+            const view = analyse(product);
+            const badge = STATUS_BADGE[view.status] || STATUS_BADGE.active;
+            const open = expandedRows.has(product.id);
             const marginTone =
-              margin === null ? 'text-slate-500' : margin >= 40 ? 'text-emerald-400' : margin >= 25 ? 'text-slate-200' : 'text-amber-400';
+              view.margin === null
+                ? 'text-slate-500'
+                : view.margin >= 40
+                  ? 'text-emerald-400'
+                  : view.margin >= 25
+                    ? 'text-slate-200'
+                    : 'text-amber-400';
 
             return (
-              '<tr class="transition hover:bg-white/[0.025]">' +
-              '<td class="px-5 py-4"><div class="font-medium text-white">' +
-              escapeHtml(row.name) +
-              '</div><div class="mt-0.5 font-mono text-[11.5px] text-slate-500">' +
-              escapeHtml(row.sku || '—') +
-              '</div></td>' +
+              '<tr data-row="' +
+              escapeHtml(product.id) +
+              '" class="cursor-pointer border-b border-white/[0.06] transition hover:bg-white/[0.025]">' +
+              '<td class="px-5 py-4"><div class="flex items-start gap-3">' +
+              '<i class="fa-solid fa-chevron-right mt-1 text-[11px] text-slate-600 transition ' +
+              (open ? 'rotate-90 text-accent-400' : '') +
+              '"></i>' +
+              '<span><span class="block font-medium text-white">' +
+              escapeHtml(product.name) +
+              '</span><span class="mt-0.5 flex items-center gap-2 font-mono text-[11.5px] text-slate-500">' +
+              escapeHtml(product.sku || '—') +
+              '<span class="rounded-md bg-white/5 px-1.5 py-0.5 font-sans text-[10.5px] text-slate-400">' +
+              view.count +
+              ' склада</span></span></span></div></td>' +
               '<td class="num px-5 py-4 text-right text-slate-200">' +
-              euro.format(row.marketPrice) +
+              (product.marketPrice ? euro.format(product.marketPrice) : '—') +
               '</td>' +
               '<td class="num px-5 py-4 text-right font-semibold text-accent-300"><span class="masked">' +
-              (row.wholesalePrice == null ? '—' : euro.format(row.wholesalePrice)) +
+              (view.best ? euro.format(view.best.price) : '—') +
+              '</span></td>' +
+              '<td class="num px-5 py-4 text-right font-semibold ' +
+              (view.spread > 0.01 ? 'text-emerald-400' : 'text-slate-600') +
+              '"><span class="masked">' +
+              (view.spread > 0.01 ? euro.format(view.spread) : '—') +
               '</span></td>' +
               '<td class="num px-5 py-4 text-right font-semibold ' +
               marginTone +
               '"><span class="masked">' +
-              (margin === null ? '—' : margin.toFixed(1) + '%') +
+              (view.margin === null ? '—' : view.margin.toFixed(1) + '%') +
               '</span></td>' +
               '<td class="px-5 py-4"><span class="inline-flex items-center gap-2 text-[12.5px] text-slate-400">' +
               '<i class="fa-solid fa-lock text-[10px] text-slate-600"></i>' +
-              escapeHtml(row.source) +
+              escapeHtml(view.best ? view.best.host : '—') +
               '</span></td>' +
               '<td class="px-5 py-4"><span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 ' +
               badge.className +
@@ -1725,48 +2364,91 @@
               badge.label +
               '</span></td>' +
               '<td class="px-5 py-4 text-[12.5px] text-slate-400">' +
-              escapeHtml(formatRelative(row.updatedAt)) +
-              '</td>' +
-              '</tr>'
+              escapeHtml(formatRelative(view.updatedAt)) +
+              '</td></tr>' +
+              (open
+                ? '<tr class="border-b border-white/[0.06] bg-ink-950/40"><td colspan="8">' +
+                  supplierRowsHtml(product, view) +
+                  '</td></tr>'
+                : '')
             );
           })
           .join('');
 
-        $('#table-empty').classList.toggle('hidden', visible.length > 0);
-        $('#table-count').textContent = visible.length + ' от ' + rows.length + ' артикула';
+        $('#table-empty').classList.toggle('hidden', list.length > 0);
+        $('#table-count').textContent = list.length + ' от ' + products.length + ' артикула';
+
+        body.querySelectorAll('[data-row]').forEach(function (row) {
+          row.addEventListener('click', function (event) {
+            if (event.target.closest('[data-add-supplier]')) return;
+            const id = row.dataset.row;
+            if (expandedRows.has(id)) expandedRows.delete(id);
+            else expandedRows.add(id);
+            renderTable();
+          });
+        });
+
+        body.querySelectorAll('[data-add-supplier]').forEach(function (button) {
+          button.addEventListener('click', function (event) {
+            event.stopPropagation();
+            openSupplierModal(button.dataset.addSupplier);
+          });
+        });
 
         renderStats();
       }
 
       function renderStats() {
-        const margins = rows.map(marginPercent).filter(function (value) {
-          return value !== null;
-        });
+        const analyses = products.map(analyse);
+        const margins = analyses.map((v) => v.margin).filter((value) => value !== null);
+        const totalSavings = analyses.reduce((sum, v) => sum + v.spread, 0);
 
         const average = margins.length
-          ? margins.reduce(function (sum, value) {
-              return sum + value;
-            }, 0) / margins.length
+          ? margins.reduce((sum, value) => sum + value, 0) / margins.length
           : 0;
 
-        const newest = rows.reduce(function (latest, row) {
-          const time = new Date(row.updatedAt).getTime();
-          return Number.isNaN(time) ? latest : Math.max(latest, time);
+        const newest = analyses.reduce(function (latest, view) {
+          const time = view.updatedAt ? new Date(view.updatedAt).getTime() : 0;
+          return Math.max(latest, time);
         }, 0);
 
-        $('#stat-total').textContent = rows.length;
+        const hosts = new Set();
+        products.forEach((product) => product.suppliers.forEach((s) => hosts.add(s.host)));
+
+        $('#stat-total').textContent = products.length;
+        $('#stat-total-note').textContent = 'в ' + hosts.size + ' склада';
         $('#stat-margin').textContent = margins.length ? average.toFixed(1) + '%' : '—';
-        $('#stat-risen').textContent = rows.filter(function (row) {
-          return row.status !== 'active';
-        }).length;
-        $('#stat-checked').textContent = newest ? formatRelative(new Date(newest).toISOString()) : '—';
+        $('#stat-risen').textContent = euro.format(totalSavings);
+        $('#stat-checked').textContent = newest
+          ? formatRelative(new Date(newest).toISOString())
+          : '—';
+      }
+
+      function rebuildSupplierFilter() {
+        const hosts = new Set();
+        products.forEach((product) => product.suppliers.forEach((s) => hosts.add(s.host)));
+
+        const select = $('#filter-supplier');
+        const previous = select.value;
+
+        select.innerHTML =
+          '<option value="">Всички складове (' +
+          hosts.size +
+          ')</option>' +
+          Array.from(hosts)
+            .sort()
+            .map((host) => '<option value="' + escapeHtml(host) + '">' + escapeHtml(host) + '</option>')
+            .join('');
+
+        select.value = hosts.has(previous) ? previous : '';
+        activeFilters.supplier = select.value;
       }
 
       /**
-       * Loads live data, mapping the API's product shape onto the table's.
-       * On any failure the demo rows stay, and the source label says so — a
-       * dashboard that silently shows fictional numbers as if they were real
-       * is worse than one that admits it.
+       * Maps the API's product shape onto the comparison shape. Falls back to
+       * the demo catalog on any failure, and always says which it is showing —
+       * a dashboard that presents fictional numbers as real is worse than one
+       * that admits it has no data.
        */
       async function loadProducts() {
         const icon = $('#refresh-icon');
@@ -1783,47 +2465,84 @@
           const items = Array.isArray(page.data) ? page.data : [];
 
           if (items.length === 0) {
-            $('#data-source-label').textContent = 'няма записи в API-то — показани демо данни';
-            rows = DEMO_ROWS.slice();
+            products = DEMO_PRODUCTS.slice();
+            $('#data-source-label').textContent = 'няма записи в API-то — демо данни';
           } else {
-            rows = items.map(function (product) {
-              const primary =
-                (product.competitors || []).find(function (competitor) {
-                  return competitor.isPrimary;
-                }) || (product.competitors || [])[0];
+            products = items.map(function (product) {
+              const listings = product.competitors || [];
 
               return {
+                id: product.id,
                 name: product.name,
                 sku: product.sku,
-                marketPrice: Number(product.currentPrice || 0),
-                wholesalePrice:
-                  product.ourPrice == null ? null : Number(product.ourPrice),
-                source: primary ? primary.host : new URL(product.competitorUrl).host,
-                status:
-                  product.scrapeStatus === 'success'
-                    ? 'active'
-                    : product.scrapeStatus === 'failed'
-                      ? 'error'
-                      : 'warning',
-                updatedAt: product.lastCheckedAt || product.updatedAt,
+                marketPrice: product.ourPrice == null ? null : Number(product.ourPrice),
+                suppliers: listings.map(function (competitor) {
+                  return {
+                    name: competitor.name,
+                    host: competitor.host,
+                    price: competitor.currentPrice == null ? null : Number(competitor.currentPrice),
+                    inStock: competitor.inStock,
+                    status:
+                      competitor.scrapeStatus === 'success'
+                        ? 'active'
+                        : competitor.scrapeStatus === 'failed'
+                          ? 'error'
+                          : 'warning',
+                    updatedAt: competitor.lastCheckedAt || competitor.updatedAt,
+                  };
+                }),
               };
             });
 
             $('#data-source-label').textContent = 'на живо от API-то';
           }
         } catch (error) {
-          rows = DEMO_ROWS.slice();
+          products = DEMO_PRODUCTS.slice();
           $('#data-source-label').textContent = getApiKey()
-            ? 'API-то е недостъпно — показани демо данни'
-            : 'няма API ключ — показани демо данни';
+            ? 'API-то е недостъпно — демо данни'
+            : 'няма API ключ — демо данни';
         } finally {
           icon.classList.remove('fa-spin');
+          rebuildSupplierFilter();
           renderTable();
         }
       }
 
+      /* --- Filters ------------------------------------------------------- */
+
       $('#table-search').addEventListener('input', renderTable);
       $('#refresh-data').addEventListener('click', loadProducts);
+
+      $('#filter-supplier').addEventListener('change', function () {
+        activeFilters.supplier = this.value;
+        renderTable();
+      });
+
+      $$('.filter-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          const name = chip.dataset.filter;
+          activeFilters[name] = !activeFilters[name];
+
+          chip.classList.toggle('border-accent-500/50', activeFilters[name]);
+          chip.classList.toggle('bg-accent-500/10', activeFilters[name]);
+          chip.classList.toggle('text-white', activeFilters[name]);
+          chip.classList.toggle('border-white/10', !activeFilters[name]);
+          chip.classList.toggle('text-slate-400', !activeFilters[name]);
+
+          renderTable();
+        });
+      });
+
+      $('#expand-all').addEventListener('click', function () {
+        const list = visibleProducts();
+        const allOpen = list.every((product) => expandedRows.has(product.id));
+
+        if (allOpen) expandedRows.clear();
+        else list.forEach((product) => expandedRows.add(product.id));
+
+        $('#expand-label').textContent = allOpen ? 'Разгъни всички' : 'Свий всички';
+        renderTable();
+      });
 
       $('#toggle-reveal').addEventListener('click', function () {
         revealed = !revealed;
@@ -1834,6 +2553,270 @@
         $('#reveal-label').textContent = revealed ? 'Скрий цени на едро' : 'Покажи цени на едро';
       });
 
+      /* --- Add supplier -------------------------------------------------- */
+
+      let supplierTargetId = null;
+
+      function openSupplierModal(productId) {
+        const product = products.find((item) => item.id === productId);
+        supplierTargetId = productId;
+
+        $('#supplier-modal-product').textContent = product ? product.name : '';
+        $('#supplier-status').classList.add('hidden');
+        $('#supplier-form').reset();
+        openModal('supplier-modal');
+      }
+
+      $('#supplier-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const name = $('#supplier-name').value.trim();
+        const url = $('#supplier-url').value.trim();
+        const status = $('#supplier-status');
+
+        function showSupplierStatus(message, tone) {
+          const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
+          status.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+          status.textContent = message;
+          status.classList.remove('hidden');
+        }
+
+        if (!name || !url) {
+          showSupplierStatus('Попълнете име и линк.', 'error');
+          return;
+        }
+
+        $('#supplier-spinner').classList.remove('hidden');
+        $('#supplier-icon').classList.add('hidden');
+
+        try {
+          const response = await fetch(ENDPOINTS.products + '/' + supplierTargetId + '/competitors', {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              name: name,
+              url: url,
+              currency: $('#supplier-currency').value,
+              priceSelector: $('#supplier-selector').value.trim() || undefined,
+            }),
+          });
+
+          if (!response.ok) {
+            const detail = await response.text();
+            throw new Error('HTTP ' + response.status + ' ' + detail.slice(0, 140));
+          }
+
+          showSupplierStatus('Складът е добавен. Първата проверка тръгва при следващия sweep.', 'success');
+          toast('Складът е добавен.', 'success');
+          window.setTimeout(function () {
+            closeModal('supplier-modal');
+            loadProducts();
+          }, 800);
+        } catch (error) {
+          showSupplierStatus('Не бе добавен: ' + error.message, 'error');
+        } finally {
+          $('#supplier-spinner').classList.add('hidden');
+          $('#supplier-icon').classList.remove('hidden');
+        }
+      });
+
+      /* --- New product across several stores ----------------------------- */
+
+      /** Retailers the scraper already knows how to read without configuration. */
+      const KNOWN_HOSTS = {
+        'emag.bg': 'eMAG',
+        'technomarket.bg': 'Технómarket',
+        'technopolis.bg': 'Технополис',
+        'vario.bg': 'Vario',
+        'ozone.bg': 'Ozone',
+        'ardes.bg': 'Ardes',
+      };
+
+      function hostOf(url) {
+        try {
+          return new URL(url.trim()).host.replace(/^www\./, '');
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function knownRetailer(host) {
+        if (!host) return null;
+        const match = Object.keys(KNOWN_HOSTS).find(
+          (known) => host === known || host.endsWith('.' + known),
+        );
+        return match ? KNOWN_HOSTS[match] : null;
+      }
+
+      function parseUrls(raw) {
+        return raw
+          .split(/[\n\r]+/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .slice(0, 10);
+      }
+
+      /** Live feedback on which pasted links the scraper already understands. */
+      function renderUrlPreview() {
+        const container = $('#url-preview');
+        const urls = parseUrls($('#product-urls').value);
+
+        container.innerHTML = urls
+          .map(function (url) {
+            const host = hostOf(url);
+            const retailer = knownRetailer(host);
+
+            if (!host) {
+              return (
+                '<span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/12 px-2.5 py-1 text-[11.5px] font-medium text-red-300">' +
+                '<i class="fa-solid fa-xmark text-[10px]"></i>невалиден линк</span>'
+              );
+            }
+
+            return (
+              '<span class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-medium ' +
+              (retailer
+                ? 'bg-emerald-500/12 text-emerald-300'
+                : 'bg-white/5 text-slate-400') +
+              '"><i class="fa-solid ' +
+              (retailer ? 'fa-circle-check' : 'fa-circle-question') +
+              ' text-[10px]"></i>' +
+              escapeHtml(retailer || host) +
+              '</span>'
+            );
+          })
+          .join('');
+      }
+
+      $('#product-urls').addEventListener('input', renderUrlPreview);
+
+      $('#add-product').addEventListener('click', function () {
+        $('#product-form').reset();
+        $('#product-status').classList.add('hidden');
+        $('#url-preview').innerHTML = '';
+        openModal('product-modal');
+      });
+
+      function showProductStatus(message, tone) {
+        const element = $('#product-status');
+        const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
+        element.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+        element.innerHTML = message;
+        element.classList.remove('hidden');
+      }
+
+      $('#product-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const name = $('#product-name').value.trim();
+        const urls = parseUrls($('#product-urls').value);
+
+        if (!name) {
+          showProductStatus('Въведете име на продукта.', 'error');
+          return;
+        }
+        if (urls.length === 0 || urls.some((url) => !hostOf(url))) {
+          showProductStatus('Поставете поне един валиден линк (http/https).', 'error');
+          return;
+        }
+
+        $('#product-spinner').classList.remove('hidden');
+        $('#product-icon').classList.add('hidden');
+        showProductStatus('Създаване…', 'info');
+
+        try {
+          // The first link becomes the primary listing, because the API creates
+          // a product and its primary competitor in one transaction.
+          const created = await fetch(ENDPOINTS.products, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              name: name,
+              sku: $('#product-sku').value.trim() || undefined,
+              targetUrl: urls[0],
+              competitorUrl: urls[0],
+              competitorName: knownRetailer(hostOf(urls[0])) || hostOf(urls[0]),
+              currency: 'EUR',
+              ourPrice: Number($('#product-our-price').value) || undefined,
+              targetPrice: Number($('#product-target').value) || undefined,
+            }),
+          });
+
+          if (!created.ok) {
+            const detail = await created.text();
+            throw new Error('HTTP ' + created.status + ' ' + detail.slice(0, 160));
+          }
+
+          const product = await created.json();
+
+          // The remaining links are attached as extra warehouses. One failure
+          // must not lose the others, so each is reported on its own.
+          const extras = await Promise.all(
+            urls.slice(1).map(async function (url) {
+              try {
+                const response = await fetch(ENDPOINTS.products + '/' + product.id + '/competitors', {
+                  method: 'POST',
+                  headers: authHeaders({ 'Content-Type': 'application/json' }),
+                  body: JSON.stringify({
+                    name: knownRetailer(hostOf(url)) || hostOf(url),
+                    url: url,
+                    currency: 'EUR',
+                  }),
+                });
+                return response.ok ? null : hostOf(url) + ' (HTTP ' + response.status + ')';
+              } catch (error) {
+                return hostOf(url) + ' (' + error.message + ')';
+              }
+            }),
+          );
+
+          const failed = extras.filter(Boolean);
+
+          showProductStatus('Създаден. Стартиране на първата проверка…', 'info');
+
+          // Scrape immediately, so the comparison is populated before the user
+          // has to wonder whether anything happened.
+          const triggered = await fetch(ENDPOINTS.scraperTrigger + '/' + product.id, {
+            method: 'POST',
+            headers: authHeaders(),
+          });
+
+          let summary = '';
+          if (triggered.ok) {
+            const results = await triggered.json();
+            const ok = results.filter((result) => result.error === null);
+            summary =
+              ok.length +
+              '/' +
+              results.length +
+              ' магазина прочетени успешно.' +
+              (ok.length
+                ? ' Най-ниска цена: ' +
+                  euro.format(Math.min.apply(null, ok.map((r) => r.currentPrice || Infinity))) +
+                  '.'
+                : '');
+          }
+
+          showProductStatus(
+            'Готово. ' +
+              summary +
+              (failed.length ? '<br>Не бяха добавени: ' + escapeHtml(failed.join(', ')) : ''),
+            failed.length ? 'info' : 'success',
+          );
+
+          toast('Продуктът е добавен и проверен.', 'success');
+          window.setTimeout(function () {
+            closeModal('product-modal');
+            loadProducts();
+          }, 1600);
+        } catch (error) {
+          showProductStatus('Неуспешно: ' + escapeHtml(error.message), 'error');
+        } finally {
+          $('#product-spinner').classList.add('hidden');
+          $('#product-icon').classList.remove('hidden');
+        }
+      });
+
       /* --- CSV export ---------------------------------------------------- */
 
       $('#export-csv').addEventListener('click', function () {
@@ -1841,10 +2824,12 @@
           'Продукт',
           'SKU',
           'Пазарна цена (EUR)',
+          'Склад',
+          'Домейн',
           'Цена на едро (EUR)',
-          'Марж (%)',
-          'Източник',
-          'Статус',
+          'Най-евтин',
+          'Наличност',
+          'Разлика спрямо най-евтин (%)',
           'Последно обновяване',
         ];
 
@@ -1857,41 +2842,56 @@
           return /[";\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
         }
 
+        function decimal(value) {
+          return value == null ? '' : value.toFixed(2).replace('.', ',');
+        }
+
         const lines = [header.map(cell).join(separator)];
 
-        rows.forEach(function (row) {
-          const margin = marginPercent(row);
-          lines.push(
-            [
-              cell(row.name),
-              cell(row.sku || ''),
-              cell(row.marketPrice.toFixed(2).replace('.', ',')),
-              cell(row.wholesalePrice == null ? '' : row.wholesalePrice.toFixed(2).replace('.', ',')),
-              cell(margin === null ? '' : margin.toFixed(1).replace('.', ',')),
-              cell(row.source),
-              cell((STATUS_BADGE[row.status] || STATUS_BADGE.active).label),
-              cell(new Date(row.updatedAt).toLocaleString('bg-BG')),
-            ].join(separator),
-          );
+        // One row per warehouse, so the file can be pivoted in Excel — a single
+        // row per product would throw away exactly the comparison you exported it for.
+        visibleProducts().forEach(function (product) {
+          const view = analyse(product);
+
+          product.suppliers.forEach(function (supplier) {
+            const isBest = view.best && supplier.host === view.best.host && supplier.price === view.best.price;
+            const premium =
+              view.best && typeof supplier.price === 'number' && view.best.price > 0
+                ? ((supplier.price - view.best.price) / view.best.price) * 100
+                : null;
+
+            lines.push(
+              [
+                cell(product.name),
+                cell(product.sku || ''),
+                cell(decimal(product.marketPrice)),
+                cell(supplier.name),
+                cell(supplier.host),
+                cell(decimal(supplier.price)),
+                cell(isBest ? 'да' : ''),
+                cell(supplier.inStock === false ? 'изчерпан' : 'наличен'),
+                cell(premium === null ? '' : premium.toFixed(1).replace('.', ',')),
+                cell(new Date(supplier.updatedAt).toLocaleString('bg-BG')),
+              ].join(separator),
+            );
+          });
         });
 
         // The BOM makes Excel read the file as UTF-8 instead of mangling Cyrillic.
-        const blob = new Blob(['﻿' + lines.join('\r\n')], {
-          type: 'text/csv;charset=utf-8;',
-        });
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
 
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         const stamp = new Date().toISOString().slice(0, 10);
 
         link.href = url;
-        link.download = 'priceguard-ceni-' + stamp + '.csv';
+        link.download = 'priceguard-sravnenie-' + stamp + '.csv';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        toast('Свалени ' + rows.length + ' реда в CSV.', 'success');
+        toast('Свалени ' + (lines.length - 1) + ' реда в CSV.', 'success');
       });
 
       /* --- Copy API link ------------------------------------------------- */

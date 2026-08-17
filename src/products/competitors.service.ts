@@ -149,23 +149,28 @@ export class CompetitorsService {
    * Oldest first, so nothing starves.
    */
   findDueForScrape(limit: number): Promise<Competitor[]> {
-    return this.competitorsRepository
-      .createQueryBuilder('competitor')
-      .innerJoinAndSelect('competitor.product', 'product')
-      .where('competitor.isActive = true')
-      .andWhere('product.isActive = true')
-      .andWhere(
-        new Brackets((where) => {
-          where
-            .where('competitor.last_checked_at IS NULL')
-            .orWhere(
-              "competitor.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute')",
-            );
-        }),
-      )
-      .orderBy('competitor.last_checked_at', 'ASC', 'NULLS FIRST')
-      .take(limit)
-      .getMany();
+    return (
+      this.competitorsRepository
+        .createQueryBuilder('competitor')
+        .innerJoinAndSelect('competitor.product', 'product')
+        .where('competitor.isActive = true')
+        .andWhere('product.isActive = true')
+        .andWhere(
+          new Brackets((where) => {
+            where
+              .where('competitor.last_checked_at IS NULL')
+              .orWhere(
+                "competitor.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute')",
+              );
+          }),
+        )
+        // Property path, not the column name: combined with `take()` and a join,
+        // TypeORM resolves the ORDER BY through entity metadata, and a raw column
+        // name is not found there — it throws on `databaseName` of undefined.
+        .orderBy('competitor.lastCheckedAt', 'ASC', 'NULLS FIRST')
+        .take(limit)
+        .getMany()
+    );
   }
 
   countDueForScrape(): Promise<number> {

@@ -51,20 +51,56 @@ export const SITE_PROFILES: SiteProfile[] = [
   {
     host: 'emag.bg',
     name: 'eMAG',
-    priceSelectors: ['.product-new-price', '[data-price]'],
-    currency: 'BGN',
-    outOfStockText: ['Не е налично', 'Изчерпан'],
+    // Verified 2026-08: the page carries a complete schema.org Product with
+    // `offers.price = 359` and `priceCurrency = EUR`, so the generic JSON-LD
+    // strategy already succeeds. The selector is kept as a fallback for the
+    // day the structured data disappears — `.product-new-price` renders as
+    // "359,00 €" once its <sup> decimals are concatenated.
+    priceSelectors: ['.product-new-price'],
+    currency: 'EUR',
+    outOfStockText: ['Не е наличен', 'Изчерпан'],
   },
   {
+    host: 'technomarket.bg',
+    name: 'Technomarket',
+    // Verified 2026-08. The page prints both currencies and the JSON-LD block
+    // carries the BGN figure (467.44), but `.price-wrapper .price` resolves to
+    // the EUR node (239.00 — the same amount at the fixed 1.95583 rate).
+    //
+    // The selector is pinned to the EUR node deliberately: every other price in
+    // this system is stored in EUR, and mixing currencies inside one comparison
+    // is how you end up recommending the most expensive warehouse.
+    priceSelectors: ['.price-wrapper .price', '.price-block .price', '.price'],
+    currency: 'EUR',
+    outOfStockText: ['Изчерпан', 'Не е наличен', 'Очаквайте скоро'],
+  },
+  {
+    // NOTE: technopolis.bg publishes `User-agent: * / Disallow: /` and allows
+    // only a named allowlist of search-engine crawlers. With
+    // SCRAPER_RESPECT_ROBOTS=true — the default, and the right default — every
+    // fetch here is refused before a request is made. The profile is kept for
+    // the case where you obtain written permission from them.
     host: 'technopolis.bg',
     name: 'Technopolis',
-    priceSelectors: ['.product-price__price', '.price-value'],
-    currency: 'BGN',
+    // Verified 2026-08. An Angular storefront, but server-side rendered, so a
+    // plain fetch does see the price. It prints both currencies:
+    //   <span class="price-value">99.99</span>€ / <span class="price-value">195.56</span>лв.
+    // The EUR node comes first in the product block, and the parser takes the
+    // first match — which is what this system stores.
+    priceSelectors: ['.product-pdp__prices .price-value', '.price-value'],
+    currency: 'EUR',
+    outOfStockText: ['Изчерпан', 'Не е наличен', 'Изчерпана наличност'],
   },
   {
     host: 'ozone.bg',
     name: 'Ozone',
     priceSelectors: ['.product-price .price', '.price'],
+    currency: 'BGN',
+  },
+  {
+    host: 'ardes.bg',
+    name: 'Ardes',
+    priceSelectors: ['.product-price', '.price'],
     currency: 'BGN',
   },
 ];
