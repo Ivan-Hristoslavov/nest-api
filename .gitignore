@@ -1,0 +1,33 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Build output
+/dist
+/build
+*.tsbuildinfo
+
+# Dependencies
+/node_modules
+.pnp
+.pnp.js
+
+# Tests / coverage
+/coverage
+/.nyc_output
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / OS
+.idea
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+*.swp
