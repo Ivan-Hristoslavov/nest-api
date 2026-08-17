@@ -1597,18 +1597,6 @@
         }
       }
 
-      $('#api-key-button').addEventListener('click', function () {
-        const entered = window.prompt(
-          'Въведете вашия X-API-KEY.\nОставете празно, за да го изтриете от този браузър.',
-          getApiKey(),
-        );
-
-        if (entered === null) return;
-        setApiKey(entered.trim());
-        toast(entered.trim() ? 'API ключът е запазен в този браузър.' : 'API ключът е изтрит.', 'info');
-        if (currentView === 'dashboard') loadProducts();
-      });
-
       /* ------------------------------------------------------------------ *
        * SECTION 2 — credentials form
        * ------------------------------------------------------------------ */
