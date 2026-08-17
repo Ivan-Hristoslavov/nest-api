@@ -28,6 +28,23 @@ export interface SiteProfile {
   outOfStockSelectors?: string[];
   /** Text that marks the item as unavailable when found on the page. */
   outOfStockText?: string[];
+
+  /**
+   * Who is selling. On a classifieds site this is the dealer; on a shop it is
+   * usually the shop itself and can be left unset.
+   */
+  sellerSelectors?: string[];
+  /** Labels and boilerplate to strip out of the seller text. */
+  sellerStrip?: string[];
+  /** Where the item is, when the page says. */
+  locationSelectors?: string[];
+  /** Extra facts worth showing, as label -> regular expression over the page text. */
+  attributePatterns?: Array<{
+    label: string;
+    pattern: RegExp;
+    /** Where to look. 'title' covers <title> and <h1>; defaults to the body. */
+    scope?: 'title' | 'body';
+  }>;
 }
 
 export const SITE_PROFILES: SiteProfile[] = [
@@ -101,6 +118,18 @@ export const SITE_PROFILES: SiteProfile[] = [
     priceSelectors: ['.Price', '#details .price', '.price'],
     currency: 'EUR',
     outOfStockText: ['Обявата е изтекла', 'Обявата не е активна'],
+    // The dealer block reads "Контакти с продавача | MAXI | 0887733811 | …",
+    // so the label and the phone numbers are stripped to leave the firm name.
+    sellerSelectors: ['.dealer', '.dealer2023'],
+    sellerStrip: ['Контакти с продавача', 'Контакти', 'Телефон'],
+    locationSelectors: ['.adress', '.address', '.contactsBox'],
+    attributePatterns: [
+      { label: 'Година', pattern: /(\d{4})\s*г\./, scope: 'title' },
+      { label: 'Пробег', pattern: /([\d\s]{3,9})\s*км/ },
+      { label: 'Двигател', pattern: /(Дизелов|Бензинов|Хибриден|Електрически)/ },
+      { label: 'Скоростна кутия', pattern: /(Автоматична|Ръчна)/ },
+      { label: 'ДДС', pattern: /(Цената е с включено ДДС)/ },
+    ],
   },
   {
     host: 'cars.bg',

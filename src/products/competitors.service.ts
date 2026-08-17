@@ -28,6 +28,10 @@ export interface PriceObservationInput {
   inStock?: boolean | null;
   strategy?: string | null;
   source: string;
+  sellerName?: string | null;
+  location?: string | null;
+  imageUrl?: string | null;
+  attributes?: Record<string, string> | null;
 }
 
 /** Consecutive failures after which a listing is deactivated automatically. */
@@ -398,6 +402,12 @@ export class CompetitorsService {
     competitor.lastError = null;
     competitor.failureCount = 0;
     competitor.lastStrategy = observation.strategy ?? null;
+    // Details are only overwritten when the page supplied them, so a redesign
+    // that hides the seller does not erase what we already knew.
+    if (observation.sellerName) competitor.sellerName = observation.sellerName.slice(0, 160);
+    if (observation.location) competitor.location = observation.location.slice(0, 255);
+    if (observation.imageUrl) competitor.imageUrl = observation.imageUrl;
+    if (observation.attributes) competitor.attributes = observation.attributes;
     competitor.inStock = observation.inStock ?? competitor.inStock;
 
     if (priceChanged) {

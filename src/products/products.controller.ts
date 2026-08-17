@@ -28,6 +28,7 @@ import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ApiPaginatedResponse } from '../common/swagger/api-paginated-response.decorator';
+import { BulkImportDto, BulkImportResultDto } from './dto/bulk-import.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { PriceCheckResultDto } from './dto/price-check-result.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
@@ -61,6 +62,28 @@ export class ProductsController {
   })
   create(@Body() createProductDto: CreateProductDto): Promise<Product> {
     return this.productsService.create(createProductDto);
+  }
+
+  @Post('bulk')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Import up to 500 products at once',
+    description: [
+      'Adds many products and all their shop links in a single request — the only practical way to onboard a real catalogue.',
+      '',
+      '**Row isolation.** Every row is written in its own transaction, so one bad link cannot roll back the rest. The response names the failing row and the reason.',
+      '',
+      '**Idempotent by SKU.** Re-importing an updated export is the normal case: matching products are updated and new shop links merged in.',
+      '',
+      '**Dry run.** Send `dryRun: true` first to see what a large file would do before it does it.',
+      '',
+      'Prices are not fetched here — the scheduler picks the new listings up on its next sweep, so one import does not fire a thousand requests at every shop at once.',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ description: 'Per-row outcome.', type: BulkImportResultDto })
+  @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
+  bulkImport(@Body() dto: BulkImportDto): Promise<BulkImportResultDto> {
+    return this.productsService.bulkImport(dto);
   }
 
   @Get()

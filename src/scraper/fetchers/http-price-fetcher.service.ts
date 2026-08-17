@@ -127,6 +127,7 @@ export class HttpPriceFetcherService implements PriceSource {
       );
     }
 
+    const details = this.parser.parseDetails(html, profile, target.url);
     const durationMs = Date.now() - startedAt;
 
     this.logger.log(
@@ -140,6 +141,10 @@ export class HttpPriceFetcherService implements PriceSource {
       strategy: parsed.strategy,
       source: target.host,
       durationMs,
+      sellerName: details.sellerName,
+      location: details.location,
+      imageUrl: details.imageUrl,
+      attributes: Object.keys(details.attributes).length > 0 ? details.attributes : null,
     };
   }
 

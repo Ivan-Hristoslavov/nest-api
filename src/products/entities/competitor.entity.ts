@@ -178,6 +178,41 @@ export class Competitor {
   failureCount!: number;
 
   @ApiPropertyOptional({
+    description:
+      'Who is selling — the dealer on a classifieds site, the shop elsewhere. A price without a seller is half an answer.',
+    maxLength: 160,
+    nullable: true,
+    example: 'MAXI',
+  })
+  @Column({ name: 'seller_name', type: 'varchar', length: 160, nullable: true })
+  sellerName!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Where the item is, when the listing says.',
+    maxLength: 255,
+    nullable: true,
+    example: 'бул. Самоковско шосе 1, София',
+  })
+  @Column({ name: 'location', type: 'varchar', length: 255, nullable: true })
+  location!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Main image from the listing.',
+    format: 'uri',
+    nullable: true,
+  })
+  @Column({ name: 'image_url', type: 'text', nullable: true })
+  imageUrl!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Extra facts scraped from the page — year, mileage, engine, VAT note.',
+    nullable: true,
+    example: { Година: '2016', Пробег: '231000', Двигател: 'Дизелов' },
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  attributes!: Record<string, string> | null;
+
+  @ApiPropertyOptional({
     description: 'Which extraction strategy produced the last price.',
     example: 'json-ld',
     nullable: true,

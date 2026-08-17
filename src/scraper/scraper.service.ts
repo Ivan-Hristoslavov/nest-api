@@ -259,6 +259,10 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
         inStock: observation.inStock,
         strategy: observation.strategy,
         source: observation.source,
+        sellerName: observation.sellerName,
+        location: observation.location,
+        imageUrl: observation.imageUrl,
+        attributes: observation.attributes,
       });
     } catch (error) {
       const reason =

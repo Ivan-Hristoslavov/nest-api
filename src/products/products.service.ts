@@ -4,6 +4,12 @@ import { Brackets, DataSource, Repository } from 'typeorm';
 
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import {
+  BulkImportDto,
+  BulkImportResultDto,
+  BulkProductDto,
+  BulkRowResultDto,
+} from './dto/bulk-import.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductSortField, QueryProductsDto } from './dto/query-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -11,6 +17,7 @@ import { Competitor } from './entities/competitor.entity';
 import { PriceHistory } from './entities/price-history.entity';
 import { Product } from './entities/product.entity';
 import { ScrapeStatus } from './enums/scrape-status.enum';
+import { retailerNameForHost } from '../scraper/parsers/site-profiles';
 
 /** Aggregate counters for the dashboard / monitoring endpoint. */
 export interface ProductStats {
@@ -108,6 +115,196 @@ export class ProductsService {
 
     this.logger.log(`Created product ${saved.id} (${saved.name})`);
     return saved;
+  }
+
+  /**
+   * Imports many products at once.
+   *
+   * Nobody pastes 500 links by hand, so the alternative to this endpoint is not
+   * "a slower workflow" — it is the product going unused. Design decisions that
+   * matter at this size:
+   *
+   * - **Row isolation.** Each row runs in its own transaction. One bad URL in a
+   *   catalogue export must not roll back the 499 good ones, and the caller is
+   *   told exactly which row failed and why.
+   * - **Idempotency by SKU.** Re-importing an updated export is the normal case,
+   *   not an error. Existing products are updated and their listings merged.
+   * - **A dry run.** On a 500-row file you want to see what will happen before
+   *   it happens.
+   * - **No scraping here.** Prices are fetched by the scheduler afterwards;
+   *   doing 1500 HTTP requests inside one API call would time out and hammer
+   *   every shop at once.
+   */
+  async bulkImport(dto: BulkImportDto): Promise<BulkImportResultDto> {
+    const startedAt = Date.now();
+    const rows: BulkRowResultDto[] = [];
+    const updateExisting = dto.updateExisting ?? true;
+    const dryRun = dto.dryRun ?? false;
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+    let listingsAdded = 0;
+
+    for (const [index, entry] of dto.products.entries()) {
+      const row = index + 1;
+
+      try {
+        const result = await this.importOne(entry, { updateExisting, dryRun });
+        rows.push({ row, name: entry.name, ...result });
+
+        if (result.status === 'created') created += 1;
+        else if (result.status === 'updated') updated += 1;
+        else skipped += 1;
+
+        listingsAdded += result.listingsAdded;
+      } catch (error) {
+        failed += 1;
+        rows.push({
+          row,
+          name: entry.name,
+          status: 'failed',
+          productId: null,
+          listingsAdded: 0,
+          message: error instanceof Error ? error.message : 'Непозната грешка',
+        });
+      }
+    }
+
+    this.logger.log(
+      `Bulk import${dryRun ? ' (dry run)' : ''}: ${created} нови, ${updated} обновени, ` +
+        `${skipped} пропуснати, ${failed} с грешка, ${listingsAdded} склада.`,
+    );
+
+    return {
+      received: dto.products.length,
+      created,
+      updated,
+      skipped,
+      failed,
+      listingsAdded,
+      dryRun,
+      durationMs: Date.now() - startedAt,
+      rows,
+    };
+  }
+
+  private async importOne(
+    entry: BulkProductDto,
+    options: { updateExisting: boolean; dryRun: boolean },
+  ): Promise<Omit<BulkRowResultDto, 'row' | 'name'>> {
+    const urls = entry.urls.map((url) => url.trim()).filter(Boolean);
+
+    if (urls.length === 0) {
+      throw new Error('Няма нито един линк към магазин.');
+    }
+
+    for (const url of urls) {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new Error(`"${url.slice(0, 60)}" не е валиден адрес.`);
+      }
+      if (!/^https?:$/.test(parsed.protocol)) {
+        throw new Error(`"${url.slice(0, 60)}" не е http/https.`);
+      }
+      // A home page carries a price per tile and would yield an arbitrary one.
+      if (parsed.pathname.replace(/\/+$/, '') === '') {
+        throw new Error(`"${parsed.host}" сочи към начална страница, не към продукт.`);
+      }
+    }
+
+    const existing = entry.sku
+      ? await this.productsRepository.findOne({ where: { sku: entry.sku } })
+      : null;
+
+    if (existing && !options.updateExisting) {
+      return {
+        status: 'skipped',
+        productId: existing.id,
+        listingsAdded: 0,
+        message: `SKU ${entry.sku ?? ''} вече съществува.`,
+      };
+    }
+
+    if (options.dryRun) {
+      return {
+        status: existing ? 'updated' : 'created',
+        productId: existing?.id ?? null,
+        listingsAdded: urls.length,
+        message: 'Пробен режим — нищо не е записано.',
+      };
+    }
+
+    // One transaction per row: a failure isolates to its own line.
+    return this.dataSource.transaction(async (manager) => {
+      const productsRepo = manager.getRepository(Product);
+      const competitorsRepo = manager.getRepository(Competitor);
+      const currency = entry.currency ?? 'EUR';
+
+      let product = existing;
+
+      if (product) {
+        productsRepo.merge(product, {
+          name: entry.name,
+          ourPrice: entry.ourPrice ?? product.ourPrice,
+          targetPrice: entry.targetPrice ?? product.targetPrice,
+        });
+        product = await productsRepo.save(product);
+      } else {
+        product = await productsRepo.save(
+          productsRepo.create({
+            name: entry.name,
+            sku: entry.sku ?? null,
+            targetUrl: urls[0],
+            competitorUrl: urls[0],
+            currency,
+            ourPrice: entry.ourPrice ?? null,
+            targetPrice: entry.targetPrice ?? null,
+            scrapeStatus: ScrapeStatus.Pending,
+            isActive: true,
+          }),
+        );
+      }
+
+      let added = 0;
+
+      for (const [index, url] of urls.entries()) {
+        const duplicate = await competitorsRepo.findOne({
+          where: { productId: product.id, url },
+        });
+        if (duplicate) continue;
+
+        const host = new URL(url).host;
+        await competitorsRepo.save(
+          competitorsRepo.create({
+            productId: product.id,
+            name: retailerNameForHost(host),
+            url,
+            host,
+            currency,
+            isPrimary: index === 0 && !existing,
+            isActive: true,
+            scrapeStatus: ScrapeStatus.Pending,
+          }),
+        );
+        added += 1;
+      }
+
+      product.competitorCount = await competitorsRepo.count({
+        where: { productId: product.id, isActive: true },
+      });
+      await productsRepo.save(product);
+
+      return {
+        status: existing ? ('updated' as const) : ('created' as const),
+        productId: product.id,
+        listingsAdded: added,
+        message: null,
+      };
+    });
   }
 
   async findAll(query: QueryProductsDto): Promise<PaginatedResponseDto<Product>> {

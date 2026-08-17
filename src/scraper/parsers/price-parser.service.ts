@@ -8,6 +8,18 @@ import { SiteProfile } from './site-profiles';
 export type ExtractionStrategy =
   'selector' | 'site-profile' | 'json-ld' | 'microdata' | 'meta' | 'heuristic';
 
+/** Everything worth knowing about a listing beyond its price. */
+export interface ListingDetails {
+  /** Dealer or shop name, when the page names one. */
+  sellerName: string | null;
+  /** Absolute URL of the main image. */
+  imageUrl: string | null;
+  /** Where the item is. */
+  location: string | null;
+  /** Extra facts, label -> value, in page order. */
+  attributes: Record<string, string>;
+}
+
 export interface ParsedPrice {
   price: number;
   /** ISO-4217 code when the page stated one. */
@@ -173,6 +185,118 @@ export class PriceParserService {
     if (!Number.isFinite(value) || value <= 0) return null;
 
     return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  /**
+   * Extracts the context around the price: who sells it, where it is, what it
+   * looks like.
+   *
+   * A price on its own is half an answer — "24 999 €" is far less useful than
+   * "24 999 € from MAXI in Sofia, 2016, 180 000 km". Everything here is
+   * best-effort: a missing field is null, never a failed scrape.
+   */
+  parseDetails(html: string, profile: SiteProfile | null, pageUrl?: string): ListingDetails {
+    const $ = cheerio.load(html);
+    const text = $('body').text().replace(/\s+/g, ' ');
+
+    return {
+      sellerName: this.extractSeller($, profile),
+      imageUrl: this.absoluteUrl($('meta[property="og:image"]').first().attr('content'), pageUrl),
+      location: this.extractLocation($, profile),
+      attributes: this.extractAttributes(
+        text,
+        profile,
+        `${$('title').first().text()} ${$('h1').first().text()}`,
+      ),
+    };
+  }
+
+  private extractSeller($: cheerio.CheerioAPI, profile: SiteProfile | null): string | null {
+    for (const selector of profile?.sellerSelectors ?? []) {
+      let raw: string;
+      try {
+        raw = $(selector).first().text();
+      } catch {
+        continue;
+      }
+      if (!raw) continue;
+
+      let cleaned = raw.replace(/\s+/g, ' ').trim();
+      for (const label of profile?.sellerStrip ?? []) {
+        cleaned = cleaned.split(label).join(' ');
+      }
+
+      // Phone numbers sit next to the name in most contact blocks.
+      cleaned = cleaned
+        .replace(/[+\d][\d\s()-]{6,}/g, '|')
+        .replace(/https?:\/\/\S+/g, '|')
+        .replace(/[|,;]+/g, '|');
+
+      // The block also carries the address, the city and "в mobile.bg от 2003 г."
+      // The firm name is the first segment; everything after it is context that
+      // belongs in other fields, not in the name.
+      const name = cleaned
+        .split('|')
+        .map((part) => part.replace(/\s+/g, ' ').trim())
+        .find((part) => part.length >= 2 && !/^(гр\.|с\.|бул\.|ул\.)/i.test(part));
+
+      // A trailing city ("MAXI гр. София") belongs in `location`, not the name.
+      const withoutCity = name?.split(/\s+(?:гр\.|с\.)\s*/)[0].trim();
+      if (withoutCity && withoutCity.length >= 2 && withoutCity.length <= 120) return withoutCity;
+    }
+
+    // Shops that name themselves in structured data.
+    const siteName = $('meta[property="og:site_name"]').first().attr('content');
+    return siteName?.trim() || null;
+  }
+
+  private extractLocation($: cheerio.CheerioAPI, profile: SiteProfile | null): string | null {
+    for (const selector of profile?.locationSelectors ?? []) {
+      let raw: string;
+      try {
+        raw = $(selector).first().text();
+      } catch {
+        continue;
+      }
+
+      const match = /(?:Местоположение|Намира се в|Адрес)\s*:?\s*([^|]{3,80})/.exec(
+        raw.replace(/\s+/g, ' '),
+      );
+      if (match) return match[1].trim();
+    }
+
+    return null;
+  }
+
+  private extractAttributes(
+    text: string,
+    profile: SiteProfile | null,
+    title = '',
+  ): Record<string, string> {
+    const attributes: Record<string, string> = {};
+
+    for (const { label, pattern, scope } of profile?.attributePatterns ?? []) {
+      // Scope matters more than it looks: searching the whole page for a year
+      // finds "в mobile.bg от 2003 г." — the dealer's join date — long before
+      // the car's own model year in the heading.
+      const haystack = scope === 'title' ? title : text;
+      const match = pattern.exec(haystack);
+      if (match) {
+        const value = (match[1] ?? match[0]).replace(/\s+/g, ' ').trim();
+        if (value) attributes[label] = value.slice(0, 60);
+      }
+    }
+
+    return attributes;
+  }
+
+  private absoluteUrl(value: string | undefined, base?: string): string | null {
+    if (!value) return null;
+    try {
+      return new URL(value, base ?? 'https://example.com').toString();
+    } catch {
+      return null;
+    }
   }
 
   /** Detects an ISO-4217 code, from an explicit code or a currency symbol. */

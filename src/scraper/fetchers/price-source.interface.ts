@@ -26,6 +26,11 @@ export interface PriceObservation {
   /** Host the observation came from. */
   source: string;
   durationMs: number;
+  /** Seller, location, image and extra facts, when the page exposes them. */
+  sellerName?: string | null;
+  location?: string | null;
+  imageUrl?: string | null;
+  attributes?: Record<string, string> | null;
 }
 
 /**
