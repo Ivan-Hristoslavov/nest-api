@@ -2,6 +2,8 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'node:path';
+
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
@@ -54,6 +56,16 @@ async function bootstrap(): Promise<void> {
   if (isProduction) {
     app.set('trust proxy', 1);
   }
+
+  // --- Static frontend -----------------------------------------------------
+  // `public/` is served from the project root rather than `__dirname`, so the
+  // same path works whether the app runs from `src` (ts-node) or `dist`.
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    index: ['index.html'],
+    // The single-file UI is edited often during development; caching it would
+    // mean explaining hard refreshes to everyone who touches it.
+    maxAge: isProduction ? '1h' : 0,
+  });
 
   // --- Routing -------------------------------------------------------------
   // `/health` stays outside the version prefix so uptime probes keep working

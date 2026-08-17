@@ -1,0 +1,1936 @@
+<!doctype html>
+<html lang="bg" class="scroll-smooth">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PriceGuard — Мониторинг на цени на едро</title>
+    <meta
+      name="description"
+      content="Автоматизиран мониторинг на цени зад парола и складови стени за електронни магазини."
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+      integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+            colors: {
+              ink: {
+                950: '#08090B',
+                900: '#0C0E12',
+                850: '#111319',
+                800: '#161921',
+                700: '#1E222C',
+                600: '#2A2F3B',
+                500: '#3A4150',
+              },
+              accent: {
+                400: '#5EEAD4',
+                500: '#2DD4BF',
+                600: '#14B8A6',
+                700: '#0F9488',
+              },
+            },
+            boxShadow: {
+              panel: '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 20px 50px -24px rgba(0,0,0,0.9)',
+              glow: '0 0 0 1px rgba(45,212,191,0.25), 0 18px 60px -20px rgba(45,212,191,0.35)',
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      body {
+        font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+        -webkit-font-smoothing: antialiased;
+      }
+      h1,
+      h2,
+      h3 {
+        letter-spacing: -0.022em;
+      }
+      .grid-bg {
+        background-image:
+          radial-gradient(60rem 40rem at 50% -10%, rgba(45, 212, 191, 0.09), transparent 70%),
+          linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+        background-size:
+          100% 100%,
+          64px 64px,
+          64px 64px;
+      }
+      .view[hidden] {
+        display: none;
+      }
+      .tab-active {
+        color: #fff;
+        background-color: #1e222c;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+      /* Blur the wholesale column until the user opts to reveal it — these are
+         commercially sensitive figures that should not sit on screen in an
+         office or a screen share by default. */
+      .masked {
+        filter: blur(6px);
+        user-select: none;
+        transition: filter 0.18s ease;
+      }
+      .revealed .masked {
+        filter: none;
+        user-select: auto;
+      }
+      @keyframes fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .fade-up {
+        animation: fade-up 0.35s ease both;
+      }
+      ::-webkit-scrollbar {
+        height: 10px;
+        width: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #2a2f3b;
+        border-radius: 99px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    </style>
+  </head>
+
+  <body class="bg-ink-950 text-slate-200 font-sans antialiased">
+    <!-- ================================================================== -->
+    <!-- HEADER                                                              -->
+    <!-- ================================================================== -->
+    <header class="sticky top-0 z-40 border-b border-white/5 bg-ink-950/85 backdrop-blur-xl">
+      <div class="mx-auto flex h-16 max-w-7xl items-center gap-6 px-5 sm:px-8">
+        <button
+          type="button"
+          data-view="landing"
+          class="nav-link flex shrink-0 items-center gap-2.5 text-left"
+        >
+          <span
+            class="grid h-8 w-8 place-items-center rounded-lg bg-accent-500/15 ring-1 ring-accent-500/30"
+          >
+            <i class="fa-solid fa-shield-halved text-[13px] text-accent-400"></i>
+          </span>
+          <span class="text-[15px] font-semibold tracking-tight text-white">PriceGuard</span>
+        </button>
+
+        <nav
+          class="ml-auto hidden items-center gap-1 rounded-xl bg-ink-900 p-1 ring-1 ring-white/5 md:flex"
+          aria-label="Основна навигация"
+        >
+          <button
+            type="button"
+            data-view="landing"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-white"
+          >
+            <i class="fa-solid fa-bolt mr-1.5 text-[11px]"></i>Планове
+          </button>
+          <button
+            type="button"
+            data-view="credentials"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-white"
+          >
+            <i class="fa-solid fa-lock mr-1.5 text-[11px]"></i>Достъпи
+          </button>
+          <button
+            type="button"
+            data-view="dashboard"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-white"
+          >
+            <i class="fa-solid fa-chart-line mr-1.5 text-[11px]"></i>Табло
+          </button>
+        </nav>
+
+        <div class="ml-auto flex items-center gap-2 md:ml-0">
+          <button
+            type="button"
+            id="api-key-button"
+            class="hidden items-center gap-2 rounded-lg border border-white/8 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-400 transition hover:border-white/15 hover:text-white sm:flex"
+            title="API ключ за тази сесия"
+          >
+            <i class="fa-solid fa-key text-[11px]"></i>
+            <span id="api-key-label">Няма ключ</span>
+          </button>
+          <button
+            type="button"
+            data-view="dashboard"
+            class="nav-link rounded-lg bg-white px-3.5 py-2 text-[13px] font-semibold text-ink-950 transition hover:bg-slate-200"
+          >
+            Демо табло
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile tabs -->
+      <nav
+        class="flex items-center gap-1 border-t border-white/5 px-4 py-2 md:hidden"
+        aria-label="Мобилна навигация"
+      >
+        <button
+          type="button"
+          data-view="landing"
+          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
+        >
+          Планове
+        </button>
+        <button
+          type="button"
+          data-view="credentials"
+          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
+        >
+          Достъпи
+        </button>
+        <button
+          type="button"
+          data-view="dashboard"
+          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
+        >
+          Табло
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- ================================================================ -->
+      <!-- SECTION 1 — LANDING & PRICING                                    -->
+      <!-- ================================================================ -->
+      <section id="view-landing" class="view" role="region" aria-label="Начална страница">
+        <div class="grid-bg border-b border-white/5">
+          <div class="mx-auto max-w-7xl px-5 pb-24 pt-20 sm:px-8 sm:pt-28">
+            <div class="mx-auto max-w-3xl text-center">
+              <span
+                class="inline-flex items-center gap-2 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1 text-[12px] font-medium text-accent-300"
+              >
+                <span class="relative flex h-1.5 w-1.5">
+                  <span
+                    class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75"
+                  ></span>
+                  <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-400"></span>
+                </span>
+                Мониторинг на 4 200+ артикула в реално време
+              </span>
+
+              <h1
+                class="mt-7 text-[2.6rem] font-extrabold leading-[1.08] text-white sm:text-6xl sm:leading-[1.05]"
+              >
+                Автоматизиран мониторинг на цени зад парола и складови стени
+              </h1>
+
+              <p class="mx-auto mt-6 max-w-2xl text-[17px] leading-relaxed text-slate-400">
+                Вашите доставчици крият истинските цени на едро зад логин. PriceGuard влиза с
+                <span class="text-slate-200">вашите собствени търговски достъпи</span>, следи цените
+                и наличностите denonощно и ви казва кога маржът ви се променя — преди клиентът да
+                е поръчал на стара цена.
+              </p>
+
+              <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  data-view="dashboard"
+                  class="nav-link group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-ink-950 shadow-glow transition hover:bg-accent-400 sm:w-auto"
+                >
+                  Стартирай безплатен тест
+                  <i
+                    class="fa-solid fa-arrow-right text-[13px] transition group-hover:translate-x-0.5"
+                  ></i>
+                </button>
+                <button
+                  type="button"
+                  data-view="credentials"
+                  class="nav-link inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-6 py-3.5 text-[15px] font-semibold text-slate-200 transition hover:border-white/20 hover:text-white sm:w-auto"
+                >
+                  <i class="fa-solid fa-lock text-[13px] text-accent-400"></i>
+                  Как пазим достъпите
+                </button>
+              </div>
+
+              <p class="mt-5 text-[13px] text-slate-500">
+                14 дни безплатно · Без карта · Отказ по всяко време
+              </p>
+            </div>
+
+            <!-- Trust strip -->
+            <div
+              class="mx-auto mt-16 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/8 bg-white/5 sm:grid-cols-4"
+            >
+              <div class="bg-ink-900 px-5 py-6 text-center">
+                <div class="num text-2xl font-bold text-white">4 200+</div>
+                <div class="mt-1 text-[12px] text-slate-500">следени артикула</div>
+              </div>
+              <div class="bg-ink-900 px-5 py-6 text-center">
+                <div class="num text-2xl font-bold text-white">37</div>
+                <div class="mt-1 text-[12px] text-slate-500">портала на едро</div>
+              </div>
+              <div class="bg-ink-900 px-5 py-6 text-center">
+                <div class="num text-2xl font-bold text-white">99.4%</div>
+                <div class="mt-1 text-[12px] text-slate-500">успешни проверки</div>
+              </div>
+              <div class="bg-ink-900 px-5 py-6 text-center">
+                <div class="num text-2xl font-bold text-white">&lt; 60 сек</div>
+                <div class="mt-1 text-[12px] text-slate-500">до алармата</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Value props -->
+        <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+          <div class="grid gap-5 md:grid-cols-3">
+            <article class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+              <span
+                class="grid h-10 w-10 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25"
+              >
+                <i class="fa-solid fa-eye text-accent-400"></i>
+              </span>
+              <h3 class="mt-4 text-[15px] font-semibold text-white">Зад логин стената</h3>
+              <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                Публичните цени не са вашите цени. Следим B2B портала на доставчика с вашия
+                търговски акаунт и виждаме реалната цена на едро, отстъпката и наличността.
+              </p>
+            </article>
+
+            <article class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+              <span
+                class="grid h-10 w-10 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25"
+              >
+                <i class="fa-solid fa-chart-line text-accent-400"></i>
+              </span>
+              <h3 class="mt-4 text-[15px] font-semibold text-white">Маржът, не цената</h3>
+              <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                Съпоставяме цената на едро с пазарната и с вашата. Получавате аларма когато маржът
+                падне под праг — не когато някакво число се е променило.
+              </p>
+            </article>
+
+            <article class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+              <span
+                class="grid h-10 w-10 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25"
+              >
+                <i class="fa-solid fa-database text-accent-400"></i>
+              </span>
+              <h3 class="mt-4 text-[15px] font-semibold text-white">Директно в магазина</h3>
+              <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                REST API, CSV експорт и готови конектори за Shopify и WooCommerce. Цените стигат до
+                магазина ви без ръчно копиране.
+              </p>
+            </article>
+          </div>
+        </div>
+
+        <!-- Pricing -->
+        <div id="pricing" class="border-t border-white/5 bg-ink-900/40">
+          <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+            <div class="mx-auto max-w-2xl text-center">
+              <h2 class="text-3xl font-bold text-white sm:text-4xl">Прозрачно ценообразуване</h2>
+              <p class="mt-4 text-[16px] leading-relaxed text-slate-400">
+                Плащате за брой домейни на едро, не за брой артикули. Всички планове включват
+                неограничени потребители и пълен достъп до API-то.
+              </p>
+            </div>
+
+            <div class="mt-14 grid items-start gap-6 lg:grid-cols-3">
+              <!-- Бизнес -->
+              <article
+                class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
+              >
+                <h3 class="text-[15px] font-semibold text-white">Бизнес План</h3>
+                <p class="mt-1.5 text-[13px] text-slate-500">
+                  За магазини с един-двама основни доставчика.
+                </p>
+                <div class="mt-6 flex items-baseline gap-1.5">
+                  <span class="num text-5xl font-extrabold tracking-tight text-white">€89</span>
+                  <span class="text-[14px] text-slate-500">/месец</span>
+                </div>
+                <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>До <strong class="font-semibold text-white">2 домейна</strong> на едро</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Обновяване на всеки <strong class="font-semibold text-white">24 часа</strong></span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>До 500 следени артикула</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>CSV експорт и REST API</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>История на цените 6 месеца</span>
+                  </li>
+                  <li class="flex gap-3 text-slate-600">
+                    <i class="fa-solid fa-minus mt-1 text-[12px]"></i>
+                    <span>Аларми в реално време</span>
+                  </li>
+                </ul>
+                <button
+                  type="button"
+                  data-view="dashboard"
+                  data-plan="business"
+                  class="nav-link mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-white transition hover:border-white/25 hover:bg-ink-700"
+                >
+                  Стартирай безплатен тест
+                </button>
+              </article>
+
+              <!-- ПРО -->
+              <article
+                class="relative flex h-full flex-col rounded-2xl border border-accent-500/40 bg-ink-850 p-7 shadow-glow lg:-mt-4 lg:pb-9 lg:pt-9"
+              >
+                <span
+                  class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-accent-500 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-ink-950"
+                >
+                  Най-избиран
+                </span>
+                <h3 class="text-[15px] font-semibold text-white">ПРО План</h3>
+                <p class="mt-1.5 text-[13px] text-slate-400">
+                  За магазини, които препрайсват активно.
+                </p>
+                <div class="mt-6 flex items-baseline gap-1.5">
+                  <span class="num text-5xl font-extrabold tracking-tight text-white">€229</span>
+                  <span class="text-[14px] text-slate-400">/месец</span>
+                </div>
+                <ul class="mt-7 space-y-3 text-[14px] text-slate-200">
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>До <strong class="font-semibold text-white">5 домейна</strong> на едро</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-white">2 пъти дневно</strong> обновяване</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>
+                      <strong class="font-semibold text-white">Аларми</strong> по e-mail, Slack и
+                      webhook
+                    </span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>До 5 000 следени артикула</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Правила за марж и препрайсване</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>История на цените 24 месеца</span>
+                  </li>
+                </ul>
+                <button
+                  type="button"
+                  data-view="dashboard"
+                  data-plan="pro"
+                  class="nav-link mt-8 w-full rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+                >
+                  Стартирай безплатен тест
+                </button>
+              </article>
+
+              <!-- Корпоративен -->
+              <article
+                class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
+              >
+                <h3 class="text-[15px] font-semibold text-white">Корпоративен План</h3>
+                <p class="mt-1.5 text-[13px] text-slate-500">
+                  За вериги и дистрибутори с ERP.
+                </p>
+                <div class="mt-6 flex items-baseline gap-1.5">
+                  <span class="num text-5xl font-extrabold tracking-tight text-white">€449</span>
+                  <span class="text-[14px] text-slate-500">+/месец</span>
+                </div>
+                <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-white">Неограничени</strong> домейни</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-white">Real-time</strong> скрейпинг</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-white">ERP интеграция</strong> (SAP, Microsoft Dynamics)</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Неограничени артикули</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Отделен акаунт мениджър и SLA</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Пълна история на цените</span>
+                  </li>
+                </ul>
+                <button
+                  type="button"
+                  data-view="dashboard"
+                  data-plan="enterprise"
+                  class="nav-link mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-white transition hover:border-white/25 hover:bg-ink-700"
+                >
+                  Стартирай безплатен тест
+                </button>
+              </article>
+            </div>
+
+            <p class="mt-10 text-center text-[13px] text-slate-500">
+              Цените са без ДДС. Плащането се обработва от Paddle като merchant of record.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- SECTION 2 — VENDOR CREDENTIALS PORTAL                            -->
+      <!-- ================================================================ -->
+      <section id="view-credentials" class="view" role="region" aria-label="Достъпи до доставчици" hidden>
+        <div class="mx-auto max-w-6xl px-5 py-12 sm:px-8 sm:py-16">
+          <div class="max-w-2xl">
+            <h2 class="text-3xl font-bold text-white sm:text-[2.1rem]">Достъпи до доставчици</h2>
+            <p class="mt-3 text-[15px] leading-relaxed text-slate-400">
+              Добавете търговския си акаунт към портала на доставчика. Скрейпърът влиза с него,
+              прочита цената на едро и излиза — точно както бихте направили ръчно, само че на всеки
+              няколко часа.
+            </p>
+          </div>
+
+          <div class="mt-10 grid gap-6 lg:grid-cols-5">
+            <!-- Form -->
+            <div class="lg:col-span-3">
+              <form
+                id="vendor-form"
+                class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel sm:p-7"
+                novalidate
+              >
+                <h3 class="flex items-center gap-2.5 text-[15px] font-semibold text-white">
+                  <i class="fa-solid fa-plug-circle-bolt text-accent-400"></i>
+                  Нов доставчик
+                </h3>
+
+                <div class="mt-6 space-y-5">
+                  <!-- Vendor -->
+                  <div>
+                    <label for="vendor-domain" class="mb-2 block text-[13px] font-medium text-slate-300">
+                      Доставчик / Домейн
+                      <span class="text-accent-400">*</span>
+                    </label>
+                    <div class="relative">
+                      <i
+                        class="fa-solid fa-warehouse pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+                      ></i>
+                      <select
+                        id="vendor-domain"
+                        name="vendorDomain"
+                        required
+                        class="w-full appearance-none rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-10 text-[14px] text-white outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                      >
+                        <option value="">— Изберете портал —</option>
+                        <option value="b2b.blackairsoft.eu">b2b.blackairsoft.eu</option>
+                        <option value="wholesale.tacticalgear.bg">wholesale.tacticalgear.bg</option>
+                        <option value="partner.airsoftpro.cz">partner.airsoftpro.cz</option>
+                        <option value="b2b.taginn.eu">b2b.taginn.eu</option>
+                        <option value="dealer.smith-wesson-eu.com">dealer.smith-wesson-eu.com</option>
+                        <option value="__custom__">Друг домейн…</option>
+                      </select>
+                      <i
+                        class="fa-solid fa-chevron-down pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-slate-500"
+                      ></i>
+                    </div>
+                    <input
+                      type="url"
+                      id="vendor-custom"
+                      name="vendorCustom"
+                      placeholder="https://b2b.moqt-dostavchik.bg/login"
+                      class="mt-2.5 hidden w-full rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                    />
+                  </div>
+
+                  <!-- Label -->
+                  <div>
+                    <label for="vendor-label" class="mb-2 block text-[13px] font-medium text-slate-300">
+                      Име на връзката
+                    </label>
+                    <div class="relative">
+                      <i
+                        class="fa-solid fa-tag pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+                      ></i>
+                      <input
+                        type="text"
+                        id="vendor-label"
+                        name="label"
+                        maxlength="80"
+                        placeholder="BlackAirsoft — основен акаунт"
+                        class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-4 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Auth method -->
+                  <div>
+                    <span class="mb-2 block text-[13px] font-medium text-slate-300">Метод на достъп</span>
+                    <div class="grid grid-cols-2 gap-2" role="tablist">
+                      <button
+                        type="button"
+                        data-auth="password"
+                        class="auth-tab rounded-xl border border-accent-500/50 bg-accent-500/10 px-4 py-2.5 text-[13px] font-medium text-white transition"
+                      >
+                        <i class="fa-solid fa-key mr-1.5 text-[11px]"></i>Потребител и парола
+                      </button>
+                      <button
+                        type="button"
+                        data-auth="cookies"
+                        class="auth-tab rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:text-white"
+                      >
+                        <i class="fa-solid fa-cookie-bite mr-1.5 text-[11px]"></i>Сесийни бисквитки
+                      </button>
+                    </div>
+                    <p class="mt-2 text-[12px] leading-relaxed text-slate-500">
+                      Бисквитките са по-безопасният вариант: изтичат сами и не дават достъп до
+                      смяна на паролата ви.
+                    </p>
+                  </div>
+
+                  <!-- Password pane -->
+                  <div id="pane-password" class="space-y-5">
+                    <div>
+                      <label for="vendor-username" class="mb-2 block text-[13px] font-medium text-slate-300">
+                        Потребител / E-mail
+                      </label>
+                      <div class="relative">
+                        <i
+                          class="fa-solid fa-user pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+                        ></i>
+                        <input
+                          type="text"
+                          id="vendor-username"
+                          name="username"
+                          autocomplete="off"
+                          spellcheck="false"
+                          placeholder="dealer@moqtmagazin.bg"
+                          class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-4 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label for="vendor-password" class="mb-2 block text-[13px] font-medium text-slate-300">
+                        Парола
+                      </label>
+                      <div class="relative">
+                        <i
+                          class="fa-solid fa-lock pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+                        ></i>
+                        <input
+                          type="password"
+                          id="vendor-password"
+                          name="password"
+                          autocomplete="off"
+                          placeholder="••••••••••••"
+                          class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-12 text-[14px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                        />
+                        <button
+                          type="button"
+                          id="toggle-password"
+                          aria-label="Покажи паролата"
+                          class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 transition hover:text-white"
+                        >
+                          <i class="fa-solid fa-eye text-[13px]"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Cookies pane -->
+                  <div id="pane-cookies" class="hidden">
+                    <label for="vendor-cookies" class="mb-2 block text-[13px] font-medium text-slate-300">
+                      Сесийни бисквитки
+                    </label>
+                    <textarea
+                      id="vendor-cookies"
+                      name="cookies"
+                      rows="7"
+                      spellcheck="false"
+                      placeholder="PHPSESSID=8f2b9c...; wholesale_auth=eyJhbGciOi...; cart_token=a91f..."
+                      class="w-full resize-y rounded-xl border border-white/10 bg-ink-850 px-4 py-3 font-mono text-[13px] leading-relaxed text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                    ></textarea>
+                    <p class="mt-2 text-[12px] leading-relaxed text-slate-500">
+                      Копирайте от DevTools → Application → Cookies, или през разширението ни за
+                      Chrome. Поддържа се и суров <code class="text-slate-400">Cookie:</code> хедър.
+                    </p>
+                  </div>
+
+                  <!-- Check interval -->
+                  <div>
+                    <label for="vendor-interval" class="mb-2 block text-[13px] font-medium text-slate-300">
+                      Честота на проверка
+                    </label>
+                    <div class="relative">
+                      <i
+                        class="fa-solid fa-clock-rotate-left pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+                      ></i>
+                      <select
+                        id="vendor-interval"
+                        name="checkIntervalMinutes"
+                        class="w-full appearance-none rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-10 text-[14px] text-white outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+                      >
+                        <option value="1440">Веднъж дневно (Бизнес)</option>
+                        <option value="720" selected>Два пъти дневно (ПРО)</option>
+                        <option value="60">На всеки час (Корпоративен)</option>
+                        <option value="15">На 15 минути (Корпоративен)</option>
+                      </select>
+                      <i
+                        class="fa-solid fa-chevron-down pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-slate-500"
+                      ></i>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <button
+                    type="submit"
+                    id="save-vendor"
+                    class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-accent-500 px-6 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <i id="save-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+                    <i id="save-icon" class="fa-solid fa-shield-halved text-[13px]"></i>
+                    <span id="save-label">Запази доставчик</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="test-connection"
+                    class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+                  >
+                    <i class="fa-solid fa-vial text-[13px]"></i>
+                    Тествай връзката
+                  </button>
+                </div>
+
+                <p id="vendor-status" class="mt-4 hidden text-[13px]"></p>
+              </form>
+            </div>
+
+            <!-- Security column -->
+            <aside class="space-y-5 lg:col-span-2">
+              <!-- SECURITY BANNER -->
+              <div
+                class="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] p-6"
+              >
+                <div
+                  class="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-emerald-500/10 blur-2xl"
+                ></div>
+                <div class="flex items-start gap-4">
+                  <span
+                    class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-400/40"
+                  >
+                    <i class="fa-solid fa-shield-halved text-[17px] text-emerald-400"></i>
+                  </span>
+                  <div>
+                    <h3 class="text-[15px] font-semibold text-emerald-300">
+                      🔒 Сигурността е наш приоритет
+                    </h3>
+                    <p class="mt-2.5 text-[13.5px] leading-relaxed text-emerald-100/85">
+                      Данните ви се криптират
+                      <strong class="font-semibold text-white">локално във вашия браузър</strong>
+                      с <strong class="font-semibold text-white">AES-256-GCM</strong>, преди изобщо
+                      да напуснат устройството ви. До Supabase пътува само шифрован пакет.
+                    </p>
+                    <p class="mt-3 text-[13.5px] leading-relaxed text-emerald-100/85">
+                      Ключът се разпечатва единствено вътре в скрейпъра, в момента на влизане в
+                      портала на доставчика. Паролата
+                      <strong class="font-semibold text-white">никога не се логва</strong>, не се
+                      показва в базата и не е достъпна през API-то.
+                    </p>
+                  </div>
+                </div>
+
+                <ul class="mt-5 space-y-2 border-t border-emerald-400/15 pt-4 text-[12.5px] text-emerald-100/70">
+                  <li class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
+                    AES-256-GCM в браузъра (WebCrypto), ключ увит с RSA-OAEP
+                  </li>
+                  <li class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
+                    TLS 1.3 при пренос, криптиране на диска в Supabase
+                  </li>
+                  <li class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
+                    Пълен одит log на всяко декриптиране
+                  </li>
+                  <li class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
+                    Изтриване по всяко време, необратимо
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Honest note -->
+              <div class="rounded-2xl border border-white/8 bg-ink-900 p-5">
+                <h4 class="flex items-center gap-2 text-[13px] font-semibold text-slate-200">
+                  <i class="fa-solid fa-circle-info text-[12px] text-slate-500"></i>
+                  Какво трябва да знаете
+                </h4>
+                <p class="mt-2.5 text-[13px] leading-relaxed text-slate-400">
+                  За да чете цените вместо вас, скрейпърът трябва да може да се логне — тоест
+                  системата по необходимост може да разпечата достъпа в момента на използване.
+                  Затова препоръчваме
+                  <strong class="text-slate-200">отделен търговски акаунт</strong> само за
+                  PriceGuard и, където доставчикът позволява,
+                  <strong class="text-slate-200">сесийни бисквитки вместо парола</strong>.
+                </p>
+                <p class="mt-2.5 text-[13px] leading-relaxed text-slate-400">
+                  Проверете и договора с доставчика си — някои B2B условия забраняват автоматизиран
+                  достъп дори с валиден акаунт.
+                </p>
+              </div>
+
+              <!-- Saved vendors -->
+              <div class="rounded-2xl border border-white/8 bg-ink-900 p-5">
+                <h4 class="text-[13px] font-semibold text-slate-200">Свързани портали</h4>
+                <ul id="vendor-list" class="mt-3.5 space-y-2.5"></ul>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- SECTION 3 — MONITORING DASHBOARD                                 -->
+      <!-- ================================================================ -->
+      <section id="view-dashboard" class="view" role="region" aria-label="Табло за мониторинг" hidden>
+        <div class="mx-auto max-w-[1400px] px-5 py-12 sm:px-8">
+          <!-- Header -->
+          <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 class="text-3xl font-bold text-white">Табло за мониторинг</h2>
+              <p class="mt-2 text-[14px] text-slate-400">
+                Пазарни цени срещу вашите цени на едро, обновявани автоматично.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                id="toggle-reveal"
+                class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+              >
+                <i id="reveal-icon" class="fa-solid fa-eye text-[12px]"></i>
+                <span id="reveal-label">Покажи цени на едро</span>
+              </button>
+              <button
+                type="button"
+                id="refresh-data"
+                class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+              >
+                <i id="refresh-icon" class="fa-solid fa-rotate text-[12px]"></i>
+                Обнови
+              </button>
+              <button
+                type="button"
+                id="export-csv"
+                class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-300 transition hover:border-white/20 hover:text-white"
+              >
+                <i class="fa-solid fa-file-csv text-[12px] text-emerald-400"></i>
+                Експорт в Excel (CSV)
+              </button>
+              <button
+                type="button"
+                id="copy-api-link"
+                class="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-ink-950 transition hover:bg-accent-400"
+              >
+                <i id="copy-icon" class="fa-solid fa-link text-[12px]"></i>
+                <span id="copy-label">Копирай API линк за Shopify / WooCommerce</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Stat tiles -->
+          <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
+              <div class="flex items-center justify-between">
+                <span class="text-[12.5px] font-medium text-slate-500">Следени артикули</span>
+                <i class="fa-solid fa-boxes-stacked text-[13px] text-slate-600"></i>
+              </div>
+              <div id="stat-total" class="num mt-3 text-3xl font-bold text-white">—</div>
+              <div class="mt-1.5 text-[12px] text-slate-500">в 3 портала на едро</div>
+            </div>
+
+            <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
+              <div class="flex items-center justify-between">
+                <span class="text-[12.5px] font-medium text-slate-500">Среден марж</span>
+                <i class="fa-solid fa-percent text-[13px] text-slate-600"></i>
+              </div>
+              <div id="stat-margin" class="num mt-3 text-3xl font-bold text-emerald-400">—</div>
+              <div class="mt-1.5 text-[12px] text-slate-500">пазарна срещу цена на едро</div>
+            </div>
+
+            <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
+              <div class="flex items-center justify-between">
+                <span class="text-[12.5px] font-medium text-slate-500">Поскъпнали при доставчик</span>
+                <i class="fa-solid fa-arrow-trend-up text-[13px] text-slate-600"></i>
+              </div>
+              <div id="stat-risen" class="num mt-3 text-3xl font-bold text-amber-400">—</div>
+              <div class="mt-1.5 text-[12px] text-slate-500">за последните 7 дни</div>
+            </div>
+
+            <div class="rounded-2xl border border-white/8 bg-ink-900 p-5 shadow-panel">
+              <div class="flex items-center justify-between">
+                <span class="text-[12.5px] font-medium text-slate-500">Последна проверка</span>
+                <i class="fa-solid fa-clock text-[13px] text-slate-600"></i>
+              </div>
+              <div id="stat-checked" class="mt-3 text-3xl font-bold text-white">—</div>
+              <div class="mt-1.5 text-[12px] text-slate-500">следваща след 4 ч 12 мин</div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <div class="mt-8 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
+            <div
+              class="flex flex-col gap-3 border-b border-white/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div class="relative w-full sm:max-w-xs">
+                <i
+                  class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-500"
+                ></i>
+                <input
+                  type="search"
+                  id="table-search"
+                  placeholder="Търси продукт или доставчик…"
+                  class="w-full rounded-lg border border-white/10 bg-ink-850 py-2 pl-9 pr-3 text-[13px] text-white placeholder-slate-600 outline-none transition focus:border-accent-500/60"
+                />
+              </div>
+              <div class="flex items-center gap-2 text-[12px] text-slate-500">
+                <span id="table-count">—</span>
+                <span class="text-slate-700">·</span>
+                <span id="data-source-label" class="text-slate-500">демо данни</span>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[1080px] text-left">
+                <thead>
+                  <tr class="border-b border-white/8 text-[11.5px] uppercase tracking-wider text-slate-500">
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Продукт</th>
+                    <th scope="col" class="px-5 py-3.5 text-right font-semibold">
+                      Текуща пазарна цена
+                    </th>
+                    <th scope="col" class="px-5 py-3.5 text-right font-semibold">
+                      <span class="inline-flex items-center gap-1.5">
+                        <i class="fa-solid fa-lock text-[10px] text-accent-400"></i>
+                        Скрита цена на едро
+                      </span>
+                    </th>
+                    <th scope="col" class="px-5 py-3.5 text-right font-semibold">Марж</th>
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Източник</th>
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Статус</th>
+                    <th scope="col" class="px-5 py-3.5 font-semibold">Последно обновяване</th>
+                  </tr>
+                </thead>
+                <tbody id="products-body" class="divide-y divide-white/[0.06] text-[13.5px]"></tbody>
+              </table>
+            </div>
+
+            <div
+              id="table-empty"
+              class="hidden px-5 py-16 text-center text-[13.5px] text-slate-500"
+            >
+              <i class="fa-solid fa-inbox mb-3 block text-2xl text-slate-700"></i>
+              Няма артикули, отговарящи на търсенето.
+            </div>
+          </div>
+
+          <p class="mt-4 text-[12px] text-slate-600">
+            Цените са в EUR без ДДС. Маржът се изчислява като (пазарна − на едро) / пазарна.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================================================================== -->
+    <!-- FOOTER                                                              -->
+    <!-- ================================================================== -->
+    <footer class="border-t border-white/5 bg-ink-950">
+      <div
+        class="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-[12.5px] text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8"
+      >
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-shield-halved text-accent-500/70"></i>
+          <span>PriceGuard — мониторинг на цени на едро</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-5">
+          <span>Общи условия</span>
+          <span>Поверителност</span>
+          <span>Обработка на данни (GDPR)</span>
+          <span>Статус на системата</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Toast -->
+    <div
+      id="toast"
+      class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 translate-y-3 rounded-xl border border-white/10 bg-ink-800 px-5 py-3 text-[13.5px] font-medium text-white opacity-0 shadow-2xl transition-all duration-300"
+      role="status"
+      aria-live="polite"
+    ></div>
+
+    <!-- ================================================================== -->
+    <!-- APPLICATION SCRIPT                                                  -->
+    <!-- ================================================================== -->
+    <script>
+      'use strict';
+
+      /* ------------------------------------------------------------------ *
+       * Configuration
+       * ------------------------------------------------------------------ */
+
+      const API_BASE = '/api/v1';
+
+      /** Endpoints this UI talks to. Kept in one place so a rename is one edit. */
+      const ENDPOINTS = {
+        products: API_BASE + '/products',
+        analyticsOverview: API_BASE + '/analytics/overview',
+        credentials: API_BASE + '/scraper/credentials',
+        credentialsPublicKey: API_BASE + '/scraper/credentials/public-key',
+        credentialsTest: API_BASE + '/scraper/credentials/test',
+      };
+
+      /**
+       * The API key is held in localStorage only. It is never written into the
+       * markup and never put in a URL — a key in a query string ends up in
+       * server logs, browser history and Referer headers.
+       */
+      const KEY_STORAGE = 'priceguard.apiKey';
+
+      function getApiKey() {
+        try {
+          return window.localStorage.getItem(KEY_STORAGE) || '';
+        } catch (error) {
+          return '';
+        }
+      }
+
+      function setApiKey(value) {
+        try {
+          if (value) window.localStorage.setItem(KEY_STORAGE, value);
+          else window.localStorage.removeItem(KEY_STORAGE);
+        } catch (error) {
+          /* private browsing — the session simply stays unauthenticated */
+        }
+        renderApiKeyBadge();
+      }
+
+      /** Every authenticated call goes through here, so the header is never forgotten. */
+      function authHeaders(extra) {
+        const headers = Object.assign({ Accept: 'application/json' }, extra || {});
+        const key = getApiKey();
+        if (key) headers['x-api-key'] = key;
+        return headers;
+      }
+
+      /* ------------------------------------------------------------------ *
+       * Small helpers
+       * ------------------------------------------------------------------ */
+
+      const $ = (selector) => document.querySelector(selector);
+      const $$ = (selector) => Array.prototype.slice.call(document.querySelectorAll(selector));
+
+      const euro = new Intl.NumberFormat('bg-BG', {
+        style: 'currency',
+        currency: 'EUR',
+        minimumFractionDigits: 2,
+      });
+
+      const relativeTime = new Intl.RelativeTimeFormat('bg', { numeric: 'auto' });
+
+      function formatRelative(isoString) {
+        if (!isoString) return '—';
+        const then = new Date(isoString).getTime();
+        if (Number.isNaN(then)) return '—';
+
+        const diffMinutes = Math.round((then - Date.now()) / 60000);
+        const absolute = Math.abs(diffMinutes);
+
+        if (absolute < 60) return relativeTime.format(diffMinutes, 'minute');
+        if (absolute < 60 * 24) return relativeTime.format(Math.round(diffMinutes / 60), 'hour');
+        return relativeTime.format(Math.round(diffMinutes / 1440), 'day');
+      }
+
+      /** Escapes text before it goes anywhere near innerHTML. */
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      let toastTimer = null;
+
+      function toast(message, tone) {
+        const element = $('#toast');
+        const palette = {
+          success: 'border-emerald-500/40 text-emerald-200',
+          error: 'border-red-500/40 text-red-200',
+          info: 'border-white/10 text-white',
+        };
+
+        element.className =
+          'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border bg-ink-800 px-5 py-3 text-[13.5px] font-medium shadow-2xl transition-all duration-300 opacity-100 translate-y-0 ' +
+          (palette[tone] || palette.info);
+        element.textContent = message;
+
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(function () {
+          element.style.opacity = '0';
+          element.style.transform = 'translate(-50%, 12px)';
+          window.setTimeout(function () {
+            element.style.opacity = '';
+            element.style.transform = '';
+            element.className =
+              'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 translate-y-3 rounded-xl border border-white/10 bg-ink-800 px-5 py-3 text-[13.5px] font-medium text-white opacity-0 shadow-2xl transition-all duration-300';
+          }, 320);
+        }, 3600);
+      }
+
+      /* ------------------------------------------------------------------ *
+       * View switching
+       * ------------------------------------------------------------------ */
+
+      const VIEWS = ['landing', 'credentials', 'dashboard'];
+      let currentView = '';
+
+      function switchView(name, options) {
+        if (VIEWS.indexOf(name) === -1) name = 'landing';
+        if (name === currentView && !(options && options.force)) return;
+
+        currentView = name;
+
+        VIEWS.forEach(function (view) {
+          const section = document.getElementById('view-' + view);
+          if (!section) return;
+          const active = view === name;
+          section.hidden = !active;
+          if (active) {
+            section.classList.remove('fade-up');
+            // Reflow so the animation restarts on every switch.
+            void section.offsetWidth;
+            section.classList.add('fade-up');
+          }
+        });
+
+        $$('.nav-link').forEach(function (button) {
+          const active = button.dataset.view === name;
+          button.classList.toggle('tab-active', active && !button.classList.contains('bg-white'));
+          if (active) button.setAttribute('aria-current', 'page');
+          else button.removeAttribute('aria-current');
+        });
+
+        if (window.location.hash !== '#' + name) {
+          window.history.replaceState(null, '', '#' + name);
+        }
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        if (name === 'dashboard') loadProducts();
+      }
+
+      $$('.nav-link').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const plan = button.dataset.plan;
+          if (plan) {
+            const names = { business: 'Бизнес', pro: 'ПРО', enterprise: 'Корпоративен' };
+            toast('Стартиран е 14-дневен тест на план ' + names[plan] + '.', 'success');
+          }
+          switchView(button.dataset.view);
+        });
+      });
+
+      window.addEventListener('hashchange', function () {
+        switchView(window.location.hash.replace('#', ''));
+      });
+
+      /* ------------------------------------------------------------------ *
+       * API key badge
+       * ------------------------------------------------------------------ */
+
+      function renderApiKeyBadge() {
+        const key = getApiKey();
+        const label = $('#api-key-label');
+        const button = $('#api-key-button');
+
+        if (key) {
+          label.textContent = key.slice(0, 12) + '…';
+          button.classList.remove('text-slate-400');
+          button.classList.add('text-accent-300', 'border-accent-500/30');
+        } else {
+          label.textContent = 'Няма ключ';
+          button.classList.add('text-slate-400');
+          button.classList.remove('text-accent-300', 'border-accent-500/30');
+        }
+      }
+
+      $('#api-key-button').addEventListener('click', function () {
+        const entered = window.prompt(
+          'Въведете вашия X-API-KEY.\nОставете празно, за да го изтриете от този браузър.',
+          getApiKey(),
+        );
+
+        if (entered === null) return;
+        setApiKey(entered.trim());
+        toast(entered.trim() ? 'API ключът е запазен в този браузър.' : 'API ключът е изтрит.', 'info');
+        if (currentView === 'dashboard') loadProducts();
+      });
+
+      /* ------------------------------------------------------------------ *
+       * SECTION 2 — credentials form
+       * ------------------------------------------------------------------ */
+
+      const vendorForm = $('#vendor-form');
+      const vendorSelect = $('#vendor-domain');
+      const vendorCustom = $('#vendor-custom');
+
+      vendorSelect.addEventListener('change', function () {
+        const custom = vendorSelect.value === '__custom__';
+        vendorCustom.classList.toggle('hidden', !custom);
+        if (custom) vendorCustom.focus();
+      });
+
+      let authMode = 'password';
+
+      $$('.auth-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          authMode = tab.dataset.auth;
+
+          $$('.auth-tab').forEach(function (other) {
+            const active = other === tab;
+            other.classList.toggle('border-accent-500/50', active);
+            other.classList.toggle('bg-accent-500/10', active);
+            other.classList.toggle('text-white', active);
+            other.classList.toggle('border-white/10', !active);
+            other.classList.toggle('bg-ink-850', !active);
+            other.classList.toggle('text-slate-400', !active);
+          });
+
+          $('#pane-password').classList.toggle('hidden', authMode !== 'password');
+          $('#pane-cookies').classList.toggle('hidden', authMode !== 'cookies');
+        });
+      });
+
+      $('#toggle-password').addEventListener('click', function () {
+        const field = $('#vendor-password');
+        const icon = this.querySelector('i');
+        const hidden = field.type === 'password';
+
+        field.type = hidden ? 'text' : 'password';
+        icon.className = hidden ? 'fa-solid fa-eye-slash text-[13px]' : 'fa-solid fa-eye text-[13px]';
+      });
+
+      /* --- Client-side encryption --------------------------------------- *
+       *
+       * The credential payload is sealed in the browser before it is sent:
+       *
+       *   1. a fresh AES-256-GCM key encrypts the JSON;
+       *   2. that key is wrapped with the server's RSA-OAEP public key;
+       *   3. only ciphertext, IV and the wrapped key leave the machine.
+       *
+       * The server can unwrap the key — it must, because the scraper has to log
+       * in on the customer's behalf. What this buys is real all the same: the
+       * plaintext never exists in a request body, a proxy log, an error report
+       * or a database column.
+       *
+       * If the public key cannot be fetched, submission is refused. Falling back
+       * to sending a plaintext password would defeat the entire point.
+       * ------------------------------------------------------------------ */
+
+      let cachedPublicKey = null;
+
+      function base64FromBuffer(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i += 1) binary += String.fromCharCode(bytes[i]);
+        return window.btoa(binary);
+      }
+
+      function bufferFromBase64(value) {
+        const binary = window.atob(value);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+      }
+
+      async function getServerPublicKey() {
+        if (cachedPublicKey) return cachedPublicKey;
+
+        const response = await fetch(ENDPOINTS.credentialsPublicKey, { headers: authHeaders() });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+
+        const payload = await response.json();
+
+        cachedPublicKey = {
+          keyId: payload.keyId,
+          key: await window.crypto.subtle.importKey(
+            'spki',
+            bufferFromBase64(payload.publicKey),
+            { name: 'RSA-OAEP', hash: 'SHA-256' },
+            false,
+            ['encrypt'],
+          ),
+        };
+
+        return cachedPublicKey;
+      }
+
+      async function sealCredentials(secretPayload) {
+        if (!window.crypto || !window.crypto.subtle) {
+          throw new Error(
+            'Браузърът не поддържа WebCrypto. Отворете страницата през HTTPS или localhost.',
+          );
+        }
+
+        const server = await getServerPublicKey();
+
+        const dataKey = await window.crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          true,
+          ['encrypt'],
+        );
+
+        // 96-bit IV, the size AES-GCM is specified for. Fresh for every payload:
+        // reusing an IV with the same key breaks GCM catastrophically.
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+        const ciphertext = await window.crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv, tagLength: 128 },
+          dataKey,
+          new TextEncoder().encode(JSON.stringify(secretPayload)),
+        );
+
+        const rawDataKey = await window.crypto.subtle.exportKey('raw', dataKey);
+        const wrappedKey = await window.crypto.subtle.encrypt(
+          { name: 'RSA-OAEP' },
+          server.key,
+          rawDataKey,
+        );
+
+        return {
+          algorithm: 'AES-256-GCM',
+          keyId: server.keyId,
+          iv: base64FromBuffer(iv),
+          ciphertext: base64FromBuffer(ciphertext),
+          encryptedKey: base64FromBuffer(wrappedKey),
+        };
+      }
+
+      function setSaving(saving) {
+        $('#save-vendor').disabled = saving;
+        $('#save-spinner').classList.toggle('hidden', !saving);
+        $('#save-icon').classList.toggle('hidden', saving);
+        $('#save-label').textContent = saving ? 'Криптиране и запис…' : 'Запази доставчик';
+      }
+
+      function showVendorStatus(message, tone) {
+        const element = $('#vendor-status');
+        const palette = {
+          success: 'text-emerald-400',
+          error: 'text-red-400',
+          info: 'text-slate-400',
+        };
+
+        element.className = 'mt-4 text-[13px] ' + (palette[tone] || palette.info);
+        element.textContent = message;
+        element.classList.remove('hidden');
+      }
+
+      function readVendorForm() {
+        const domain =
+          vendorSelect.value === '__custom__' ? vendorCustom.value.trim() : vendorSelect.value;
+
+        return {
+          domain: domain,
+          label: $('#vendor-label').value.trim() || domain,
+          authMode: authMode,
+          username: $('#vendor-username').value.trim(),
+          password: $('#vendor-password').value,
+          cookies: $('#vendor-cookies').value.trim(),
+          checkIntervalMinutes: Number($('#vendor-interval').value),
+        };
+      }
+
+      function validateVendorForm(form) {
+        if (!form.domain) return 'Изберете доставчик или въведете домейн.';
+        if (form.authMode === 'password' && (!form.username || !form.password)) {
+          return 'Въведете потребител и парола.';
+        }
+        if (form.authMode === 'cookies' && !form.cookies) {
+          return 'Поставете сесийните бисквитки.';
+        }
+        return null;
+      }
+
+      vendorForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const form = readVendorForm();
+        const problem = validateVendorForm(form);
+
+        if (problem) {
+          showVendorStatus(problem, 'error');
+          return;
+        }
+
+        setSaving(true);
+        showVendorStatus('Криптиране във вашия браузър…', 'info');
+
+        try {
+          const sealed = await sealCredentials(
+            form.authMode === 'password'
+              ? { username: form.username, password: form.password }
+              : { cookies: form.cookies },
+          );
+
+          const response = await fetch(ENDPOINTS.credentials, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              domain: form.domain,
+              label: form.label,
+              authMode: form.authMode,
+              checkIntervalMinutes: form.checkIntervalMinutes,
+              // Only the sealed envelope crosses the network.
+              secret: sealed,
+            }),
+          });
+
+          if (!response.ok) {
+            const detail = await response.text();
+            throw new Error('HTTP ' + response.status + ' ' + detail.slice(0, 160));
+          }
+
+          const saved = await response.json();
+
+          addVendorToList({
+            domain: form.domain,
+            label: form.label,
+            authMode: form.authMode,
+            id: saved.id,
+          });
+
+          vendorForm.reset();
+          vendorCustom.classList.add('hidden');
+          showVendorStatus('Доставчикът е запазен шифрован.', 'success');
+          toast('Достъпът е криптиран и запазен.', 'success');
+        } catch (error) {
+          // The most common cause during development is that the backend
+          // endpoint does not exist yet, which must not look like success.
+          showVendorStatus(
+            'Записът не бе извършен: ' +
+              error.message +
+              ' — нищо не е изпратено в явен вид.',
+            'error',
+          );
+          toast('Записът се провали. Паролата не е напускала браузъра.', 'error');
+        } finally {
+          setSaving(false);
+        }
+      });
+
+      $('#test-connection').addEventListener('click', async function () {
+        const form = readVendorForm();
+        const problem = validateVendorForm(form);
+
+        if (problem) {
+          showVendorStatus(problem, 'error');
+          return;
+        }
+
+        showVendorStatus('Проверка на връзката към ' + form.domain + '…', 'info');
+
+        try {
+          const sealed = await sealCredentials(
+            form.authMode === 'password'
+              ? { username: form.username, password: form.password }
+              : { cookies: form.cookies },
+          );
+
+          const response = await fetch(ENDPOINTS.credentialsTest, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ domain: form.domain, secret: sealed }),
+          });
+
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          const result = await response.json();
+          showVendorStatus(
+            result.success
+              ? 'Успешно влизане в ' + form.domain + '.'
+              : 'Порталът отказа достъпа: ' + (result.message || 'непозната причина'),
+            result.success ? 'success' : 'error',
+          );
+        } catch (error) {
+          showVendorStatus('Тестът не успя: ' + error.message, 'error');
+        }
+      });
+
+      const vendorList = $('#vendor-list');
+
+      function addVendorToList(vendor) {
+        const empty = vendorList.querySelector('[data-empty]');
+        if (empty) empty.remove();
+
+        const item = document.createElement('li');
+        item.className =
+          'flex items-center gap-3 rounded-xl border border-white/8 bg-ink-850 px-3.5 py-2.5';
+        item.innerHTML =
+          '<span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-500/12">' +
+          '<i class="fa-solid ' +
+          (vendor.authMode === 'cookies' ? 'fa-cookie-bite' : 'fa-key') +
+          ' text-[11px] text-emerald-400"></i></span>' +
+          '<span class="min-w-0 flex-1"><span class="block truncate text-[13px] font-medium text-white">' +
+          escapeHtml(vendor.label) +
+          '</span><span class="block truncate text-[11.5px] text-slate-500">' +
+          escapeHtml(vendor.domain) +
+          '</span></span>' +
+          '<span class="shrink-0 rounded-md bg-emerald-500/12 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-400">' +
+          'шифрован</span>';
+
+        vendorList.prepend(item);
+      }
+
+      function renderEmptyVendorList() {
+        vendorList.innerHTML =
+          '<li data-empty class="rounded-xl border border-dashed border-white/10 px-3.5 py-4 text-center text-[12.5px] text-slate-600">' +
+          'Още няма свързани портали.</li>';
+      }
+
+      renderEmptyVendorList();
+
+      /* ------------------------------------------------------------------ *
+       * SECTION 3 — dashboard
+       * ------------------------------------------------------------------ */
+
+      /**
+       * Demo rows for an airsoft / tactical store. Shown until the backend
+       * returns real data, so the dashboard is never an empty shell.
+       */
+      const DEMO_ROWS = [
+        {
+          name: 'Тактическа жилетка BlackAirsoft SECURITY',
+          sku: 'BA-VEST-SEC-BLK',
+          marketPrice: 189.0,
+          wholesalePrice: 94.5,
+          source: 'b2b.blackairsoft.eu',
+          status: 'active',
+          updatedAt: minutesAgo(42),
+        },
+        {
+          name: 'Нож Smith & Wesson HRT — фиксирано острие',
+          sku: 'SW-HRT-FB-01',
+          marketPrice: 42.9,
+          wholesalePrice: 21.3,
+          source: 'dealer.smith-wesson-eu.com',
+          status: 'active',
+          updatedAt: minutesAgo(58),
+        },
+        {
+          name: 'Реплика Specna Arms SA-C02 CORE',
+          sku: 'SPE-01-018315',
+          marketPrice: 269.0,
+          wholesalePrice: 158.4,
+          source: 'wholesale.tacticalgear.bg',
+          status: 'active',
+          updatedAt: minutesAgo(15),
+        },
+        {
+          name: 'Балистични очила ESS Crossbow 3LS',
+          sku: 'ESS-XBW-3LS',
+          marketPrice: 128.5,
+          wholesalePrice: 71.9,
+          source: 'wholesale.tacticalgear.bg',
+          status: 'active',
+          updatedAt: minutesAgo(15),
+        },
+        {
+          name: 'Каска FAST Maritime + NVG mount',
+          sku: 'TG-HLM-FAST-MT',
+          marketPrice: 214.0,
+          wholesalePrice: 132.8,
+          source: 'b2b.blackairsoft.eu',
+          status: 'warning',
+          updatedAt: minutesAgo(190),
+        },
+        {
+          name: 'Ръкавици Mechanix M-Pact Coyote',
+          sku: 'MX-MPACT-COY-L',
+          marketPrice: 46.9,
+          wholesalePrice: 27.4,
+          source: 'partner.airsoftpro.cz',
+          status: 'active',
+          updatedAt: minutesAgo(72),
+        },
+        {
+          name: 'Кобур Safariland 6354DO ALS',
+          sku: 'SAF-6354DO-G17',
+          marketPrice: 246.0,
+          wholesalePrice: 168.9,
+          source: 'dealer.smith-wesson-eu.com',
+          status: 'active',
+          updatedAt: minutesAgo(103),
+        },
+        {
+          name: 'Оптика Vector Optics Forester 1-5x24',
+          sku: 'VO-FRST-1524',
+          marketPrice: 315.0,
+          wholesalePrice: 199.0,
+          source: 'partner.airsoftpro.cz',
+          status: 'error',
+          updatedAt: minutesAgo(1490),
+        },
+        {
+          name: 'Гранула BLS Bio 0.28g (3600 бр.)',
+          sku: 'BLS-BIO-028-3600',
+          marketPrice: 24.9,
+          wholesalePrice: 12.6,
+          source: 'b2b.blackairsoft.eu',
+          status: 'active',
+          updatedAt: minutesAgo(42),
+        },
+        {
+          name: 'Радиостанция Baofeng UV-5R + PTT',
+          sku: 'BF-UV5R-PTT',
+          marketPrice: 58.0,
+          wholesalePrice: 31.2,
+          source: 'wholesale.tacticalgear.bg',
+          status: 'active',
+          updatedAt: minutesAgo(15),
+        },
+      ];
+
+      function minutesAgo(minutes) {
+        return new Date(Date.now() - minutes * 60000).toISOString();
+      }
+
+      let rows = DEMO_ROWS.slice();
+      let revealed = false;
+
+      const STATUS_BADGE = {
+        active: {
+          label: 'Активен',
+          className: 'bg-emerald-500/12 text-emerald-400 ring-emerald-500/25',
+          icon: 'fa-circle-check',
+        },
+        warning: {
+          label: 'Забавен',
+          className: 'bg-amber-500/12 text-amber-400 ring-amber-500/25',
+          icon: 'fa-triangle-exclamation',
+        },
+        error: {
+          label: 'Грешка',
+          className: 'bg-red-500/12 text-red-400 ring-red-500/25',
+          icon: 'fa-circle-xmark',
+        },
+      };
+
+      function marginPercent(row) {
+        if (!row.marketPrice || row.wholesalePrice == null) return null;
+        return ((row.marketPrice - row.wholesalePrice) / row.marketPrice) * 100;
+      }
+
+      function renderTable() {
+        const query = $('#table-search').value.trim().toLowerCase();
+        const visible = rows.filter(function (row) {
+          if (!query) return true;
+          return (
+            row.name.toLowerCase().indexOf(query) !== -1 ||
+            String(row.source).toLowerCase().indexOf(query) !== -1 ||
+            String(row.sku || '').toLowerCase().indexOf(query) !== -1
+          );
+        });
+
+        const body = $('#products-body');
+        body.innerHTML = visible
+          .map(function (row) {
+            const badge = STATUS_BADGE[row.status] || STATUS_BADGE.active;
+            const margin = marginPercent(row);
+            const marginTone =
+              margin === null ? 'text-slate-500' : margin >= 40 ? 'text-emerald-400' : margin >= 25 ? 'text-slate-200' : 'text-amber-400';
+
+            return (
+              '<tr class="transition hover:bg-white/[0.025]">' +
+              '<td class="px-5 py-4"><div class="font-medium text-white">' +
+              escapeHtml(row.name) +
+              '</div><div class="mt-0.5 font-mono text-[11.5px] text-slate-500">' +
+              escapeHtml(row.sku || '—') +
+              '</div></td>' +
+              '<td class="num px-5 py-4 text-right text-slate-200">' +
+              euro.format(row.marketPrice) +
+              '</td>' +
+              '<td class="num px-5 py-4 text-right font-semibold text-accent-300"><span class="masked">' +
+              (row.wholesalePrice == null ? '—' : euro.format(row.wholesalePrice)) +
+              '</span></td>' +
+              '<td class="num px-5 py-4 text-right font-semibold ' +
+              marginTone +
+              '"><span class="masked">' +
+              (margin === null ? '—' : margin.toFixed(1) + '%') +
+              '</span></td>' +
+              '<td class="px-5 py-4"><span class="inline-flex items-center gap-2 text-[12.5px] text-slate-400">' +
+              '<i class="fa-solid fa-lock text-[10px] text-slate-600"></i>' +
+              escapeHtml(row.source) +
+              '</span></td>' +
+              '<td class="px-5 py-4"><span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold ring-1 ' +
+              badge.className +
+              '"><i class="fa-solid ' +
+              badge.icon +
+              ' text-[10px]"></i>' +
+              badge.label +
+              '</span></td>' +
+              '<td class="px-5 py-4 text-[12.5px] text-slate-400">' +
+              escapeHtml(formatRelative(row.updatedAt)) +
+              '</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        $('#table-empty').classList.toggle('hidden', visible.length > 0);
+        $('#table-count').textContent = visible.length + ' от ' + rows.length + ' артикула';
+
+        renderStats();
+      }
+
+      function renderStats() {
+        const margins = rows.map(marginPercent).filter(function (value) {
+          return value !== null;
+        });
+
+        const average = margins.length
+          ? margins.reduce(function (sum, value) {
+              return sum + value;
+            }, 0) / margins.length
+          : 0;
+
+        const newest = rows.reduce(function (latest, row) {
+          const time = new Date(row.updatedAt).getTime();
+          return Number.isNaN(time) ? latest : Math.max(latest, time);
+        }, 0);
+
+        $('#stat-total').textContent = rows.length;
+        $('#stat-margin').textContent = margins.length ? average.toFixed(1) + '%' : '—';
+        $('#stat-risen').textContent = rows.filter(function (row) {
+          return row.status !== 'active';
+        }).length;
+        $('#stat-checked').textContent = newest ? formatRelative(new Date(newest).toISOString()) : '—';
+      }
+
+      /**
+       * Loads live data, mapping the API's product shape onto the table's.
+       * On any failure the demo rows stay, and the source label says so — a
+       * dashboard that silently shows fictional numbers as if they were real
+       * is worse than one that admits it.
+       */
+      async function loadProducts() {
+        const icon = $('#refresh-icon');
+        icon.classList.add('fa-spin');
+
+        try {
+          const response = await fetch(ENDPOINTS.products + '?limit=100&includeCompetitors=true', {
+            headers: authHeaders(),
+          });
+
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          const page = await response.json();
+          const items = Array.isArray(page.data) ? page.data : [];
+
+          if (items.length === 0) {
+            $('#data-source-label').textContent = 'няма записи в API-то — показани демо данни';
+            rows = DEMO_ROWS.slice();
+          } else {
+            rows = items.map(function (product) {
+              const primary =
+                (product.competitors || []).find(function (competitor) {
+                  return competitor.isPrimary;
+                }) || (product.competitors || [])[0];
+
+              return {
+                name: product.name,
+                sku: product.sku,
+                marketPrice: Number(product.currentPrice || 0),
+                wholesalePrice:
+                  product.ourPrice == null ? null : Number(product.ourPrice),
+                source: primary ? primary.host : new URL(product.competitorUrl).host,
+                status:
+                  product.scrapeStatus === 'success'
+                    ? 'active'
+                    : product.scrapeStatus === 'failed'
+                      ? 'error'
+                      : 'warning',
+                updatedAt: product.lastCheckedAt || product.updatedAt,
+              };
+            });
+
+            $('#data-source-label').textContent = 'на живо от API-то';
+          }
+        } catch (error) {
+          rows = DEMO_ROWS.slice();
+          $('#data-source-label').textContent = getApiKey()
+            ? 'API-то е недостъпно — показани демо данни'
+            : 'няма API ключ — показани демо данни';
+        } finally {
+          icon.classList.remove('fa-spin');
+          renderTable();
+        }
+      }
+
+      $('#table-search').addEventListener('input', renderTable);
+      $('#refresh-data').addEventListener('click', loadProducts);
+
+      $('#toggle-reveal').addEventListener('click', function () {
+        revealed = !revealed;
+        document.body.classList.toggle('revealed', revealed);
+        $('#reveal-icon').className = revealed
+          ? 'fa-solid fa-eye-slash text-[12px]'
+          : 'fa-solid fa-eye text-[12px]';
+        $('#reveal-label').textContent = revealed ? 'Скрий цени на едро' : 'Покажи цени на едро';
+      });
+
+      /* --- CSV export ---------------------------------------------------- */
+
+      $('#export-csv').addEventListener('click', function () {
+        const header = [
+          'Продукт',
+          'SKU',
+          'Пазарна цена (EUR)',
+          'Цена на едро (EUR)',
+          'Марж (%)',
+          'Източник',
+          'Статус',
+          'Последно обновяване',
+        ];
+
+        // Excel opens semicolon-separated files correctly in Bulgarian locales,
+        // where the comma is the decimal separator.
+        const separator = ';';
+
+        function cell(value) {
+          const text = String(value == null ? '' : value);
+          return /[";\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+        }
+
+        const lines = [header.map(cell).join(separator)];
+
+        rows.forEach(function (row) {
+          const margin = marginPercent(row);
+          lines.push(
+            [
+              cell(row.name),
+              cell(row.sku || ''),
+              cell(row.marketPrice.toFixed(2).replace('.', ',')),
+              cell(row.wholesalePrice == null ? '' : row.wholesalePrice.toFixed(2).replace('.', ',')),
+              cell(margin === null ? '' : margin.toFixed(1).replace('.', ',')),
+              cell(row.source),
+              cell((STATUS_BADGE[row.status] || STATUS_BADGE.active).label),
+              cell(new Date(row.updatedAt).toLocaleString('bg-BG')),
+            ].join(separator),
+          );
+        });
+
+        // The BOM makes Excel read the file as UTF-8 instead of mangling Cyrillic.
+        const blob = new Blob(['﻿' + lines.join('\r\n')], {
+          type: 'text/csv;charset=utf-8;',
+        });
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const stamp = new Date().toISOString().slice(0, 10);
+
+        link.href = url;
+        link.download = 'priceguard-ceni-' + stamp + '.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast('Свалени ' + rows.length + ' реда в CSV.', 'success');
+      });
+
+      /* --- Copy API link ------------------------------------------------- */
+
+      $('#copy-api-link').addEventListener('click', async function () {
+        // The key is deliberately not put in the URL — it belongs in a header.
+        const link = window.location.origin + ENDPOINTS.products + '?limit=100';
+
+        try {
+          await navigator.clipboard.writeText(link);
+        } catch (error) {
+          const helper = document.createElement('textarea');
+          helper.value = link;
+          helper.style.position = 'fixed';
+          helper.style.opacity = '0';
+          document.body.appendChild(helper);
+          helper.select();
+          document.execCommand('copy');
+          document.body.removeChild(helper);
+        }
+
+        $('#copy-icon').className = 'fa-solid fa-check text-[12px]';
+        $('#copy-label').textContent = 'Копирано';
+
+        window.setTimeout(function () {
+          $('#copy-icon').className = 'fa-solid fa-link text-[12px]';
+          $('#copy-label').textContent = 'Копирай API линк за Shopify / WooCommerce';
+        }, 2000);
+
+        toast('Линкът е копиран. Ключът се подава през хедъра x-api-key.', 'success');
+      });
+
+      /* ------------------------------------------------------------------ *
+       * Boot
+       * ------------------------------------------------------------------ */
+
+      renderApiKeyBadge();
+      renderTable();
+      switchView(window.location.hash.replace('#', '') || 'landing', { force: true });
+    </script>
+  </body>
+</html>
