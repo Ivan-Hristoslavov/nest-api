@@ -62,9 +62,19 @@ async function bootstrap(): Promise<void> {
   // same path works whether the app runs from `src` (ts-node) or `dist`.
   app.useStaticAssets(join(process.cwd(), 'public'), {
     index: ['index.html'],
-    // The single-file UI is edited often during development; caching it would
-    // mean explaining hard refreshes to everyone who touches it.
     maxAge: isProduction ? '1h' : 0,
+    setHeaders: (response, path) => {
+      // The UI is one file with its JavaScript inlined, so a cached copy is a
+      // cached *application*. `max-age=0` still permits a browser to answer
+      // from its in-memory cache without revalidating, which silently keeps
+      // old code running after an edit. Outside production, forbid storing it
+      // at all — the file is 130 KB on localhost, the cost is nil.
+      if (!isProduction && path.endsWith('.html')) {
+        response.setHeader('Cache-Control', 'no-store, must-revalidate');
+        response.setHeader('Pragma', 'no-cache');
+        response.setHeader('Expires', '0');
+      }
+    },
   });
 
   // --- Routing -------------------------------------------------------------

@@ -1046,6 +1046,7 @@
           <span>Поверителност</span>
           <span>Обработка на данни (GDPR)</span>
           <span>Статус на системата</span>
+          <span id="build-stamp" class="font-mono text-slate-700"></span>
         </div>
       </div>
     </footer>
@@ -2916,7 +2917,12 @@
        * Boot
        * ------------------------------------------------------------------ */
 
+      // Visible build stamp: when the UI misbehaves, the first question is
+      // always whether the browser is running the current file.
+      $('#build-stamp').textContent = 'build 2026-08-17 17:14';
+
       renderApiKeyBadge();
+      rebuildSupplierFilter();
       renderTable();
       switchView(window.location.hash.replace('#', '') || 'landing', { force: true });
     </script>
