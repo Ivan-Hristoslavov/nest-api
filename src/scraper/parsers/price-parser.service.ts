@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 
 import { SiteProfile } from './site-profiles';
 
@@ -56,6 +57,10 @@ const HEURISTIC_SELECTORS = [
   '.product-price',
   '.price__current',
   '.current-price',
+  // Underscore variants are common in older PHP storefronts (vario.bg, and
+  // most osCommerce/OpenCart descendants).
+  '.current_price',
+  '.total-price',
   '.price-now',
   '.sale-price',
   '.a-price .a-offscreen',
@@ -183,6 +188,47 @@ export class PriceParserService {
     return null;
   }
 
+  /**
+   * Reads the price text of an element, reconstructing decimals that live in a
+   * superscript without a separator character.
+   *
+   * Storefronts very often render `432,00` as
+   * `<strong>432</strong> <sup>00</sup>`, where the comma is drawn by CSS and
+   * exists nowhere in the DOM. Concatenating the text nodes yields "432 00",
+   * which the amount parser reads as forty-three thousand two hundred — a
+   * hundredfold error that looks entirely plausible in a table.
+   *
+   * When a `sup`/`small` child holds one or two bare digits and the remaining
+   * text carries no decimal separator of its own, the two are rejoined
+   * explicitly.
+   */
+  private priceTextOf($: cheerio.CheerioAPI, element: cheerio.Cheerio<AnyNode>): string {
+    const clone = element.clone();
+    // Assigned inside the `.each` callback, which TypeScript cannot see into —
+    // without the explicit annotation it narrows the variable to `never`.
+    let fraction: string | null = null;
+
+    clone.find('sup, small, .decimal, .cents, .mf-decimal, .price-decimals').each((_, node) => {
+      if (fraction !== null) return;
+
+      const text = $(node).text().replace(/\s+/g, '');
+      // A bare 1–2 digit run is a decimal part; "00" with a leading separator
+      // already parses correctly and is left alone.
+      if (/^\d{1,2}$/.test(text)) {
+        fraction = text.padEnd(2, '0');
+        $(node).remove();
+      }
+    });
+
+    const main = clone.text().replace(/\s+/g, ' ').trim();
+
+    if (fraction === null) return main;
+    // The integer part already ends in decimals — nothing to rejoin.
+    if (/[.,]\s*\d{1,2}$/.test(main)) return main;
+
+    return main.replace(/[.,\s]+$/, '') + '.' + String(fraction);
+  }
+
   private fromSelector($: cheerio.CheerioAPI, options: ParseOptions): ParsedPrice | null {
     if (!options.selector) return null;
 
@@ -197,7 +243,9 @@ export class PriceParserService {
 
     if (element.length === 0) return null;
 
-    const raw = options.attribute ? (element.attr(options.attribute) ?? '') : element.text();
+    const raw = options.attribute
+      ? (element.attr(options.attribute) ?? '')
+      : this.priceTextOf($, element);
 
     const price = this.parseAmount(raw);
     return price === null
@@ -227,7 +275,7 @@ export class PriceParserService {
 
       const raw = profile.priceAttribute
         ? (element.attr(profile.priceAttribute) ?? '')
-        : element.text();
+        : this.priceTextOf($, element);
 
       const price = this.parseAmount(raw);
       if (price === null) continue;
@@ -333,10 +381,22 @@ export class PriceParserService {
   }
 
   private fromMicrodata($: cheerio.CheerioAPI): ParsedPrice | null {
-    const element = $('[itemprop="price"]').first();
-    if (element.length === 0) return null;
+    const nodes = $('[itemprop="price"]');
+    if (nodes.length === 0) return null;
 
-    const raw = element.attr('content') ?? element.text();
+    // A category or home page carries one of these per tile. Picking the first
+    // returns an arbitrary product's price with total confidence, which is far
+    // worse than returning nothing: the number looks real and nobody checks it.
+    if (this.isAmbiguous($, nodes)) {
+      this.logger.warn(
+        `Found ${nodes.length} distinct microdata prices — this looks like a listing page, not a product page.`,
+      );
+      return null;
+    }
+
+    const element = nodes.first();
+
+    const raw = element.attr('content') ?? this.priceTextOf($, element);
     const price = this.parseAmount(raw);
     if (price === null) return null;
 
@@ -386,10 +446,16 @@ export class PriceParserService {
 
   private fromHeuristics($: cheerio.CheerioAPI): ParsedPrice | null {
     for (const selector of HEURISTIC_SELECTORS) {
-      const element = $(selector).first();
-      if (element.length === 0) continue;
+      const nodes = $(selector);
+      if (nodes.length === 0) continue;
+      if (this.isAmbiguous($, nodes)) continue;
 
-      const raw = element.attr('content') ?? element.attr('data-price-amount') ?? element.text();
+      const element = nodes.first();
+
+      const raw =
+        element.attr('content') ??
+        element.attr('data-price-amount') ??
+        this.priceTextOf($, element);
       const price = this.parseAmount(raw);
       if (price === null) continue;
 
@@ -402,6 +468,26 @@ export class PriceParserService {
     }
 
     return null;
+  }
+
+  /**
+   * True when the matched nodes hold more than one *different* price.
+   *
+   * Repeated identical values are fine — a page commonly prints the same price
+   * in the buy box and in a summary. Genuinely different values mean several
+   * products are on the page and no single one of them is "the" price.
+   */
+  private isAmbiguous($: cheerio.CheerioAPI, nodes: cheerio.Cheerio<AnyNode>): boolean {
+    const values = new Set<number>();
+
+    nodes.slice(0, 12).each((_, node) => {
+      const element = $(node);
+      const raw = element.attr('content') ?? this.priceTextOf($, element);
+      const price = this.parseAmount(raw);
+      if (price !== null) values.add(price);
+    });
+
+    return values.size > 1;
   }
 
   private extractAvailability($: cheerio.CheerioAPI, html: string): boolean | null {

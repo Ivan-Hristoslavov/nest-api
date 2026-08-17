@@ -113,8 +113,12 @@ export class HttpPriceFetcherService implements PriceSource {
     if (!parsed) {
       // Not retryable: the page loaded, we just could not read it. Retrying
       // burns requests — the listing needs a `priceSelector` instead.
+      const looksLikeListing = new URL(target.url).pathname.replace(/\/+$/, '') === '';
+
       throw new PriceFetchError(
-        `Page fetched (${html.length} bytes) but no price could be extracted. Set priceSelector on this competitor, or add a site profile for ${target.host}.`,
+        looksLikeListing
+          ? `This is a home or category page, not a product page — several different prices are on it and none of them is "the" price. Use the URL of the individual product.`
+          : `Page fetched (${html.length} bytes) but no single price could be extracted. Set priceSelector on this competitor, or add a site profile for ${target.host}.`,
         target.url,
         false,
       );

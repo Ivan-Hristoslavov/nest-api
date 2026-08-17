@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ServerResponse } from 'node:http';
 import { join } from 'node:path';
 
 import helmet from 'helmet';
@@ -63,7 +64,7 @@ async function bootstrap(): Promise<void> {
   app.useStaticAssets(join(process.cwd(), 'public'), {
     index: ['index.html'],
     maxAge: isProduction ? '1h' : 0,
-    setHeaders: (response, path) => {
+    setHeaders: (response: ServerResponse, path: string) => {
       // The UI is one file with its JavaScript inlined, so a cached copy is a
       // cached *application*. `max-age=0` still permits a browser to answer
       // from its in-memory cache without revalidating, which silently keeps

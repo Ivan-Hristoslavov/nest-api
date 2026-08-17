@@ -2637,6 +2637,19 @@
         return match ? KNOWN_HOSTS[match] : null;
       }
 
+      /**
+       * A link with no path — or only a language segment — points at a listing,
+       * not at one product.
+       */
+      function isListingUrl(url) {
+        try {
+          const path = new URL(url.trim()).pathname.replace(/\/+$/, '');
+          return path === '' || /^\/(bg|en|ru|de)$/i.test(path);
+        } catch (error) {
+          return false;
+        }
+      }
+
       function parseUrls(raw) {
         return raw
           .split(/[\n\r]+/)
@@ -2659,6 +2672,18 @@
               return (
                 '<span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/12 px-2.5 py-1 text-[11.5px] font-medium text-red-300">' +
                 '<i class="fa-solid fa-xmark text-[10px]"></i>невалиден линк</span>'
+              );
+            }
+
+            // A home or category page carries a price per tile. Scraping one
+            // returns an arbitrary product's price with total confidence, so
+            // it is caught here rather than after it lands in a report.
+            if (isListingUrl(url)) {
+              return (
+                '<span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/12 px-2.5 py-1 text-[11.5px] font-medium text-amber-300" title="Отворете конкретния продукт и копирайте неговия адрес">' +
+                '<i class="fa-solid fa-triangle-exclamation text-[10px]"></i>' +
+                escapeHtml(host) +
+                ' — начална страница</span>'
               );
             }
 
@@ -2706,6 +2731,17 @@
         }
         if (urls.length === 0 || urls.some((url) => !hostOf(url))) {
           showProductStatus('Поставете поне един валиден линк (http/https).', 'error');
+          return;
+        }
+
+        const listings = urls.filter(isListingUrl);
+        if (listings.length > 0) {
+          showProductStatus(
+            'Тези линкове сочат към начална страница, не към продукт: ' +
+              escapeHtml(listings.map(hostOf).join(', ')) +
+              '.<br>Отворете конкретния артикул в магазина и копирайте неговия адрес.',
+            'error',
+          );
           return;
         }
 

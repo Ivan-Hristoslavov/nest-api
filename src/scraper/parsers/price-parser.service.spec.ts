@@ -85,6 +85,66 @@ describe('PriceParserService', () => {
     });
   });
 
+  describe('decimals rendered as a superscript', () => {
+    // buybest.bg, 2026-08:
+    //   <span itemprop="price"><strong>432</strong> <sup>00</sup></span>
+    // The comma is drawn by CSS and exists nowhere in the DOM, so joining the
+    // text nodes gives "432 00" — read naively as 43 200.
+    it('rejoins <sup> cents that carry no separator', () => {
+      const html =
+        '<html><body><span itemprop="price"><strong>432</strong> <sup>00</sup></span></body></html>';
+
+      expect(parser.parse(html)?.price).toBe(432);
+    });
+
+    it('handles a <sup> that already carries the separator', () => {
+      const html =
+        '<html><body><em class="current_price"><span>428</span><sup>.00</sup><small>лв.</small></em></body></html>';
+
+      expect(parser.parse(html)?.price).toBe(428);
+    });
+
+    it('pads a single-digit superscript', () => {
+      const html =
+        '<html><body><div class="price"><strong>19</strong><sup>9</sup></div></body></html>';
+
+      expect(parser.parse(html)?.price).toBe(19.9);
+    });
+
+    it('leaves a superscript that is not a decimal part alone', () => {
+      const html = '<html><body><div class="price">1 299,00 лв.<sup>*</sup></div></body></html>';
+
+      expect(parser.parse(html)?.price).toBe(1299);
+    });
+  });
+
+  describe('listing pages', () => {
+    // A category or home page carries one price per tile. Returning the first
+    // one is worse than returning nothing: it looks authoritative and is wrong.
+    it('refuses a page holding several different prices', () => {
+      const tiles = [432, 899, 1299]
+        .map((price) => '<span itemprop="price">' + price + '</span>')
+        .join('');
+
+      expect(parser.parse('<html><body>' + tiles + '</body></html>')).toBeNull();
+    });
+
+    it('accepts a page repeating the same price', () => {
+      const html =
+        '<html><body><span itemprop="price">432,00</span><span itemprop="price">432,00</span></body></html>';
+
+      expect(parser.parse(html)?.price).toBe(432);
+    });
+
+    it('still honours an explicit selector on a listing page', () => {
+      const html =
+        '<html><body><div id="main"><span class="p">432,00</span></div>' +
+        '<span itemprop="price">899</span><span itemprop="price">1299</span></body></html>';
+
+      expect(parser.parse(html, { selector: '#main .p' })?.price).toBe(432);
+    });
+  });
+
   describe('structured data', () => {
     it('reads a JSON-LD offer', () => {
       const html = `<html><head><script type="application/ld+json">
