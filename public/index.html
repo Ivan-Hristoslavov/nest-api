@@ -2460,6 +2460,24 @@
             </p>
           </div>
 
+          <!-- The supplier with no website is frequently the cheapest one, and
+               leaving them out compares the shops that happen to be online and
+               calls the winner of that the cheapest. -->
+          <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-white/8 bg-ink-900 p-4">
+            <input
+              type="checkbox"
+              id="shop-no-website"
+              class="mt-0.5 h-4 w-4 shrink-0 rounded border-white/20 bg-ink-800 accent-accent-500"
+            />
+            <span class="min-w-0">
+              <span class="block text-[13px] font-medium text-slate-300">Този доставчик няма сайт</span>
+              <span class="mt-1 block text-[12px] leading-relaxed text-slate-500">
+                Местният склад, който праща ценоразпис по имейл. Няма да търсим в сайт — вие
+                въвеждате цените му и той влиза в същото сравнение, с вашата отстъпка.
+              </span>
+            </span>
+          </label>
+
           <!-- What actually happens, so the wait is not a mystery -->
           <div class="rounded-xl border border-white/8 bg-ink-900 p-4">
             <p class="text-[12.5px] font-medium text-slate-300">Какво прави системата след това</p>
@@ -5215,6 +5233,11 @@
             icon: 'fa-sitemap',
             label: 'по картата на сайта',
           },
+          manual: {
+            cls: 'bg-violet-500/12 text-violet-300',
+            icon: 'fa-pen-to-square',
+            label: 'ваши цени',
+          },
           none: {
             cls: 'bg-white/[0.06] text-slate-400',
             icon: 'fa-link',
@@ -5624,6 +5647,7 @@
 
       $('#add-shop').addEventListener('click', function () {
         $('#shop-form').reset();
+        $('#shop-no-website').checked = false;
         $('#shop-status').classList.add('hidden');
         openModal('shop-modal');
       });
@@ -5655,7 +5679,10 @@
           const response = await fetch(ENDPOINTS.shops, {
             method: 'POST',
             headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ host: host }),
+            body: JSON.stringify({
+              host: host,
+              hasWebsite: !$('#shop-no-website').checked,
+            }),
           });
 
           if (!response.ok) {
@@ -6039,19 +6066,35 @@
                   (index + 1) +
                   '</span>') +
               '<span class="min-w-0 flex-1">' +
-              '<a href="' +
-              escapeHtml(hit.url) +
-              '" target="_blank" rel="noopener noreferrer" class="block truncate text-[13px] font-medium text-slate-200 transition group-hover:text-accent-500" title="' +
-              escapeHtml(hit.name) +
-              '">' +
-              escapeHtml(hit.name) +
-              '</a>' +
-              (specs || !hit.matched
+              (hit.url
+                ? '<a href="' +
+                  escapeHtml(hit.url) +
+                  '" target="_blank" rel="noopener noreferrer" class="block truncate text-[13px] font-medium text-slate-200 transition group-hover:text-accent-500" title="' +
+                  escapeHtml(hit.name) +
+                  '">' +
+                  escapeHtml(hit.name) +
+                  '</a>'
+                : '<span class="block truncate text-[13px] font-medium text-slate-200" title="' +
+                  escapeHtml(hit.name) +
+                  '">' +
+                  escapeHtml(hit.name) +
+                  '</span>') +
+              (specs || !hit.matched || hit.recordedAt
                 ? '<span class="mt-1 flex flex-wrap items-center gap-1">' +
                   (hit.matched
                     ? ''
                     : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-400/90" ' +
                       'title="Търсачката на магазина върна това по подобие — името не съдържа търсеното.">по подобие</span>') +
+                  // A price typed in three weeks ago and one read three seconds
+                  // ago rank together, which is right — but they are not the
+                  // same claim, and only this says so.
+                  (hit.recordedAt
+                    ? '<span class="rounded-md bg-violet-500/12 px-1.5 py-0.5 text-[10.5px] text-violet-300" ' +
+                      'title="Цена, която вие сте въвели. Нищо не я презарежда — проверете я, ако е стара.">' +
+                      'ваша цена · ' +
+                      escapeHtml(formatRelative(hit.recordedAt)) +
+                      '</span>'
+                    : '') +
                   specs +
                   '</span>'
                 : '') +

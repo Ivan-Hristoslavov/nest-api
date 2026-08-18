@@ -3,6 +3,7 @@ import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { Alert } from '../alerts/entities/alert.entity';
 import { BillingEvent } from '../billing/entities/billing-event.entity';
 import { User } from '../billing/entities/user.entity';
+import { ManualPrice } from '../shops/entities/manual-price.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { DatabaseConfig } from '../config/configuration';
 import { Competitor } from '../products/entities/competitor.entity';
@@ -37,7 +38,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): TypeOrmModuleOption
     schema: config.schema,
     // Entities are listed explicitly rather than glob-scanned: globs break
     // once the app is bundled or run from `dist`.
-    entities: [Product, Competitor, PriceHistory, Alert, User, BillingEvent, Shop],
+    entities: [Product, Competitor, PriceHistory, Alert, User, BillingEvent, Shop, ManualPrice],
     migrations: [`${__dirname}/migrations/*.{ts,js}`],
     migrationsTableName: 'typeorm_migrations',
     synchronize: config.synchronize,

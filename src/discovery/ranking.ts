@@ -20,6 +20,8 @@ export interface RankableOffer {
   shopId: string | null;
   discountPercent: number;
   inStock?: boolean | null;
+  /** Set only for a price the buyer entered by hand; see {@link RankedHit}. */
+  recordedAt?: string | null;
 }
 
 export interface RankedHit {
@@ -46,6 +48,15 @@ export interface RankedHit {
   effectivePrice: number | null;
   effectiveCurrency: string;
   inStock: boolean | null;
+  /**
+   * When a hand-entered price was last confirmed, or null for a live one.
+   *
+   * The comparison mixes prices read seconds ago with prices typed in weeks
+   * ago, and they are not the same claim. Ranking them together is right — the
+   * supplier with no website is often the cheapest — but presenting them
+   * identically would not be.
+   */
+  recordedAt: string | null;
 }
 
 /**
@@ -173,6 +184,7 @@ export function toHit(offer: RankableOffer, target: string, words: string[] = []
     effectivePrice: effective,
     effectiveCurrency: convertible ? target : currency,
     inStock: offer.inStock ?? null,
+    recordedAt: offer.recordedAt ?? null,
   };
 }
 

@@ -27,8 +27,11 @@ import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ShopProbeService } from '../discovery/shop-probe.service';
+import { ImportManualPricesDto, ImportResultDto, ManualPriceDto } from './dto/manual-prices.dto';
 import { CreateShopDto, UpdateShopDto } from './dto/shops.dto';
+import { ManualPrice } from './entities/manual-price.entity';
 import { Shop } from './entities/shop.entity';
+import { ManualPricesService } from './manual-prices.service';
 import { ShopsService } from './shops.service';
 
 @ApiTags('Shops')
@@ -38,6 +41,7 @@ export class ShopsController {
   constructor(
     private readonly shops: ShopsService,
     private readonly probe: ShopProbeService,
+    private readonly manualPrices: ManualPricesService,
   ) {}
 
   @Get()
@@ -71,8 +75,10 @@ export class ShopsController {
   ): Promise<Shop> {
     const shop = await this.shops.create(ownerId, dto);
 
-    // Already configured by hand, or explicitly not wanted.
-    if (probe === 'false' || dto.searchUrlTemplate) return shop;
+    // Already configured by hand, explicitly not wanted, or a supplier with no
+    // website at all — probing one of those means fetching a robots.txt that
+    // does not exist to learn what we were already told.
+    if (probe === 'false' || dto.searchUrlTemplate || dto.hasWebsite === false) return shop;
 
     const result = await this.probe.probe(shop.host);
 
@@ -97,6 +103,71 @@ export class ShopsController {
     const result = await this.probe.probe(shop.host);
 
     return this.shops.applyProbe(ownerId, shop.id, result);
+  }
+
+  @Get(':id/prices')
+  @ApiOperation({
+    summary: 'Prices you entered for a supplier with no website',
+    description:
+      'The local warehouse that publishes nothing but is often the cheapest. These figures join the same ranked comparison as the scraped ones, carrying the same discount — the difference is that nothing re-reads them, so each row states when it was last confirmed.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ type: ManualPrice, isArray: true })
+  @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
+  listPrices(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<ManualPrice[]> {
+    return this.manualPrices.findForShop(ownerId, id);
+  }
+
+  @Post(':id/prices')
+  @ApiOperation({
+    summary: 'Record one price for a supplier with no website',
+    description:
+      "Replaces the figure already held for this article, keyed on the supplier's article number where there is one and on the name otherwise.",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiCreatedResponse({ type: ManualPrice })
+  @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
+  addPrice(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: ManualPriceDto,
+  ): Promise<ManualPrice> {
+    return this.manualPrices.upsert(ownerId, id, dto);
+  }
+
+  @Post(':id/prices/import')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Import a whole price list',
+    description:
+      'How these suppliers actually send prices: a spreadsheet by email, once a quarter. Typing four hundred rows by hand is how a good idea stops being used in week two.\n\nRe-importing updates rather than duplicates, so the same list can be sent again when the supplier revises it.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ type: ImportResultDto })
+  @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
+  importPrices(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: ImportManualPricesDto,
+  ): Promise<ImportResultDto> {
+    return this.manualPrices.importList(ownerId, id, dto.prices);
+  }
+
+  @Delete(':id/prices/:priceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove one hand-entered price' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'priceId', format: 'uuid' })
+  @ApiNoContentResponse({ description: 'Removed.' })
+  removePrice(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('priceId', new ParseUUIDPipe({ version: '4' })) priceId: string,
+  ): Promise<void> {
+    return this.manualPrices.remove(ownerId, id, priceId);
   }
 
   @Patch(':id')

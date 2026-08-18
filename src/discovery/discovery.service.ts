@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
 import { rank, RankableOffer, RankedHit } from './ranking';
+import { ManualPricesService } from '../shops/manual-prices.service';
 import { nameFromUrl, SitemapLookupService } from './sitemap-lookup.service';
 import {
   SEARCH_PROVIDERS,
@@ -62,6 +63,7 @@ export class DiscoveryService {
     private readonly robots: RobotsService,
     private readonly rateLimiter: HostRateLimiterService,
     private readonly sitemap: SitemapLookupService,
+    private readonly manualPrices: ManualPricesService,
     @Inject(PRICE_SOURCE) private readonly priceSource: PriceSource,
     configService: ConfigService<Configuration, true>,
   ) {
@@ -290,6 +292,16 @@ export class DiscoveryService {
    * their supplier stocks nothing.
    */
   private async searchShop(shop: Shop, query: string): Promise<ShopSearchResultDto> {
+    // A supplier with no website is not searched at all — there is nothing to
+    // fetch. What is known about them is what the buyer entered, and it counts
+    // in the ranking just the same. Leaving them out would compare the subset
+    // of suppliers that happen to be online and call the winner of that the
+    // cheapest, which for a buyer whose best source is the warehouse down the
+    // road is simply the wrong answer.
+    if (!shop.hasWebsite || shop.searchMethod === 'manual') {
+      return this.searchManual(shop, query);
+    }
+
     const provider = this.providerFor(shop);
 
     if (provider) {
@@ -376,6 +388,7 @@ export class DiscoveryService {
           shopName: product.shopName,
           shopId: shop.id,
           discountPercent: shop.percent,
+          recordedAt: product.recordedAt ?? null,
         });
       }
     }
@@ -501,6 +514,35 @@ export class DiscoveryService {
         products: [],
       };
     }
+  }
+
+  /** What the buyer recorded for a supplier that publishes nothing. */
+  private async searchManual(shop: Shop, query: string): Promise<ShopSearchResultDto> {
+    const host = shop.host.replace(/^www\./, '');
+    const startedAt = Date.now();
+
+    const rows = await this.manualPrices.search(shop.id, query, MAX_RESULTS_PER_SHOP);
+
+    return {
+      host,
+      name: shop.name,
+      searchUrl: '',
+      ok: true,
+      error: null,
+      durationMs: Date.now() - startedAt,
+      products: rows.map((row) => ({
+        title: row.unit ? `${row.name} (${row.unit})` : row.name,
+        // No page to open. The buyer knows where this supplier is; that is
+        // rather the point of them.
+        url: '',
+        price: row.price,
+        currency: row.currency,
+        host,
+        shopName: shop.name,
+        // Carried through so the ranking can say how old the figure is.
+        recordedAt: row.updatedAt.toISOString(),
+      })),
+    };
   }
 
   private async searchOne(provider: SearchProvider, query: string): Promise<ShopSearchResultDto> {

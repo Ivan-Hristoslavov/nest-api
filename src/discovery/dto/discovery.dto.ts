@@ -36,6 +36,15 @@ export class DiscoveredProductDto {
 
   @ApiProperty({ example: 'eMAG' })
   shopName!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When this figure was last confirmed, for a price the buyer entered by hand. Absent for a scraped price, which was read moments ago. A hand-entered price cannot go stale on its own — nothing re-reads it — so its age is the only thing saying whether to trust it against a live one.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  recordedAt?: string | null;
 }
 
 export class ShopSearchResultDto {
@@ -241,6 +250,15 @@ export class RankedHitDto {
   @ApiProperty({ example: 'EUR' }) effectiveCurrency!: string;
 
   @ApiPropertyOptional({ type: Boolean, nullable: true }) inStock!: boolean | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When a hand-entered price was last confirmed. Absent when the price was read live from the shop, seconds ago.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  recordedAt!: string | null;
 }
 
 export class ShopOutcomeDto {

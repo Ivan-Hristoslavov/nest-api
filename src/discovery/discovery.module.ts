@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { ManualPrice } from '../shops/entities/manual-price.entity';
 import { Shop } from '../shops/entities/shop.entity';
+import { ManualPricesService } from '../shops/manual-prices.service';
 import { ScraperModule } from '../scraper/scraper.module';
 import { DiscoveryController } from './discovery.controller';
 import { DiscoveryService } from './discovery.service';
@@ -13,9 +15,26 @@ import { SitemapLookupService } from './sitemap-lookup.service';
 @Module({
   // Reuses the scraper's parser, robots client and per-host rate limiter, so a
   // search obeys exactly the same manners as a price check.
-  imports: [ScraperModule, TypeOrmModule.forFeature([Shop])],
+  //
+  // ManualPricesService is declared here rather than in ShopsModule, though it
+  // is a shops concept: the search needs it, ShopsModule already imports this
+  // module for the probe, and registering it there would close the loop into a
+  // circular dependency. One owner, no forwardRef.
+  imports: [ScraperModule, TypeOrmModule.forFeature([Shop, ManualPrice])],
   controllers: [DiscoveryController],
-  providers: [DiscoveryService, SearchDetectorService, SitemapLookupService, ShopProbeService],
-  exports: [DiscoveryService, SearchDetectorService, SitemapLookupService, ShopProbeService],
+  providers: [
+    DiscoveryService,
+    SearchDetectorService,
+    SitemapLookupService,
+    ShopProbeService,
+    ManualPricesService,
+  ],
+  exports: [
+    DiscoveryService,
+    SearchDetectorService,
+    SitemapLookupService,
+    ShopProbeService,
+    ManualPricesService,
+  ],
 })
 export class DiscoveryModule {}

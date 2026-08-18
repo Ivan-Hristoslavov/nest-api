@@ -58,6 +58,7 @@ export class ShopsService {
       searchTitleSelector?: string;
       searchPriceSelector?: string;
       searchConfidence?: number;
+      hasWebsite?: boolean;
     },
   ): Promise<Shop> {
     const host = normaliseHost(input.host);
@@ -69,6 +70,16 @@ export class ShopsService {
     shop.discountPercent = input.discountPercent ?? existing?.discountPercent ?? 0;
     shop.currency = input.currency ?? existing?.currency ?? 'EUR';
     shop.isActive = true;
+
+    if (input.hasWebsite === false) {
+      shop.hasWebsite = false;
+      // Says what it is rather than "не може да се търси": this supplier is
+      // searched, just from what you told us rather than from their site.
+      shop.searchMethod = 'manual';
+      shop.searchSummary =
+        'Няма сайт — търси се в цените, които вие сте въвели. Качете ценоразписа му.';
+      shop.searchBlockedReason = null;
+    }
 
     if (input.searchUrlTemplate !== undefined) {
       shop.searchUrlTemplate = input.searchUrlTemplate;

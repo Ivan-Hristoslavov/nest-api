@@ -95,6 +95,16 @@ class SearchConfigDto {
 }
 
 export class CreateShopDto extends SearchConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'Set false for a supplier with no website — the local warehouse that emails a price list. Nothing is fetched for them; you enter their prices, and they still join the same comparison with your discount applied.',
+    default: true,
+  })
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  @IsOptional()
+  hasWebsite?: boolean;
+
   @ApiProperty({
     description:
       'Shop domain. Protocol and `www.` are stripped; a subdomain is kept, because `bg.shop.eu` and `shop.eu` are different storefronts.',
@@ -135,6 +145,12 @@ export class CreateShopDto extends SearchConfigDto {
 }
 
 export class UpdateShopDto extends SearchConfigDto {
+  @ApiPropertyOptional({ description: 'False for a supplier with no website.', default: true })
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
+  @IsOptional()
+  hasWebsite?: boolean;
+
   @ApiPropertyOptional({ example: 'ТМТ ЕЛКОМ' })
   @IsString()
   @MaxLength(160)

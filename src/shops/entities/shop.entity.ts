@@ -79,12 +79,20 @@ export class Shop {
 
   @ApiProperty({
     description:
+      'False for a supplier with no website at all — the local warehouse that emails a price list. Nothing is fetched for them; their prices are the ones you entered by hand, and they still join the same comparison.',
+    example: true,
+  })
+  @Column({ name: 'has_website', type: 'boolean', default: true })
+  hasWebsite!: boolean;
+
+  @ApiProperty({
+    description:
       'How this shop gets searched. `live` asks its own search engine — one request per question, current stock. `sitemap` matches the query against its published addresses and reads only the pages that matched, for a shop that forbids its search but lists its pages. `none` means neither is available; its products are still tracked by link.',
-    enum: ['live', 'sitemap', 'none'],
+    enum: ['live', 'sitemap', 'manual', 'none'],
     example: 'live',
   })
   @Column({ name: 'search_method', type: 'varchar', length: 16, default: 'none' })
-  searchMethod!: 'live' | 'sitemap' | 'none';
+  searchMethod!: 'live' | 'sitemap' | 'manual' | 'none';
 
   @ApiPropertyOptional({
     description: 'What the probe found when the shop was added, in words the operator can act on.',
