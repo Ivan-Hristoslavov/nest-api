@@ -46,6 +46,11 @@ const ACTIVATING_EVENTS = new Set([
   'subscription_payment_success',
   'subscription_resumed',
   'subscription_unpaused',
+  // Stripe
+  'checkout.session.completed',
+  'invoice.paid',
+  'invoice.payment_succeeded',
+  'customer.subscription.created',
   // Generic
   'payment.succeeded',
 ]);
@@ -61,6 +66,9 @@ const REVOKING_EVENTS = new Set([
   'subscription_expired',
   'subscription_paused',
   'subscription_payment_failed',
+  // Stripe
+  'customer.subscription.deleted',
+  'invoice.payment_failed',
   'payment.failed',
 ]);
 
@@ -273,16 +281,28 @@ export class BillingService {
    * field must produce `null`, never a crash on someone else's schema change.
    */
   normalise(provider: string, payload: Record<string, unknown>): NormalisedBillingEvent {
-    const data = this.record(payload.data);
+    // Stripe nests the subject one level deeper — `data.object` — and names
+    // the type `type` rather than `event_type`. Flattening it here keeps every
+    // provider on one path rather than forking the whole method.
+    const stripeObject = this.record(this.record(payload.data).object);
+    const isStripe = Object.keys(stripeObject).length > 0 && Boolean(payload.type);
+
+    const data = isStripe ? stripeObject : this.record(payload.data);
     const meta = this.record(payload.meta);
     const attributes = this.record(data.attributes);
 
     // Paddle: event_type + data.id; Lemon Squeezy: meta.event_name + data.id.
-    const eventType = this.string(payload.event_type) ?? this.string(meta.event_name) ?? 'unknown';
+    const eventType =
+      this.string(payload.event_type) ??
+      this.string(payload.type) ??
+      this.string(meta.event_name) ??
+      'unknown';
 
     const eventId =
       this.string(payload.event_id) ??
       this.string(payload.notification_id) ??
+      // Stripe's own `evt_…`, which is already stable across retries.
+      (isStripe ? this.string(payload.id) : undefined) ??
       this.string(meta.event_id) ??
       // Lemon Squeezy has no event id: derive a stable one from the payload so
       // retries still collapse onto a single row.
@@ -294,6 +314,10 @@ export class BillingService {
     const customData = this.record(meta.custom_data);
 
     const email =
+      // Stripe Checkout puts it here; a subscription event carries it on the
+      // customer object once expanded.
+      this.string(data.customer_email) ??
+      this.string(this.record(data.customer_details).email) ??
       this.string(customer.email) ??
       this.string(attributes.user_email) ??
       this.string(data.customer_email) ??
@@ -301,6 +325,7 @@ export class BillingService {
       this.string(payload.email);
 
     const name =
+      this.string(this.record(data.customer_details).name) ??
       this.string(customer.name) ??
       this.string(attributes.user_name) ??
       this.string(customData.name);

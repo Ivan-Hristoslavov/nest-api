@@ -101,3 +101,23 @@ export class MyAccountDto {
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   accessExpiresAt!: string | null;
 }
+
+export class StartCheckoutDto {
+  @ApiProperty({
+    description: 'Which plan to buy. `free` is not purchasable.',
+    enum: ['starter', 'pro', 'business'],
+    example: 'pro',
+  })
+  @IsIn(['starter', 'pro', 'business'])
+  plan!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Prefills the buyer’s email at checkout. Stripe collects it when omitted; either way it is what the account is keyed on, so a typo here creates an account under the wrong address.',
+    format: 'email',
+    example: 'buyer@example.com',
+  })
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+}

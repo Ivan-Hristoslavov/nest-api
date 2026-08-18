@@ -758,11 +758,10 @@
                 </ul>
                 <button
                   type="button"
-                  data-view="dashboard"
-                  data-plan="business"
-                  class="nav-link mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25 hover:bg-ink-700"
+                  data-checkout="starter"
+                  class="mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25 hover:bg-ink-700"
                 >
-                  Стартирай безплатен тест
+                  Вземи плана
                 </button>
               </article>
 
@@ -814,11 +813,10 @@
                 </ul>
                 <button
                   type="button"
-                  data-view="dashboard"
-                  data-plan="pro"
-                  class="nav-link mt-8 w-full rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+                  data-checkout="pro"
+                  class="mt-8 w-full rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
                 >
-                  Стартирай безплатен тест
+                  Вземи плана
                 </button>
               </article>
 
@@ -862,11 +860,10 @@
                 </ul>
                 <button
                   type="button"
-                  data-view="dashboard"
-                  data-plan="enterprise"
-                  class="nav-link mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25 hover:bg-ink-700"
+                  data-contact="enterprise"
+                  class="mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25 hover:bg-ink-700"
                 >
-                  Стартирай безплатен тест
+                  Свържете се с нас
                 </button>
               </article>
             </div>
@@ -2648,6 +2645,8 @@
         discoveryCompare: API_BASE + '/discovery/compare',
         shops: API_BASE + '/shops',
         billingUsers: API_BASE + '/billing/users',
+        billingCheckout: API_BASE + '/billing/checkout',
+        billingPlans: API_BASE + '/billing/plans',
         billingRotateKey: API_BASE + '/billing/users/api-key',
       };
 
@@ -2823,11 +2822,6 @@
 
       $$('.nav-link').forEach(function (button) {
         button.addEventListener('click', function () {
-          const plan = button.dataset.plan;
-          if (plan) {
-            const names = { business: 'Бизнес', pro: 'ПРО', enterprise: 'Корпоративен' };
-            toast('Стартиран е 14-дневен тест на план ' + names[plan] + '.', 'success');
-          }
           switchView(button.dataset.view);
         });
       });
@@ -6251,6 +6245,84 @@
       $('#catalogue-query').addEventListener('keydown', function (event) {
         if (event.key === 'Enter') searchCatalogue();
       });
+
+      /* ------------------------------------------------------------------ *
+       * SECTION — buying a plan
+       *
+       * The pricing buttons used to show a toast claiming a trial had started
+       * and then change screen. Nothing was bought, no trial existed, and
+       * nobody could pay us. They now open Stripe Checkout.
+       *
+       * No card data touches this page: Stripe collects it and tells the
+       * server over a webhook, which is what creates the account and emails
+       * the key.
+       * ------------------------------------------------------------------ */
+
+      async function startCheckout(plan, button) {
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML =
+          '<i class="fa-solid fa-circle-notch fa-spin text-[13px]"></i> Отварям плащането…';
+
+        try {
+          const response = await fetch(ENDPOINTS.billingCheckout, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ plan: plan }),
+          });
+
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body.message || 'HTTP ' + response.status);
+
+          // Same tab: Stripe returns the buyer here afterwards, and a popup
+          // would be eaten by the blocker on a good share of browsers.
+          window.location.href = body.url;
+        } catch (error) {
+          button.disabled = false;
+          button.innerHTML = original;
+          toast('Плащането не се отвори: ' + error.message, 'error');
+        }
+      }
+
+      $$('[data-checkout]').forEach(function (button) {
+        button.addEventListener('click', () => startCheckout(button.dataset.checkout, button));
+      });
+
+      $$('[data-contact]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          // Deliberately not a checkout: this tier is priced per agreement.
+          toast('Пишете ни и ще подготвим оферта за вашия обем.', 'info');
+        });
+      });
+
+      /**
+       * Says what happened after Stripe sends the buyer back.
+       *
+       * The account is created by the webhook, not by this redirect, so the
+       * message points at the email rather than claiming access is ready —
+       * the webhook usually lands first, but not always.
+       */
+      (function reportCheckoutOutcome() {
+        const params = new URLSearchParams(window.location.search);
+        const outcome = params.get('checkout');
+        if (!outcome) return;
+
+        if (outcome === 'success') {
+          toast('Плащането мина. Ключът ви пътува към пощата — проверете и папка Спам.', 'success');
+        } else if (outcome === 'cancelled') {
+          toast('Плащането е прекратено. Нищо не е таксувано.', 'info');
+        }
+
+        // Cleared so a refresh does not repeat the message.
+        params.delete('checkout');
+        params.delete('session');
+        const query = params.toString();
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + (query ? '?' + query : '') + window.location.hash,
+        );
+      })();
 
       /* ------------------------------------------------------------------ *
        * SECTION — operator panel

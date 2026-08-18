@@ -33,8 +33,14 @@ import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AuthenticatedRequest } from '../common/guards/api-key.guard';
 import { BillingService } from './billing.service';
+import { CheckoutService, PurchasablePlan } from './checkout.service';
 import { MailService } from './mail.service';
-import { IssuedApiKeyDto, MyAccountDto, RotateApiKeyDto } from './dto/api-key.dto';
+import {
+  IssuedApiKeyDto,
+  MyAccountDto,
+  RotateApiKeyDto,
+  StartCheckoutDto,
+} from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
 import { User } from './entities/user.entity';
@@ -51,6 +57,7 @@ export class BillingController {
     private readonly signatureService: WebhookSignatureService,
     private readonly usersService: UsersService,
     private readonly mail: MailService,
+    private readonly checkout: CheckoutService,
   ) {}
 
   /**
@@ -128,6 +135,54 @@ export class BillingController {
       duplicate: outcome.duplicate,
       note: outcome.note,
     };
+  }
+
+  @Public()
+  @Get('plans')
+  @ApiOperation({
+    summary: 'Plans that can actually be bought',
+    description:
+      'Only plans with a price configured in Stripe. A plan listed without one would send the buyer to a checkout that cannot complete, so the pricing page asks this rather than assuming.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean', description: 'False when Stripe is not configured at all.' },
+        plans: { type: 'array', items: { type: 'string', example: 'pro' } },
+      },
+    },
+  })
+  plans(): { enabled: boolean; plans: string[] } {
+    return {
+      enabled: this.checkout.enabled,
+      plans: this.checkout.availablePlans().map((entry) => entry.plan),
+    };
+  }
+
+  @Public()
+  @Post('checkout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start a subscription purchase',
+    description:
+      'Creates a Stripe Checkout Session and returns the URL to send the buyer to.\n\n`@Public()` because the caller is a visitor who has not bought anything yet and therefore has no key — that is the whole point of the endpoint. No card data touches this application: Stripe collects it and reports the outcome over the webhook, which is what creates the account and emails the key.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', format: 'uri' },
+        id: { type: 'string', example: 'cs_test_a1b2c3' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Unknown plan, or Stripe is not configured.',
+    type: ErrorResponseDto,
+  })
+  async startCheckout(@Body() dto: StartCheckoutDto): Promise<{ url: string; id: string }> {
+    return this.checkout.createSession(dto.plan as PurchasablePlan, dto.email);
   }
 
   @ApiKeyAuth()

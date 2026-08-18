@@ -56,7 +56,7 @@ export class WebhookSignatureService {
       return {
         valid: false,
         reason:
-          'No webhook secret configured. Set PADDLE_WEBHOOK_SECRET or LEMONSQUEEZY_WEBHOOK_SECRET.',
+          'No webhook secret configured. Set PADDLE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET or LEMONSQUEEZY_WEBHOOK_SECRET.',
       };
     }
 
@@ -67,9 +67,60 @@ export class WebhookSignatureService {
       };
     }
 
-    return this.config.provider === BillingProvider.Paddle
-      ? this.verifyPaddle(rawBody, headers)
-      : this.verifyLemonSqueezy(rawBody, headers);
+    if (this.config.provider === BillingProvider.Paddle) {
+      return this.verifyPaddle(rawBody, headers);
+    }
+
+    if (this.config.provider === BillingProvider.Stripe) {
+      return this.verifyStripe(rawBody, headers);
+    }
+
+    return this.verifyLemonSqueezy(rawBody, headers);
+  }
+
+  /**
+   * Stripe sends `Stripe-Signature: t=<unix>,v1=<hex>[,v1=<hex>…]`, the digest
+   * covering `<t>.<raw body>`.
+   *
+   * Several `v1` values can be present while a secret is being rotated, and
+   * any one of them matching is a valid signature. Comparing only the first
+   * would reject genuine traffic for the whole rotation window.
+   */
+  private verifyStripe(rawBody: Buffer, headers: Record<string, unknown>): SignatureCheck {
+    const header = this.headerValue(headers, 'stripe-signature');
+    if (!header) return { valid: false, reason: 'Missing Stripe-Signature header' };
+
+    const parts = new Map<string, string[]>();
+    for (const piece of header.split(',')) {
+      const [key, value] = piece.split('=', 2);
+      if (!key || value === undefined) continue;
+      const bucket = parts.get(key.trim()) ?? [];
+      bucket.push(value.trim());
+      parts.set(key.trim(), bucket);
+    }
+
+    const timestamp = parts.get('t')?.[0];
+    const signatures = parts.get('v1') ?? [];
+
+    if (!timestamp || signatures.length === 0) {
+      return { valid: false, reason: 'Malformed Stripe-Signature header' };
+    }
+
+    // Checked before the digest: a replayed body carries a real signature, and
+    // only the age gives it away.
+    const fresh = this.checkFreshness(Number.parseInt(timestamp, 10));
+    if (!fresh.valid) return fresh;
+
+    const expected = createHmac('sha256', this.config.webhookSecret!)
+      .update(`${timestamp}.${rawBody.toString('utf8')}`)
+      .digest('hex');
+
+    for (const presented of signatures) {
+      if (this.compare(expected, presented).valid) return { valid: true };
+    }
+
+    this.logger.warn('Webhook signature mismatch — request rejected.');
+    return { valid: false, reason: 'Signature mismatch' };
   }
 
   /**

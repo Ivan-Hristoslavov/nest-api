@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
+import { CheckoutService } from './checkout.service';
 import { BillingEvent } from './entities/billing-event.entity';
 import { User } from './entities/user.entity';
 import { MailService } from './mail.service';
@@ -19,7 +20,7 @@ import { WebhookSignatureService } from './webhook-signature.service';
 @Module({
   imports: [TypeOrmModule.forFeature([User, BillingEvent])],
   controllers: [BillingController],
-  providers: [BillingService, UsersService, WebhookSignatureService, MailService],
+  providers: [BillingService, UsersService, WebhookSignatureService, MailService, CheckoutService],
   exports: [UsersService, BillingService, MailService],
 })
 export class BillingModule {}

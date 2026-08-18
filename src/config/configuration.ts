@@ -85,6 +85,14 @@ export interface AlertsConfig {
  * inside one request. Without a way to send it, every sale needs an operator
  * to notice and hand a key over by chat.
  */
+/** Stripe Checkout, when Stripe is the merchant of record. */
+export interface StripeConfig {
+  secretKey?: string;
+  webhookSecret?: string;
+  /** Price id per plan. A plan with no price cannot be bought. */
+  prices: Partial<Record<'starter' | 'pro' | 'business', string>>;
+}
+
 export interface MailConfig {
   enabled: boolean;
   host: string;
@@ -111,6 +119,7 @@ export interface Configuration {
   supabase: SupabaseConfig;
   scraper: ScraperConfig;
   billing: BillingConfig;
+  stripe: StripeConfig;
   mail: MailConfig;
   alerts: AlertsConfig;
   throttle: ThrottleConfig;
@@ -166,8 +175,19 @@ export const configuration = (): Configuration => {
       webhookSecret:
         env.BILLING_PROVIDER === BillingProvider.Paddle
           ? env.PADDLE_WEBHOOK_SECRET
-          : env.LEMONSQUEEZY_WEBHOOK_SECRET,
+          : env.BILLING_PROVIDER === BillingProvider.Stripe
+            ? env.STRIPE_WEBHOOK_SECRET
+            : env.LEMONSQUEEZY_WEBHOOK_SECRET,
       signatureToleranceSeconds: env.BILLING_SIGNATURE_TOLERANCE_SECONDS,
+    },
+    stripe: {
+      secretKey: env.STRIPE_SECRET_KEY,
+      webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+      prices: {
+        starter: env.STRIPE_STARTER_PRICE_ID,
+        pro: env.STRIPE_PRO_PRICE_ID,
+        business: env.STRIPE_BUSINESS_PRICE_ID,
+      },
     },
     mail: {
       // Enabled by having somewhere to send from. A half-configured mailer

@@ -16,6 +16,7 @@ import {
 export enum BillingProvider {
   Paddle = 'paddle',
   LemonSqueezy = 'lemonsqueezy',
+  Stripe = 'stripe',
 }
 
 /** Which price source the scraper uses. */
@@ -216,6 +217,30 @@ export class EnvironmentVariables {
   @IsUrl({ require_tld: false })
   @IsOptional()
   SUPABASE_JWKS_URL?: string;
+
+  // --- Stripe --------------------------------------------------------------
+  // Used when BILLING_PROVIDER=stripe. The price ids must be *this* product's
+  // — create the plans in the Stripe dashboard first; ids from another product
+  // will happily charge the wrong amount for the wrong thing.
+  @IsString()
+  @IsOptional()
+  STRIPE_SECRET_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  STRIPE_WEBHOOK_SECRET?: string;
+
+  @IsString()
+  @IsOptional()
+  STRIPE_STARTER_PRICE_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  STRIPE_PRO_PRICE_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  STRIPE_BUSINESS_PRICE_ID?: string;
 
   // --- Outgoing email ------------------------------------------------------
   // Leave SMTP_HOST empty to run without mail: the key is then issued and
