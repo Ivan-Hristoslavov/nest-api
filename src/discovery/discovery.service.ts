@@ -14,8 +14,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
+import { BasketLineDto, BasketResultDto, BasketSupplierDto } from './dto/basket.dto';
 import { rank, RankableOffer, RankedHit } from './ranking';
 import { ManualPricesService } from '../shops/manual-prices.service';
+import { SearchCache } from './entities/search-cache.entity';
 import { nameFromUrl, SitemapLookupService } from './sitemap-lookup.service';
 import {
   SEARCH_PROVIDERS,
@@ -36,6 +38,18 @@ const MAX_RESULTS_PER_SHOP = 8;
  * anybody's catalogue.
  */
 const SITEMAP_PAGE_BUDGET = 8;
+
+/**
+ * How long a shop's answer is reused before it is asked again.
+ *
+ * Six hours is a judgement, not a law. Wholesale prices move on price-list
+ * revisions and promotions, not minute to minute, so a morning answer is
+ * generally still true by lunch — and the alternative, asking every time, makes
+ * a forty-line basket take eleven minutes and the feature unusable. Every
+ * cached row states when it was fetched and the interface shows it, so the
+ * trade is visible rather than hidden.
+ */
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Addresses that are never a product, however product-shaped they look.
@@ -64,6 +78,8 @@ export class DiscoveryService {
     private readonly rateLimiter: HostRateLimiterService,
     private readonly sitemap: SitemapLookupService,
     private readonly manualPrices: ManualPricesService,
+    @InjectRepository(SearchCache)
+    private readonly cache: Repository<SearchCache>,
     @Inject(PRICE_SOURCE) private readonly priceSource: PriceSource,
     configService: ConfigService<Configuration, true>,
   ) {
@@ -266,7 +282,12 @@ export class DiscoveryService {
    * hide the four that answered. Each shop reports its own outcome so the UI
    * can say which ones were searched and which refused.
    */
-  async search(ownerId: string, query: string, hosts?: string[]): Promise<ShopSearchResultDto[]> {
+  async search(
+    ownerId: string,
+    query: string,
+    hosts?: string[],
+    useCache = true,
+  ): Promise<ShopSearchResultDto[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
@@ -278,7 +299,7 @@ export class DiscoveryService {
       ? shops.filter((shop) => hosts.includes(shop.host.replace(/^www\./, '')))
       : shops;
 
-    return Promise.all(wanted.map((shop) => this.searchShop(shop, trimmed)));
+    return Promise.all(wanted.map((shop) => this.searchShopCached(shop, trimmed, useCache)));
   }
 
   /**
@@ -291,6 +312,223 @@ export class DiscoveryService {
    * 135 of those addresses. Reading eight of them beats telling the customer
    * their supplier stocks nothing.
    */
+  /**
+   * One shop's answer, from cache when it is fresh enough.
+   *
+   * A hand-entered supplier is never cached: reading them is a database query,
+   * so caching would add staleness and save nothing.
+   */
+  /**
+   * Prices a whole order, and answers the question a buyer actually has.
+   *
+   * Not "what does this cable cost" but "where do I place this order". Those
+   * have different answers: no single supplier is cheapest on everything, so
+   * the useful output is three numbers — what the order costs from each
+   * supplier alone, what it costs split across them line by line, and the
+   * difference between the two. The last one is the reason to use this at all,
+   * and it is not a number a spreadsheet of five price lists gives up easily.
+   *
+   * A supplier that cannot supply every line is still ranked, with the count of
+   * what it covers: "cheapest, but missing three items" is a real answer, and
+   * hiding it would recommend an order that cannot be placed.
+   */
+  async priceBasket(
+    ownerId: string,
+    lines: Array<{ query: string; quantity: number }>,
+    options: { currency?: string; useCache?: boolean } = {},
+  ): Promise<BasketResultDto> {
+    const startedAt = Date.now();
+    const target = (options.currency ?? 'EUR').toUpperCase();
+
+    const shops = await this.shops.find({ where: { ownerId, isActive: true } });
+    const discountOf = new Map(shops.map((shop) => [shop.id, Number(shop.discountPercent)]));
+    const nameOf = new Map(shops.map((shop) => [shop.id, shop.name]));
+    const byHost = new Map(shops.map((shop) => [shop.host.replace(/^www\./, ''), shop.id]));
+
+    const pricedLines: BasketLineDto[] = [];
+
+    // Lines run one after another rather than all at once. They mostly hit the
+    // same few hosts, so firing forty in parallel would not be forty times
+    // faster — the per-host limiter would queue them anyway — but it would look
+    // like a burst to every supplier at once.
+    for (const line of lines) {
+      const results = await this.search(ownerId, line.query, undefined, options.useCache ?? true);
+
+      const offers: RankableOffer[] = [];
+
+      for (const result of results) {
+        if (!result.ok) continue;
+        const shopId = byHost.get(result.host) ?? null;
+
+        for (const product of result.products) {
+          offers.push({
+            title: product.title,
+            url: product.url,
+            price: product.price,
+            currency: product.currency,
+            host: product.host,
+            shopName: product.shopName,
+            shopId,
+            discountPercent: shopId ? (discountOf.get(shopId) ?? 0) : 0,
+            recordedAt: product.recordedAt ?? null,
+          });
+        }
+      }
+
+      const ranked = rank(offers, target, 40, line.query);
+
+      // One offer per supplier: their cheapest that genuinely matched.
+      //
+      // Only matched ones count towards a total. A shop search is fuzzy — ask
+      // homefinishing.bg for "лампа" and it offers a chandelier — and a guess
+      // is not a quote for the line. Counted, it inflated that supplier's
+      // order to 2298 € against 220 € elsewhere and would have written them off
+      // for stocking something nobody asked about.
+      const perShop = new Map<string, RankedHit>();
+      for (const hit of ranked) {
+        if (hit.effectivePrice === null || !hit.shopId || !hit.matched) continue;
+        if (!perShop.has(hit.shopId)) perShop.set(hit.shopId, hit);
+      }
+
+      pricedLines.push({
+        query: line.query,
+        quantity: line.quantity,
+        offers: [...perShop.values()],
+        cheapest: [...perShop.values()][0] ?? null,
+      });
+    }
+
+    // What the whole order costs from each supplier on their own.
+    const perSupplier: BasketSupplierDto[] = shops
+      .map((shop) => {
+        let total = 0;
+        let covered = 0;
+        const missing: string[] = [];
+
+        for (const line of pricedLines) {
+          const offer = line.offers.find((candidate) => candidate.shopId === shop.id);
+
+          if (offer && offer.effectivePrice !== null) {
+            total += offer.effectivePrice * line.quantity;
+            covered += 1;
+          } else {
+            missing.push(line.query);
+          }
+        }
+
+        return {
+          shopId: shop.id,
+          name: shop.name,
+          host: shop.host,
+          linesCovered: covered,
+          linesTotal: pricedLines.length,
+          total: covered > 0 ? round(total) : null,
+          missing,
+        };
+      })
+      // Suppliers who can supply nothing on this order are noise.
+      .filter((supplier) => supplier.linesCovered > 0)
+      // Complete orders first, then by price. A supplier missing half the list
+      // is not "cheapest" in any sense the buyer means.
+      .sort(
+        (a, b) => b.linesCovered - a.linesCovered || (a.total ?? Infinity) - (b.total ?? Infinity),
+      );
+
+    // What it costs taking every line from whoever is cheapest on it.
+    let splitTotal = 0;
+    let splitLines = 0;
+    const splitAcross = new Set<string>();
+
+    for (const line of pricedLines) {
+      if (!line.cheapest || line.cheapest.effectivePrice === null) continue;
+      splitTotal += line.cheapest.effectivePrice * line.quantity;
+      splitLines += 1;
+      if (line.cheapest.shopId) splitAcross.add(line.cheapest.shopId);
+    }
+
+    const bestSingle = perSupplier.find((supplier) => supplier.linesCovered === pricedLines.length);
+
+    return {
+      currency: target,
+      durationMs: Date.now() - startedAt,
+      lines: pricedLines,
+      suppliers: perSupplier,
+      split: {
+        total: splitLines > 0 ? round(splitTotal) : null,
+        linesPriced: splitLines,
+        suppliers: [...splitAcross].map((id) => nameOf.get(id) ?? id),
+      },
+      // Only meaningful against a supplier who could have filled the whole
+      // order; comparing a split against a partial single order is comparing
+      // two different purchases.
+      saving:
+        bestSingle && bestSingle.total !== null && splitLines === pricedLines.length
+          ? round(bestSingle.total - splitTotal)
+          : null,
+    };
+  }
+
+  private async searchShopCached(
+    shop: Shop,
+    query: string,
+    useCache: boolean,
+  ): Promise<ShopSearchResultDto> {
+    if (!useCache || !shop.hasWebsite || shop.searchMethod === 'manual') {
+      return this.searchShop(shop, query);
+    }
+
+    const normalised = normaliseQuery(query);
+    const fresh = new Date(Date.now() - CACHE_TTL_MS);
+
+    const cached = await this.cache.findOne({ where: { shopId: shop.id, query: normalised } });
+
+    if (cached && cached.fetchedAt > fresh) {
+      return {
+        host: shop.host.replace(/^www\./, ''),
+        name: shop.name,
+        searchUrl: '',
+        ok: true,
+        error: null,
+        durationMs: 0,
+        products: cached.products.map((product) => ({
+          ...product,
+          // Stamped so the ranking can say how old this is, exactly as it does
+          // for a hand-entered price.
+          recordedAt: cached.fetchedAt.toISOString(),
+        })),
+      };
+    }
+
+    const result = await this.searchShop(shop, query);
+
+    // Only successes are kept. Caching a refusal would hold the shop broken
+    // for six hours after it recovered.
+    if (result.ok) {
+      await this.cache
+        .upsert(
+          {
+            shopId: shop.id,
+            query: normalised,
+            products: result.products,
+            durationMs: result.durationMs,
+            fetchedAt: new Date(),
+          },
+          ['shopId', 'query'],
+        )
+        .catch((error: unknown) => {
+          // A cache that cannot be written must not fail the search it was
+          // meant to speed up.
+          this.logger.warn(
+            `Could not cache "${normalised}" for ${shop.host}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        });
+    }
+
+    return result;
+  }
+
   private async searchShop(shop: Shop, query: string): Promise<ShopSearchResultDto> {
     // A supplier with no website is not searched at all — there is nothing to
     // fetch. What is known about them is what the buyer entered, and it counts
@@ -332,7 +570,14 @@ export class DiscoveryService {
   async compare(
     ownerId: string,
     query: string,
-    options: { hosts?: string[]; currency?: string; inStockOnly?: boolean; limit?: number } = {},
+    options: {
+      hosts?: string[];
+      currency?: string;
+      inStockOnly?: boolean;
+      limit?: number;
+      /** False forces a fresh read — for the buyer about to place the order. */
+      useCache?: boolean;
+    } = {},
   ): Promise<{
     query: string;
     durationMs: number;
@@ -354,7 +599,7 @@ export class DiscoveryService {
       return { query: trimmed, durationMs: 0, shops: [], hits: [] };
     }
 
-    const results = await this.search(ownerId, trimmed, options.hosts);
+    const results = await this.search(ownerId, trimmed, options.hosts, options.useCache ?? true);
 
     // The discount lives on the shop row, and the search providers are keyed
     // by host — so the two are joined here rather than threaded through every
@@ -677,4 +922,14 @@ export class DiscoveryService {
       products: [],
     };
   }
+}
+
+/** Trimmed, lowercased, whitespace collapsed — so "СВТ  3x2.5" hits one row. */
+function normaliseQuery(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 160);
+}
+
+/** Money, to the cent. */
+function round(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }

@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { Configuration, ScraperConfig } from '../config/configuration';
 import { CompetitorsService } from '../products/competitors.service';
 import { PriceCheckResultDto } from '../products/dto/price-check-result.dto';
+import { ScrapeStatus } from '../products/enums/scrape-status.enum';
 import { Competitor } from '../products/entities/competitor.entity';
 import { Product } from '../products/entities/product.entity';
 import { ScrapeRunResultDto, ScraperStatusDto } from './dto/scrape-run-result.dto';
@@ -275,7 +276,42 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
       this.logger.warn(
         `Scrape failed for listing ${competitor.id} (${competitor.name}): ${reason}`,
       );
-      return this.competitorsService.markScrapeFailure(competitor.id, reason);
+
+      try {
+        return await this.competitorsService.markScrapeFailure(competitor.id, reason);
+      } catch (writeError) {
+        // The last unguarded line in the whole sweep, and it took the process
+        // down: recording the failure can itself fail — a lost connection, a
+        // constraint — and the rejection escaped the worker pool, past
+        // Promise.all, into an unhandled rejection that killed the API for
+        // every customer because one listing could not be written.
+        //
+        // A background job may lose a result. It may not lose the server.
+        this.logger.error(
+          `Could not record the failure for listing ${competitor.id}: ${
+            writeError instanceof Error ? writeError.message : String(writeError)
+          }`,
+        );
+
+        return {
+          productId: competitor.productId,
+          productName: competitor.name,
+          competitorId: competitor.id,
+          competitorName: competitor.name,
+          status: ScrapeStatus.Failed,
+          previousPrice: competitor.currentPrice,
+          currentPrice: competitor.currentPrice,
+          changePercent: null,
+          priceChanged: false,
+          significantChange: false,
+          undercutsTargetPrice: false,
+          allTimeLow: false,
+          inStock: null,
+          strategy: null,
+          error: reason,
+          checkedAt: new Date().toISOString(),
+        };
+      }
     }
   }
 

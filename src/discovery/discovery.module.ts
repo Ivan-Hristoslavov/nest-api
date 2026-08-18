@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ManualPrice } from '../shops/entities/manual-price.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { ManualPricesService } from '../shops/manual-prices.service';
+import { SearchCache } from './entities/search-cache.entity';
 import { ScraperModule } from '../scraper/scraper.module';
 import { DiscoveryController } from './discovery.controller';
 import { DiscoveryService } from './discovery.service';
@@ -20,7 +21,7 @@ import { SitemapLookupService } from './sitemap-lookup.service';
   // is a shops concept: the search needs it, ShopsModule already imports this
   // module for the probe, and registering it there would close the loop into a
   // circular dependency. One owner, no forwardRef.
-  imports: [ScraperModule, TypeOrmModule.forFeature([Shop, ManualPrice])],
+  imports: [ScraperModule, TypeOrmModule.forFeature([Shop, ManualPrice, SearchCache])],
   controllers: [DiscoveryController],
   providers: [
     DiscoveryService,

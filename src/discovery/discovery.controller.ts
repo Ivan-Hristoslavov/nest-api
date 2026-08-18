@@ -22,6 +22,7 @@ import {
   SearchQueryDto,
   ShopSearchResultDto,
 } from './dto/discovery.dto';
+import { BasketResultDto, PriceBasketDto } from './dto/basket.dto';
 import { SearchDetectorService } from './search-detector.service';
 
 @ApiTags('Discovery')
@@ -127,6 +128,23 @@ export class DiscoveryController {
       inStockOnly: query.inStockOnly,
       limit: query.limit,
     });
+  }
+
+  @Post('basket')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Price a whole order across your suppliers',
+    description:
+      'The question a buyer actually has. Not "what does this cable cost" but "where do I place this order" — and those have different answers, because no supplier is cheapest on everything.\n\nReturns three figures: what the order costs from each supplier alone, what it costs split across them line by line, and the difference. The last one is the reason to use this, and it is not something five price lists in a spreadsheet give up easily.\n\nA supplier who cannot fill every line is still ranked, with the count of what they cover — "cheapest, but missing three items" is a real answer, and hiding it recommends an order that cannot be placed.\n\nAnswers are reused for six hours by default, which is what makes a forty-line order take seconds rather than eleven minutes. Pass `useCache: false` when the order is about to go out and the figures must be current.',
+  })
+  @ApiOkResponse({ description: 'The order, priced.', type: BasketResultDto })
+  @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
+  priceBasket(@Owner() ownerId: string, @Body() dto: PriceBasketDto): Promise<BasketResultDto> {
+    return this.discoveryService.priceBasket(
+      ownerId,
+      dto.lines.map((line) => ({ query: line.query, quantity: line.quantity ?? 1 })),
+      { currency: dto.currency, useCache: dto.useCache },
+    );
   }
 
   @Get('search')
