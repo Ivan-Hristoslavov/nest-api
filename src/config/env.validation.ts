@@ -1,6 +1,7 @@
 import { plainToInstance, Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -383,6 +384,15 @@ export class EnvironmentVariables {
   @Min(0)
   @IsOptional()
   ALERT_COOLDOWN_MINUTES = 60;
+
+  /**
+   * Where alerts go when the account that owns the product has no usable
+   * address — seeded demo data, or an operator's own products. Without it
+   * those alerts are stored and never mailed to anyone.
+   */
+  @IsEmail()
+  @IsOptional()
+  ALERT_EMAIL_FALLBACK_TO?: string;
 
   // --- Rate limiting -------------------------------------------------------
   @Transform(toNumber)

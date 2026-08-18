@@ -73,6 +73,7 @@ export interface AlertsConfig {
   slackWebhookUrl?: string;
   webhookUrl?: string;
   webhookSecret?: string;
+  emailFallbackTo?: string;
   deliveryTimeoutMs: number;
   cooldownMinutes: number;
 }
@@ -242,6 +243,7 @@ export const configuration = (): Configuration => {
       slackWebhookUrl: env.ALERT_SLACK_WEBHOOK_URL,
       webhookUrl: env.ALERT_WEBHOOK_URL,
       webhookSecret: env.ALERT_WEBHOOK_SECRET,
+      emailFallbackTo: env.ALERT_EMAIL_FALLBACK_TO,
       deliveryTimeoutMs: env.ALERT_DELIVERY_TIMEOUT_MS,
       cooldownMinutes: env.ALERT_COOLDOWN_MINUTES,
     },

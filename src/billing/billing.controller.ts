@@ -16,6 +16,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCreatedResponse,
   ApiExcludeEndpoint,
   ApiHeader,
   ApiNotFoundResponse,
@@ -25,6 +27,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { RawBodyRequest } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
@@ -36,9 +39,11 @@ import { BillingService } from './billing.service';
 import { CheckoutService, PurchasablePlan } from './checkout.service';
 import { MailService } from './mail.service';
 import {
+  FreeAccountDto,
   IssuedApiKeyDto,
   MyAccountDto,
   RotateApiKeyDto,
+  SignupDto,
   StartCheckoutDto,
 } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
@@ -157,6 +162,46 @@ export class BillingController {
     return {
       enabled: this.checkout.enabled,
       plans: this.checkout.availablePlans().map((entry) => entry.plan),
+    };
+  }
+
+  /**
+   * The free plan, self-served.
+   *
+   * `@Public()` for the same reason as checkout: the caller has no key yet —
+   * acquiring one is the point. Throttled far harder than the rest of the API
+   * because this endpoint writes a row and sends mail for an anonymous caller,
+   * which is exactly the shape of thing that gets abused.
+   */
+  @Public()
+  @Throttle({ default: { ttl: 3_600_000, limit: 5 } })
+  @Post('signup')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Open a free account and get an API key',
+    description:
+      'Creates an account on the free plan and returns its key once. The key is also emailed when SMTP is configured, but the response carries it so the signup works regardless of what the inbox does.',
+  })
+  @ApiCreatedResponse({ type: FreeAccountDto })
+  @ApiConflictResponse({
+    description: 'The address already has an account. Keys are never re-issued silently.',
+    type: ErrorResponseDto,
+  })
+  async signup(@Body() dto: SignupDto): Promise<FreeAccountDto> {
+    const user = await this.usersService.createFreeAccount(dto.email, dto.name);
+    const { user: withKey, apiKey } = await this.usersService.issueApiKey(user.id, 'live');
+    const emailed = await this.mail.sendApiKey(withKey, apiKey, false);
+
+    this.logger.log(`Free account ready for ${withKey.email} (emailed: ${emailed})`);
+
+    return {
+      userId: withKey.id,
+      email: withKey.email,
+      apiKey,
+      prefix: withKey.apiKeyPrefix ?? '',
+      plan: withKey.plan,
+      productLimit: withKey.productLimit,
+      emailed,
     };
   }
 

@@ -643,6 +643,7 @@ export class CompetitorsService {
 
   private contextFor(product: Product, competitor: Competitor) {
     return {
+      ownerId: product.ownerId,
       productName: product.name,
       productSku: product.sku,
       competitorName: competitor.name,

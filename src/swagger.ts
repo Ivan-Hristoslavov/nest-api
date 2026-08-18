@@ -13,18 +13,24 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   return SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('Price Intelligence API')
+      .setTitle('PriceGuard API')
       .setDescription(
         [
-          'Competitor price tracking service.',
+          'Сравнение на цени при вашите доставчици — същите данни, които виждате в таблото.',
           '',
-          '**Authentication** — every endpoint except `/health` requires a shared secret in the',
-          '`X-API-KEY` header. Click **Authorize** and paste the key from your `.env`.',
+          '**Автентикация** — всяко извикване освен `/health` и `/stats` иска ключа ви в',
+          'хедъра `X-API-KEY`. Натиснете **Authorize** и го поставете, за да пробвате оттук.',
           '',
-          '**Modules**',
-          '- `Products` — CRUD over tracked products, price history and aggregate statistics.',
-          '- `Scraper` — scheduler status, manual sweeps and single-product refreshes.',
-          '- `Health` — unauthenticated liveness and Supabase connectivity probe.',
+          'Ключът се издава веднъж и се пази само като хеш. Загубен ключ не се възстановява,',
+          'а се заменя — старият спира да работи в същия момент.',
+          '',
+          '**Откъде да започнете**',
+          '1. `POST /billing/signup` — безплатен акаунт и ключ.',
+          '2. `POST /shops` — вашите доставчици.',
+          '3. `POST /discovery/basket` — цена на цяла поръчка при всеки от тях.',
+          '4. `POST /products` — какво да се следи, и `GET /alerts` за промените.',
+          '',
+          'Планът ви ограничава броя следени артикули; доставчиците са неограничени.',
         ].join('\n'),
       )
       .setVersion('1.0.0')
@@ -33,13 +39,20 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
           type: 'apiKey',
           name: 'X-API-KEY',
           in: 'header',
-          description: 'Shared secret that authenticates the client.',
+          description: 'Ключът на акаунта. Издава се при регистрация или при плащане.',
         },
         API_KEY_SECURITY_SCHEME,
       )
-      .addTag('Products', 'Manage the products whose competitor prices are tracked')
-      .addTag('Scraper', 'Control and observe the price scraping scheduler')
-      .addTag('Health', 'Service and database probes')
+      .addTag('Discovery', 'Търсене и цена на цяла поръчка при вашите доставчици')
+      .addTag('Shops', 'Доставчиците, между които сравнявате — включително тези без сайт')
+      .addTag('Products', 'Артикулите, чиито цени се следят')
+      .addTag('Competitors', 'Офертите на отделните доставчици за един артикул')
+      .addTag('Alerts', 'Известия при поскъпване, поевтиняване и спрели проверки')
+      .addTag('Analytics', 'История, посока на цената и къде губите')
+      .addTag('Scraper', 'Състояние на проверките и ръчно пускане')
+      .addTag('Billing', 'Регистрация, планове и ключове')
+      .addTag('Stats', 'Публични броячи за началната страница')
+      .addTag('Health', 'Проби на услугата и базата')
       // No `.addServer()` here on purpose: `createDocument` already bakes the
       // global prefix into every path, so an extra server base would make
       // Swagger UI request /api/v1/api/v1/products and get a 404.
@@ -72,8 +85,10 @@ export function setupSwagger(app: INestApplication, config: AppConfig): void {
       displayRequestDuration: true,
       docExpansion: 'list',
       filter: true,
-      tagsSorter: 'alpha',
+      // Deliberately unsorted: the tags are declared in the order a new
+      // customer needs them, and alphabetical order would open the docs on
+      // "Alerts" — a thing you cannot receive until three other calls worked.
     },
-    customSiteTitle: 'Price Intelligence API — Docs',
+    customSiteTitle: 'PriceGuard API — документация',
   });
 }

@@ -17,6 +17,7 @@ import { buildTypeOrmOptions } from './database/typeorm-options.factory';
 import { HealthModule } from './health/health.module';
 import { ProductsModule } from './products/products.module';
 import { ScraperModule } from './scraper/scraper.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { ScraperModule } from './scraper/scraper.module';
     DiscoveryModule,
     ShopsModule,
     AnalyticsModule,
+    StatsModule,
     HealthModule,
   ],
   providers: [

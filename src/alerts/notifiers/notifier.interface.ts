@@ -2,6 +2,12 @@ import { Alert } from '../entities/alert.entity';
 
 /** Extra context the channels render alongside the alert itself. */
 export interface AlertContext {
+  /**
+   * Account the product belongs to. Slack and the webhook are one shared
+   * endpoint per deployment and ignore it; email needs it, because "who should
+   * read this" and "which product is it about" are the same question.
+   */
+  ownerId?: string;
   productName: string;
   productSku: string | null;
   competitorName: string | null;

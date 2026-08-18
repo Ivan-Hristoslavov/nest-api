@@ -121,3 +121,63 @@ export class StartCheckoutDto {
   @IsOptional()
   email?: string;
 }
+
+/** What a visitor supplies to open a free account. No password: the key is the credential. */
+export class SignupDto {
+  @ApiProperty({
+    description: 'Where the key is sent, and the address the account is keyed on for ever after.',
+    format: 'email',
+    example: 'kupuvach@moiat-magazin.bg',
+  })
+  @IsEmail()
+  @MaxLength(255)
+  @Transform(trimString)
+  email!: string;
+
+  @ApiPropertyOptional({
+    description: 'Company or person, for the operator’s customer list.',
+    example: 'Електро Иванов ЕООД',
+    maxLength: 160,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(160)
+  @Transform(trimString)
+  name?: string;
+}
+
+/**
+ * The result of opening a free account.
+ *
+ * The key is in the body as well as in the email on purpose: the person is
+ * looking at the page right now, and an onboarding that depends on an inbox
+ * loses everyone whose mail is slow, filtered, or mistyped.
+ */
+export class FreeAccountDto {
+  @ApiProperty({ format: 'uuid' })
+  userId!: string;
+
+  @ApiProperty({ example: 'kupuvach@moiat-magazin.bg' })
+  email!: string;
+
+  @ApiProperty({
+    description: 'Shown once. Only a hash is stored, so it cannot be read back.',
+    example: 'pk_live_7Qw…',
+  })
+  apiKey!: string;
+
+  @ApiProperty({ example: 'pk_live_7Qw2Xn' })
+  prefix!: string;
+
+  @ApiProperty({ example: 'free' })
+  plan!: string;
+
+  @ApiProperty({ description: 'Products the free plan may track.', example: 10 })
+  productLimit!: number;
+
+  @ApiProperty({
+    description: 'Whether a copy also went out by email. False when SMTP is not configured.',
+    example: true,
+  })
+  emailed!: boolean;
+}

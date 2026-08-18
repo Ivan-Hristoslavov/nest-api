@@ -155,6 +155,17 @@ export class MailService implements OnModuleInit {
     );
   }
 
+  /**
+   * Sends a message composed elsewhere.
+   *
+   * The templates in this class belong to billing; an alert email is the
+   * alerts module's presentation, the same way Block Kit belongs to the Slack
+   * notifier. What stays here is the one transport and its failure policy.
+   */
+  async deliver(to: string, subject: string, html: string, text: string): Promise<boolean> {
+    return this.send(to, subject, html, text);
+  }
+
   private async send(to: string, subject: string, html: string, text: string): Promise<boolean> {
     if (!this.transporter) {
       this.logger.warn(`Email is off — "${subject}" for ${to} was not sent.`);

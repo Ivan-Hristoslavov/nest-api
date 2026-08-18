@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -90,6 +90,43 @@ export class UsersService {
     );
 
     this.logger.log(`Created user ${created.id} (${created.email})`);
+    return created;
+  }
+
+  /**
+   * Opens a free account for somebody who has paid nothing yet.
+   *
+   * Active rather than pending, because the free plan *is* the entitlement —
+   * a pending account holds a key the guard refuses, which reads as a broken
+   * signup rather than as a boundary.
+   *
+   * An existing address is refused instead of quietly re-issuing. Issuing is
+   * destructive: it would kill the key that address is already using, so a
+   * stranger typing a customer's email would lock them out. The refusal does
+   * tell an attacker that an address is registered — accepted deliberately,
+   * since there is no password to guess and the alternative hands anyone a
+   * denial-of-service against any customer they can name.
+   */
+  async createFreeAccount(email: string, name?: string | null): Promise<User> {
+    const normalised = this.normaliseEmail(email);
+
+    if (await this.findByEmail(normalised)) {
+      throw new ConflictException(
+        'Този имейл вече има акаунт. Ако сте загубили ключа си, пишете ни и ще издадем нов.',
+      );
+    }
+
+    const created = await this.usersRepository.save(
+      this.usersRepository.create({
+        email: normalised,
+        name: name?.trim() || null,
+        status: UserStatus.Active,
+        plan: UserPlan.Free,
+        productLimit: PLAN_PRODUCT_LIMIT[UserPlan.Free],
+      }),
+    );
+
+    this.logger.log(`Free signup: ${created.email} (${created.id})`);
     return created;
   }
 
