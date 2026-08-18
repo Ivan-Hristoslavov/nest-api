@@ -5407,10 +5407,20 @@
         const cheapest = priced.length ? priced[0].effectivePrice : 0;
         const dearest = priced.length ? priced[priced.length - 1].effectivePrice : 0;
 
-        // One supplier means the supplier column is the same word forty times.
-        // It earns its place only when there is a choice to be made.
         const suppliers = new Set(hits.map((hit) => hit.shopId));
-        const showSupplier = suppliers.size > 1;
+
+        // The shop is always shown. It was hidden when every row came from one
+        // supplier, on the reasoning that a repeated word earns no space — but
+        // the first thing anyone asks of a price is "from where", and a table
+        // that does not say is a table you cannot act on.
+        const showSupplier = true;
+
+        // Declared here, before the rows that read it. It used to be computed
+        // further down with the header, which put it in the temporal dead zone
+        // and threw "Cannot access 'singleGroup' before initialization" —
+        // taking the whole search down with it.
+        const groupCount = new Set(hits.map((hit) => hit.groupKey)).size;
+        const singleGroup = groupCount <= 1;
         const anyDiscount = hits.some((hit) => hit.discountPercent > 0);
 
         // Per-group extremes: the cheapest cable is not comparable with the
@@ -5488,8 +5498,19 @@
               (specs ? '<span class="mt-1 flex flex-wrap items-center gap-1">' + specs + '</span>' : '') +
               '</span></span></td>' +
               (showSupplier
-                ? '<td class="px-3 py-3 text-[12px] text-slate-400"><span class="block truncate">' +
+                ? '<td class="px-3 py-3 text-[12px] text-slate-400">' +
+                  // The shop name links to the offer as well as the article
+                  // title does: whichever half of the row the eye lands on,
+                  // "where do I buy this" is one click away.
+                  '<a href="' +
+                  escapeHtml(hit.url) +
+                  '" target="_blank" rel="noopener noreferrer" class="block truncate font-medium text-slate-300 transition hover:text-accent-500 hover:underline" title="Отвори в ' +
+                  escapeHtml(hit.host) +
+                  '">' +
                   escapeHtml(hit.shopName) +
+                  '</a>' +
+                  '<span class="block truncate font-mono text-[10.5px] text-slate-500">' +
+                  escapeHtml(hit.host) +
                   '</span>' +
                   (hit.discountPercent > 0
                     ? '<span class="mt-0.5 inline-block rounded bg-accent-500/12 px-1 py-0.5 text-[10px] font-semibold text-accent-300">−' +
@@ -5562,9 +5583,6 @@
         // printing "от 0.14 до 19.10" across the two invites precisely the
         // wrong conclusion. With several kinds on screen the header counts them
         // instead, and each group carries its own range.
-        const groupCount = new Set(hits.map((hit) => hit.groupKey)).size;
-        const singleGroup = groupCount <= 1;
-
         const range =
           singleGroup && priced.length > 1
             ? ' · от <strong class="num text-emerald-400">' +
