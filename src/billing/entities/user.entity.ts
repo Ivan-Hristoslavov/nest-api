@@ -28,12 +28,25 @@ export enum UserPlan {
   Business = 'business',
 }
 
-/** Maximum tracked products per plan. */
+/**
+ * Tracked articles allowed per plan.
+ *
+ * Articles, not suppliers. Suppliers cost almost nothing to serve — one request
+ * per shop per question, only when somebody asks — while *tracked* articles are
+ * re-checked on a schedule for ever, which is the actual bill. Metering the
+ * cheap thing would also cap the useful one: the more suppliers a buyer
+ * compares, the more they save, and charging for that sells against the
+ * product.
+ *
+ * The free tier is deliberately usable rather than a demo. A buyer with ten
+ * articles under watch discovers within a month whether this saves them money,
+ * and that is a better sales argument than any page of features.
+ */
 export const PLAN_PRODUCT_LIMIT: Record<UserPlan, number> = {
-  [UserPlan.Free]: 5,
-  [UserPlan.Starter]: 50,
+  [UserPlan.Free]: 10,
+  [UserPlan.Starter]: 100,
   [UserPlan.Pro]: 500,
-  [UserPlan.Business]: 5000,
+  [UserPlan.Business]: 2000,
 };
 
 /**
