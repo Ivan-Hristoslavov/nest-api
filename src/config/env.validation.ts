@@ -217,6 +217,27 @@ export class EnvironmentVariables {
   @IsOptional()
   SUPABASE_JWKS_URL?: string;
 
+  // --- Catalogue crawler ---------------------------------------------------
+  // Indexing a supplier's whole catalogue is thousands of pages, and requests
+  // to one host are serialised on purpose — so it is hours of work that nobody
+  // should have to sit through pressing a button. It runs in the background.
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  CATALOGUE_CRAWL_ENABLED = true;
+
+  @IsString()
+  @IsOptional()
+  CATALOGUE_CRAWL_CRON = '*/5 * * * *';
+
+  /** Pages per run. At ~2.5 s a page, 100 fills roughly four of the five minutes. */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  @IsOptional()
+  CATALOGUE_CRAWL_BATCH = 100;
+
   // --- Scraper -------------------------------------------------------------
   @Transform(toBoolean)
   @IsBoolean()

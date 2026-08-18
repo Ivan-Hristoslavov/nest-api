@@ -19,6 +19,19 @@ import { Product } from './entities/product.entity';
 import { ScrapeStatus } from './enums/scrape-status.enum';
 import { retailerNameForHost } from '../scraper/parsers/site-profiles';
 
+/** One value of a groupable column, with how many products carry it. */
+export interface FacetBucket {
+  value: string;
+  count: number;
+}
+
+/** Distinct brands / manufacturers / categories, for the dashboard filters. */
+export interface ProductFacets {
+  brands: FacetBucket[];
+  manufacturers: FacetBucket[];
+  categories: FacetBucket[];
+}
+
 /** Aggregate counters for the dashboard / monitoring endpoint. */
 export interface ProductStats {
   total: number;
@@ -35,6 +48,8 @@ export interface ProductStats {
 /** Maps sortable DTO fields to entity properties (guards against SQL injection). */
 const SORT_COLUMN: Record<ProductSortField, string> = {
   [ProductSortField.Name]: 'product.name',
+  [ProductSortField.Brand]: 'product.brand',
+  [ProductSortField.Category]: 'product.category',
   [ProductSortField.CurrentPrice]: 'product.currentPrice',
   [ProductSortField.LastUpdated]: 'product.lastUpdated',
   [ProductSortField.LastCheckedAt]: 'product.lastCheckedAt',
@@ -247,8 +262,16 @@ export class ProductsService {
       let product = existing;
 
       if (product) {
+        // A re-import fills in gaps and refreshes what the file states, but an
+        // omitted column in the export must not blank out a curated value.
         productsRepo.merge(product, {
           name: entry.name,
+          brand: entry.brand ?? product.brand,
+          manufacturer: entry.manufacturer ?? product.manufacturer,
+          model: entry.model ?? product.model,
+          category: entry.category ?? product.category,
+          gtin: entry.gtin ?? product.gtin,
+          imageUrl: entry.imageUrl ?? product.imageUrl,
           ourPrice: entry.ourPrice ?? product.ourPrice,
           targetPrice: entry.targetPrice ?? product.targetPrice,
         });
@@ -258,6 +281,12 @@ export class ProductsService {
           productsRepo.create({
             name: entry.name,
             sku: entry.sku ?? null,
+            brand: entry.brand ?? null,
+            manufacturer: entry.manufacturer ?? null,
+            model: entry.model ?? null,
+            category: entry.category ?? null,
+            gtin: entry.gtin ?? null,
+            imageUrl: entry.imageUrl ?? null,
             targetUrl: urls[0],
             competitorUrl: urls[0],
             currency,
@@ -311,14 +340,34 @@ export class ProductsService {
     const qb = this.productsRepository.createQueryBuilder('product');
 
     if (query.search) {
+      // Whoever is looking for "samsung" means the brand as readily as the
+      // name, and a warehouse clerk pastes a barcode. All of it is one box.
+      const search = `%${query.search}%`;
       qb.andWhere(
         new Brackets((where) => {
           where
-            .where('product.name ILIKE :search', { search: `%${query.search}%` })
-            .orWhere('product.sku ILIKE :search', { search: `%${query.search}%` })
-            .orWhere('product.competitor_url ILIKE :search', { search: `%${query.search}%` });
+            .where('product.name ILIKE :search', { search })
+            .orWhere('product.sku ILIKE :search', { search })
+            .orWhere('product.brand ILIKE :search', { search })
+            .orWhere('product.manufacturer ILIKE :search', { search })
+            .orWhere('product.model ILIKE :search', { search })
+            .orWhere('product.category ILIKE :search', { search })
+            .orWhere('product.gtin ILIKE :search', { search })
+            .orWhere('product.competitor_url ILIKE :search', { search });
         }),
       );
+    }
+
+    if (query.brand) {
+      qb.andWhere('product.brand = :brand', { brand: query.brand });
+    }
+
+    if (query.manufacturer) {
+      qb.andWhere('product.manufacturer = :manufacturer', { manufacturer: query.manufacturer });
+    }
+
+    if (query.category) {
+      qb.andWhere('product.category = :category', { category: query.category });
     }
 
     if (query.isActive !== undefined) {
@@ -481,6 +530,39 @@ export class ProductsService {
       averagePrice: raw?.averagePrice ? this.round(Number.parseFloat(raw.averagePrice)) : null,
       lastScrapeAt: raw?.lastScrapeAt ? new Date(raw.lastScrapeAt).toISOString() : null,
     };
+  }
+
+  /**
+   * The values the brand / manufacturer / category filters offer.
+   *
+   * Derived from the catalogue rather than kept in a lookup table: there is no
+   * curation step where someone would maintain the second list, so it would
+   * only ever drift out of date with the first.
+   */
+  async getFacets(): Promise<ProductFacets> {
+    const [brands, manufacturers, categories] = await Promise.all([
+      this.facet('brand'),
+      this.facet('manufacturer'),
+      this.facet('category'),
+    ]);
+
+    return { brands, manufacturers, categories };
+  }
+
+  /** `column` is a literal from {@link getFacets}, never user input. */
+  private async facet(column: 'brand' | 'manufacturer' | 'category'): Promise<FacetBucket[]> {
+    const rows = await this.productsRepository
+      .createQueryBuilder('product')
+      .select(`product.${column}`, 'value')
+      .addSelect('COUNT(*)::int', 'count')
+      .where(`product.${column} IS NOT NULL`)
+      .andWhere(`product.${column} <> ''`)
+      .groupBy(`product.${column}`)
+      .orderBy('"count"', 'DESC')
+      .addOrderBy('"value"', 'ASC')
+      .getRawMany<{ value: string; count: number }>();
+
+    return rows;
   }
 
   private round(value: number, decimals = 2): number {

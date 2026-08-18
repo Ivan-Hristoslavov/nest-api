@@ -1,20 +1,24 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Logger,
+  NotFoundException,
   Post,
   Query,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiExcludeEndpoint,
   ApiHeader,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -26,9 +30,13 @@ import { Request } from 'express';
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
+import { AdminGuard } from '../common/guards/admin.guard';
+import { AuthenticatedRequest } from '../common/guards/api-key.guard';
 import { BillingService } from './billing.service';
+import { IssuedApiKeyDto, MyAccountDto, RotateApiKeyDto } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
+import { UsersService } from './users.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
 @ApiTags('Billing')
@@ -39,6 +47,7 @@ export class BillingController {
   constructor(
     private readonly billingService: BillingService,
     private readonly signatureService: WebhookSignatureService,
+    private readonly usersService: UsersService,
   ) {}
 
   /**
@@ -131,6 +140,105 @@ export class BillingController {
     return this.billingService.findRecentEvents(
       Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 100) : 20,
     );
+  }
+
+  @ApiKeyAuth()
+  @Get('me')
+  @ApiOperation({
+    summary: 'The account behind the API key',
+    description:
+      'Plan, limits, expiry and the identifying prefix of the key in use. Only the prefix — the key itself is stored as a digest and cannot be read back.',
+  })
+  @ApiOkResponse({ description: 'The calling account.', type: MyAccountDto })
+  @ApiUnauthorizedResponse({
+    description: 'Operator keys have no account.',
+    type: ErrorResponseDto,
+  })
+  me(@Req() request: AuthenticatedRequest): MyAccountDto {
+    const user = request.user;
+
+    // An operator key authenticates without belonging to anyone, so there is
+    // no account to describe. Saying so beats inventing an empty one.
+    if (!user) {
+      throw new BadRequestException(
+        'This is an operator key, not a customer key — it has no billing account.',
+      );
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      status: user.status,
+      plan: user.plan,
+      productLimit: user.productLimit,
+      apiKeyPrefix: user.apiKeyPrefix,
+      apiKeyIssuedAt: user.apiKeyIssuedAt ? user.apiKeyIssuedAt.toISOString() : null,
+      accessExpiresAt: user.accessExpiresAt ? user.accessExpiresAt.toISOString() : null,
+    };
+  }
+
+  @ApiKeyAuth()
+  @Post('me/api-key')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Replace your own API key',
+    description:
+      'For a key that still works but should not — pasted into a ticket, committed to a repo, or held by someone who has left.\n\n**The old key stops working the moment this returns.** The new one is in the response and nowhere else.',
+  })
+  @ApiOkResponse({ description: 'The new key, shown once.', type: IssuedApiKeyDto })
+  async rotateOwnApiKey(@Req() request: AuthenticatedRequest): Promise<IssuedApiKeyDto> {
+    const user = request.user;
+
+    if (!user) {
+      throw new BadRequestException(
+        'This is an operator key. Rotate it by changing API_KEY in the environment.',
+      );
+    }
+
+    return this.issue(user.id, 'live', Boolean(user.apiKeyPrefix));
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Post('users/api-key')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Issue a replacement key for a customer (operator only)',
+    description:
+      "The recovery path for a customer who has lost their key. They cannot ask for a new one themselves — presenting the lost key is exactly what they cannot do — so an operator does it for them and hands the result over.\n\nRequires an operator key from `API_KEY` / `API_KEYS`; a customer key is refused. Otherwise knowing somebody's email address would be enough to destroy their access, since issuing a key revokes the previous one.",
+  })
+  @ApiOkResponse({ description: 'The new key, shown once.', type: IssuedApiKeyDto })
+  @ApiNotFoundResponse({ description: 'No account with this email.', type: ErrorResponseDto })
+  async rotateCustomerApiKey(@Body() dto: RotateApiKeyDto): Promise<IssuedApiKeyDto> {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    if (!user) {
+      throw new NotFoundException(`No account for "${dto.email}".`);
+    }
+
+    this.logger.warn(
+      `Operator issued a replacement API key for ${user.email}. Any previous key is now dead.`,
+    );
+
+    return this.issue(user.id, dto.environment ?? 'live', Boolean(user.apiKeyPrefix));
+  }
+
+  private async issue(
+    userId: string,
+    environment: 'live' | 'test',
+    replacedPreviousKey: boolean,
+  ): Promise<IssuedApiKeyDto> {
+    const { user, apiKey } = await this.usersService.issueApiKey(userId, environment);
+
+    return {
+      userId: user.id,
+      email: user.email,
+      apiKey,
+      prefix: user.apiKeyPrefix ?? '',
+      issuedAt: (user.apiKeyIssuedAt ?? new Date()).toISOString(),
+      replacedPreviousKey,
+    };
   }
 
   /** Not part of the public contract; used by the deployment smoke check. */

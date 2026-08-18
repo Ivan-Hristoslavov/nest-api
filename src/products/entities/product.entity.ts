@@ -26,6 +26,10 @@ import { PriceHistory } from './price-history.entity';
 // Drives the scheduler queue: "active products, least recently checked first".
 @Index('idx_products_active_last_checked', ['isActive', 'lastCheckedAt'])
 @Index('idx_products_competitor_url', ['competitorUrl'])
+// The dashboard groups and filters by brand and by category; without these two
+// every such view is a sequential scan over the whole catalogue.
+@Index('idx_products_brand', ['brand'])
+@Index('idx_products_category', ['category'])
 export class Product {
   @ApiProperty({
     description: 'Primary key.',
@@ -50,6 +54,77 @@ export class Product {
   })
   @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
   sku!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Brand as it appears on the box — what a buyer searches for. Kept separate from the manufacturer: Redmi is a brand of Xiaomi, Specna Arms of Global Airsoft.',
+    maxLength: 120,
+    nullable: true,
+    example: 'Samsung',
+  })
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  brand!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Legal manufacturer or importer. Useful when negotiating, and for warranty terms.',
+    maxLength: 160,
+    nullable: true,
+    example: 'Samsung Electronics Co., Ltd.',
+  })
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  manufacturer!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Manufacturer model designation, distinct from our own SKU.',
+    maxLength: 120,
+    nullable: true,
+    example: 'QE55Q7F2AUXXH',
+  })
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  model!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Catalogue category, used to group the dashboard.',
+    maxLength: 120,
+    nullable: true,
+    example: 'Телевизори',
+  })
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  category!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'EAN-13 / UPC / GTIN-14 barcode. The only identifier shared across shops, so it is what matches our row to theirs.',
+    maxLength: 14,
+    nullable: true,
+    example: '8806095507415',
+  })
+  @Column({ type: 'varchar', length: 14, nullable: true })
+  gtin!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Product image, for the catalogue view.',
+    format: 'uri',
+    nullable: true,
+  })
+  @Column({ name: 'image_url', type: 'text', nullable: true })
+  imageUrl!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Free-form specification sheet — whatever the category needs, without a migration per attribute.',
+    nullable: true,
+    example: { Диагонал: '55"', Резолюция: '4K UHD', Панел: 'QLED' },
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  attributes!: Record<string, string> | null;
+
+  @ApiPropertyOptional({
+    description: 'Internal note — supply terms, minimum order quantity, whatever the buyer needs.',
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  notes!: string | null;
 
   @ApiProperty({
     description: 'Our own product page — the listing whose price we defend.',

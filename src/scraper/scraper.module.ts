@@ -41,8 +41,15 @@ import { ScraperService } from './scraper.service';
       inject: [ConfigService, HttpPriceFetcherService, SimulatedPriceFetcherService],
     },
   ],
-  // The parser, robots client and rate limiter are reused by DiscoveryModule,
-  // so a product search obeys the same manners as a price check.
-  exports: [ScraperService, PriceParserService, RobotsService, HostRateLimiterService],
+  // The parser, robots client, rate limiter and the selected fetcher are reused
+  // by DiscoveryModule and CatalogueModule, so a search or a catalogue crawl
+  // obeys exactly the same manners as a price check.
+  exports: [
+    ScraperService,
+    PriceParserService,
+    RobotsService,
+    HostRateLimiterService,
+    PRICE_SOURCE,
+  ],
 })
 export class ScraperModule {}

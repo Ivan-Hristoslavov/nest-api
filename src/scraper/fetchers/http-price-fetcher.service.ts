@@ -141,6 +141,7 @@ export class HttpPriceFetcherService implements PriceSource {
       strategy: parsed.strategy,
       source: target.host,
       durationMs,
+      title: details.title,
       sellerName: details.sellerName,
       location: details.location,
       imageUrl: details.imageUrl,

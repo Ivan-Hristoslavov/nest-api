@@ -26,6 +26,8 @@ export interface PriceObservation {
   /** Host the observation came from. */
   source: string;
   durationMs: number;
+  /** The product's own name, as the page titles it. */
+  title?: string | null;
   /** Seller, location, image and extra facts, when the page exposes them. */
   sellerName?: string | null;
   location?: string | null;

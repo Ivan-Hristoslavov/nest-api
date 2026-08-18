@@ -7,6 +7,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   MinLength,
@@ -30,6 +31,48 @@ export class BulkProductDto {
   @IsOptional()
   @Transform(trimString)
   sku?: string;
+
+  @ApiPropertyOptional({ example: 'Samsung' })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  brand?: string;
+
+  @ApiPropertyOptional({ example: 'Samsung Electronics Co., Ltd.' })
+  @IsString()
+  @MaxLength(160)
+  @IsOptional()
+  @Transform(trimString)
+  manufacturer?: string;
+
+  @ApiPropertyOptional({ example: 'QE55Q7F2AUXXH' })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  model?: string;
+
+  @ApiPropertyOptional({ example: 'Телевизори' })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'EAN / UPC barcode, 8–14 digits.', example: '8806095507415' })
+  @IsString()
+  @Matches(/^\d{8,14}$/, { message: 'gtin must be 8 to 14 digits' })
+  @IsOptional()
+  @Transform(trimString)
+  gtin?: string;
+
+  @ApiPropertyOptional({ format: 'uri' })
+  @IsString()
+  @MaxLength(2048)
+  @IsOptional()
+  @Transform(trimString)
+  imageUrl?: string;
 
   @ApiProperty({
     description: 'Product page URLs, one per shop. The first becomes the primary listing.',

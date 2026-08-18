@@ -37,7 +37,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { PriceHistory } from './entities/price-history.entity';
 import { Product } from './entities/product.entity';
 import { CompetitorsService } from './competitors.service';
-import { ProductStats, ProductsService } from './products.service';
+import { ProductFacets, ProductStats, ProductsService } from './products.service';
 
 @ApiTags('Products')
 @ApiKeyAuth()
@@ -127,6 +127,37 @@ export class ProductsController {
   })
   getStats(): Promise<ProductStats> {
     return this.productsService.getStats();
+  }
+
+  // Also before ':id', for the same reason as 'stats'.
+  @Get('facets')
+  @ApiOperation({
+    summary: 'Brands, manufacturers and categories in the catalogue',
+    description:
+      'Every distinct value with its product count, so the dashboard filters can be built from the data instead of a hard-coded list.',
+  })
+  @ApiOkResponse({
+    description: 'Distinct values, most common first.',
+    schema: {
+      type: 'object',
+      properties: {
+        brands: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              value: { type: 'string', example: 'Samsung' },
+              count: { type: 'number', example: 12 },
+            },
+          },
+        },
+        manufacturers: { type: 'array', items: { type: 'object' } },
+        categories: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  })
+  getFacets(): Promise<ProductFacets> {
+    return this.productsService.getFacets();
   }
 
   @Get(':id')

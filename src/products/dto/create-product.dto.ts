@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -43,6 +44,81 @@ export class CreateProductDto {
   @IsOptional()
   @Transform(trimString)
   sku?: string;
+
+  @ApiPropertyOptional({
+    description: 'Brand as printed on the box.',
+    maxLength: 120,
+    example: 'Samsung',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  brand?: string;
+
+  @ApiPropertyOptional({
+    description: 'Legal manufacturer or importer, when it differs from the brand.',
+    maxLength: 160,
+    example: 'Samsung Electronics Co., Ltd.',
+  })
+  @IsString()
+  @MaxLength(160)
+  @IsOptional()
+  @Transform(trimString)
+  manufacturer?: string;
+
+  @ApiPropertyOptional({
+    description: "Manufacturer's model designation.",
+    maxLength: 120,
+    example: 'QE55Q7F2AUXXH',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  model?: string;
+
+  @ApiPropertyOptional({
+    description: 'Catalogue category.',
+    maxLength: 120,
+    example: 'Телевизори',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  category?: string;
+
+  @ApiPropertyOptional({
+    description: 'EAN-13 / UPC / GTIN-14 barcode — 8 to 14 digits.',
+    example: '8806095507415',
+  })
+  @IsString()
+  @Matches(/^\d{8,14}$/, { message: 'gtin must be 8 to 14 digits' })
+  @IsOptional()
+  @Transform(trimString)
+  gtin?: string;
+
+  @ApiPropertyOptional({ description: 'Product image.', format: 'uri' })
+  @IsUrl(URL_OPTIONS)
+  @MaxLength(2048)
+  @IsOptional()
+  imageUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Specification sheet as flat key/value pairs.',
+    example: { Диагонал: '55"', Панел: 'QLED' },
+  })
+  @IsObject()
+  @IsOptional()
+  attributes?: Record<string, string>;
+
+  @ApiPropertyOptional({ description: 'Free-text internal note.', maxLength: 2000 })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  @Transform(trimString)
+  notes?: string;
 
   @ApiProperty({
     description: 'Our own product page — the listing whose price we defend.',

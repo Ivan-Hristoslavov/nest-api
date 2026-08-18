@@ -12,6 +12,8 @@ import { ScrapeStatus } from '../enums/scrape-status.enum';
 
 export enum ProductSortField {
   Name = 'name',
+  Brand = 'brand',
+  Category = 'category',
   CurrentPrice = 'currentPrice',
   LastUpdated = 'lastUpdated',
   LastCheckedAt = 'lastCheckedAt',
@@ -25,7 +27,8 @@ export enum SortDirection {
 
 export class QueryProductsDto extends PaginationQueryDto {
   @ApiPropertyOptional({
-    description: 'Case-insensitive partial match on name, SKU or competitor URL.',
+    description:
+      'Case-insensitive partial match on name, SKU, brand, manufacturer, model, category, GTIN or competitor URL.',
     maxLength: 255,
     example: 'headphones',
   })
@@ -34,6 +37,39 @@ export class QueryProductsDto extends PaginationQueryDto {
   @IsOptional()
   @Transform(trimString)
   search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Exact brand match, as returned by GET /products/facets.',
+    maxLength: 120,
+    example: 'Samsung',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  brand?: string;
+
+  @ApiPropertyOptional({
+    description: 'Exact manufacturer match.',
+    maxLength: 160,
+    example: 'Samsung Electronics Co., Ltd.',
+  })
+  @IsString()
+  @MaxLength(160)
+  @IsOptional()
+  @Transform(trimString)
+  manufacturer?: string;
+
+  @ApiPropertyOptional({
+    description: 'Exact category match.',
+    maxLength: 120,
+    example: 'Телевизори',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  @Transform(trimString)
+  category?: string;
 
   @ApiPropertyOptional({
     description: 'Filter by tracking state.',

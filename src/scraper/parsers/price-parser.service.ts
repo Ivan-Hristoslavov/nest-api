@@ -10,6 +10,8 @@ export type ExtractionStrategy =
 
 /** Everything worth knowing about a listing beyond its price. */
 export interface ListingDetails {
+  /** The product's own name, as the page titles it. */
+  title: string | null;
   /** Dealer or shop name, when the page names one. */
   sellerName: string | null;
   /** Absolute URL of the main image. */
@@ -200,6 +202,7 @@ export class PriceParserService {
     const text = $('body').text().replace(/\s+/g, ' ');
 
     return {
+      title: this.extractTitle($),
       sellerName: this.extractSeller($, profile),
       imageUrl: this.absoluteUrl($('meta[property="og:image"]').first().attr('content'), pageUrl),
       location: this.extractLocation($, profile),
@@ -209,6 +212,32 @@ export class PriceParserService {
         `${$('title').first().text()} ${$('h1').first().text()}`,
       ),
     };
+  }
+
+  /**
+   * The product's name.
+   *
+   * `og:title` first, because it is written for sharing and therefore free of
+   * the "| Shop name | Free delivery" tail that `<title>` carries; then the
+   * page's own `h1`; the document title last, with that tail trimmed off.
+   */
+  private extractTitle($: cheerio.CheerioAPI): string | null {
+    const candidates = [
+      $('meta[property="og:title"]').first().attr('content'),
+      $('h1').first().text(),
+      $('title').first().text(),
+    ];
+
+    for (const candidate of candidates) {
+      const cleaned = (candidate ?? '')
+        .replace(/\s+/g, ' ')
+        .split(/\s+[|»–—]\s+/)[0]
+        .trim();
+
+      if (cleaned.length >= 3) return cleaned.slice(0, 300);
+    }
+
+    return null;
   }
 
   private extractSeller($: cheerio.CheerioAPI, profile: SiteProfile | null): string | null {

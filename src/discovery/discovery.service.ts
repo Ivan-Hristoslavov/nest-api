@@ -44,9 +44,47 @@ export class DiscoveryService {
     });
   }
 
-  /** Shops this instance knows how to search. */
-  listProviders(): Array<{ host: string; name: string }> {
-    return SEARCH_PROVIDERS.map((provider) => ({ host: provider.host, name: provider.name }));
+  /**
+   * Shops this instance knows how to search, and whether each one currently
+   * permits it.
+   *
+   * A shop can be perfectly scrapeable and still forbid searching: vario.bg
+   * allows `/` but disallows `/search.php`, so its product pages can be tracked
+   * while its search is off-limits. Reporting that here — rather than at the
+   * end of a search that was never going to work — lets the picker grey the
+   * shop out instead of offering it and then refusing.
+   *
+   * Robots files are cached by {@link RobotsService}, so this stays cheap.
+   */
+  async listProviders(): Promise<
+    Array<{ host: string; name: string; searchable: boolean; reason: string | null }>
+  > {
+    return Promise.all(
+      SEARCH_PROVIDERS.map(async (provider) => {
+        const base = { host: provider.host, name: provider.name };
+
+        if (!this.config.respectRobots) {
+          return { ...base, searchable: true, reason: null };
+        }
+
+        try {
+          const allowed = await this.robots.isAllowed(
+            provider.searchUrl('test'),
+            this.config.userAgent,
+          );
+
+          return {
+            ...base,
+            searchable: allowed,
+            reason: allowed ? null : 'robots.txt на магазина забранява търсене',
+          };
+        } catch {
+          // A robots file we cannot read is not a refusal; let the search try
+          // and report its own outcome.
+          return { ...base, searchable: true, reason: null };
+        }
+      }),
+    );
   }
 
   /**
