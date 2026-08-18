@@ -3,11 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PriceGuard — Мониторинг на цени на едро</title>
+    <title>PriceGuard — цените на вашите доставчици, на едно място</title>
     <meta
       name="description"
-      content="Автоматизиран мониторинг на цени зад парола и складови стени за електронни магазини."
+      content="Сравнявайте цените при вашите доставчици на едро — включително тези без сайт — за отделен артикул или за цяла поръчка. Известия при поскъпване. Безплатно за 10 артикула."
     />
+    <meta name="theme-color" content="#0b1120" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="bg_BG" />
+    <meta property="og:site_name" content="PriceGuard" />
+    <meta property="og:title" content="Спрете да обикаляте складовете всяка сутрин" />
+    <meta
+      property="og:description"
+      content="Едно табло вместо пет портала: къде да купите днес и колко спестявате. Работи и с доставчика, който няма сайт."
+    />
+    <meta name="twitter:card" content="summary" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -456,6 +467,14 @@
           >
             <i class="fa-solid fa-chart-line mr-1.5 text-[11px]"></i>Следени цени
           </button>
+          <button
+            type="button"
+            data-view="landing"
+            data-scroll="api"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+          >
+            <i class="fa-solid fa-code mr-1.5 text-[11px]"></i>API
+          </button>
           <!-- Revealed only when the key in use turns out to be an operator
                key. Offering it to a customer and then answering 403 reads as a
                fault in us rather than a boundary. -->
@@ -534,7 +553,12 @@
         <div class="grid-bg border-b border-white/5">
           <div class="mx-auto max-w-7xl px-5 pb-24 pt-20 sm:px-8 sm:pt-28">
             <div class="mx-auto max-w-3xl text-center">
+              <!-- Hidden until /stats answers. A badge that claims live activity
+                   has to be reading something live; the number that used to sit
+                   here was typed by hand. -->
               <span
+                id="hero-live"
+                hidden
                 class="inline-flex items-center gap-2 rounded-full border border-accent-500/25 bg-accent-500/10 px-3 py-1 text-[12px] font-medium text-accent-600 dark:text-accent-400"
               >
                 <span class="relative flex h-1.5 w-1.5">
@@ -543,7 +567,7 @@
                   ></span>
                   <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-500"></span>
                 </span>
-                4 200+ артикула следени в момента
+                <span id="hero-live-text"></span>
               </span>
 
               <h1
@@ -571,10 +595,10 @@
               <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <button
                   type="button"
-                  data-view="dashboard"
-                  class="nav-link group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-white shadow-glow transition hover:bg-accent-600 sm:w-auto"
+                  data-signup
+                  class="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-white shadow-glow transition hover:bg-accent-600 sm:w-auto"
                 >
-                  Пробвай безплатно
+                  Започни безплатно
                   <i
                     class="fa-solid fa-arrow-right text-[13px] transition group-hover:translate-x-0.5"
                   ></i>
@@ -590,7 +614,7 @@
               </div>
 
               <p class="mt-5 text-[13px] text-slate-500">
-                Безплатен план за 10 артикула · Без карта · Отказ по всяко време
+                10 артикула безплатно · Без карта · Ключът пристига веднага
               </p>
             </div>
 
@@ -624,25 +648,29 @@
               </div>
             </div>
 
-            <!-- Trust strip -->
+            <!-- Counters read from /api/v1/stats. Hidden while the database is
+                 empty: four zeroes say less than nothing, and an invented
+                 number is the one thing a price service cannot afford. -->
             <div
+              id="live-stats"
+              hidden
               class="mx-auto mt-16 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/8 bg-white/5 sm:grid-cols-4"
             >
               <div class="bg-ink-900 px-5 py-6 text-center">
-                <div class="num text-2xl font-bold text-slate-200">4 200+</div>
+                <div id="live-shops" class="num text-2xl font-bold text-slate-200">—</div>
+                <div class="mt-1 text-[12px] text-slate-500">доставчика в сравнението</div>
+              </div>
+              <div class="bg-ink-900 px-5 py-6 text-center">
+                <div id="live-products" class="num text-2xl font-bold text-slate-200">—</div>
                 <div class="mt-1 text-[12px] text-slate-500">следени артикула</div>
               </div>
               <div class="bg-ink-900 px-5 py-6 text-center">
-                <div class="num text-2xl font-bold text-slate-200">37</div>
-                <div class="mt-1 text-[12px] text-slate-500">портала на едро</div>
+                <div id="live-movements" class="num text-2xl font-bold text-slate-200">—</div>
+                <div class="mt-1 text-[12px] text-slate-500">записани промени в цените</div>
               </div>
               <div class="bg-ink-900 px-5 py-6 text-center">
-                <div class="num text-2xl font-bold text-slate-200">99.4%</div>
+                <div id="live-success" class="num text-2xl font-bold text-slate-200">—</div>
                 <div class="mt-1 text-[12px] text-slate-500">успешни проверки</div>
-              </div>
-              <div class="bg-ink-900 px-5 py-6 text-center">
-                <div class="num text-2xl font-bold text-slate-200">&lt; 60 сек</div>
-                <div class="mt-1 text-[12px] text-slate-500">до алармата</div>
               </div>
             </div>
           </div>
@@ -671,10 +699,11 @@
               >
                 <i class="fa-solid fa-chart-line text-accent-400"></i>
               </span>
-              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">Маржът, не цената</h3>
+              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">Само когато има новина</h3>
               <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
-                Съпоставяме цената на едро с пазарната и с вашата. Получавате аларма когато маржът
-                падне под праг — не когато някакво число се е променило.
+                Задавате праг в лева и процент. Пишем ви, когато цена го премине, когато оферта
+                падне под него или когато проверката спре да работи — не при всяко трепване с
+                стотинка.
               </p>
             </article>
 
@@ -684,12 +713,71 @@
               >
                 <i class="fa-solid fa-database text-accent-400"></i>
               </span>
-              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">Директно в магазина</h3>
+              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">Данните са ваши</h3>
               <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
-                REST API, CSV експорт и готови конектори за Shopify и WooCommerce. Цените стигат до
-                магазина ви без ръчно копиране.
+                Всичко, което виждате в таблото, е достъпно и през REST API с вашия ключ, плюс
+                CSV експорт и webhook при промяна. Свързвате го с каквото ползвате — без нас
+                по средата.
               </p>
             </article>
+          </div>
+        </div>
+
+        <!-- How it works -->
+        <div id="how" class="border-t border-white/5">
+          <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+            <div class="mx-auto max-w-2xl text-center">
+              <h2 class="text-3xl font-bold text-slate-200 sm:text-4xl">Как работи</h2>
+              <p class="mt-4 text-[16px] leading-relaxed text-slate-400">
+                Три стъпки. Първата отнема няколко минути, останалите две са ежедневната работа.
+              </p>
+            </div>
+
+            <ol class="mt-14 grid gap-6 md:grid-cols-3">
+              <li class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+                <span
+                  class="num grid h-9 w-9 place-items-center rounded-xl bg-accent-500/12 text-[15px] font-bold text-accent-400 ring-1 ring-accent-500/25"
+                  >1</span
+                >
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  Казвате кои са вашите доставчици
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  Пишете домейна. Проверяваме има ли работеща търсачка и какво позволява
+                  <code class="rounded bg-ink-800 px-1.5 py-0.5 text-[12.5px] text-slate-300">robots.txt</code>
+                  — доставчик, който забранява, не влиза в сравнението. Този без сайт го добавяте
+                  с ценоразписа, който ви праща.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+                <span
+                  class="num grid h-9 w-9 place-items-center rounded-xl bg-accent-500/12 text-[15px] font-bold text-accent-400 ring-1 ring-accent-500/25"
+                  >2</span
+                >
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  Питате за артикул или за цяла поръчка
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  Търсенето пита всички доставчици едновременно и подрежда офертите за един и същи
+                  размер една до друга. Поръчка от двайсет реда се остойностява наведнъж — най-евтин
+                  за поръчката не е сборът от най-евтините редове.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+                <span
+                  class="num grid h-9 w-9 place-items-center rounded-xl bg-accent-500/12 text-[15px] font-bold text-accent-400 ring-1 ring-accent-500/25"
+                  >3</span
+                >
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  Каквото купувате често, остава под наблюдение
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  Проверката се повтаря всеки час и мълчи, докато няма новина. Промени над прага ви,
+                  оферта под целевата цена и спрели проверки идват на имейла, в Slack или на ваш
+                  webhook.
+                </p>
+              </li>
+            </ol>
           </div>
         </div>
 
@@ -699,17 +787,42 @@
             <div class="mx-auto max-w-2xl text-center">
               <h2 class="text-3xl font-bold text-slate-200 sm:text-4xl">Прозрачно ценообразуване</h2>
               <p class="mt-4 text-[16px] leading-relaxed text-slate-400">
-                Плащате за артикулите, които следим вместо вас. Доставчиците са
-                <strong class="text-slate-300">неограничени във всеки платен план</strong> — колкото
-                повече сравнявате, толкова по-евтино купувате, и не е редно да ви таксуваме за това.
+                Всички функции са във всеки план.
+                <strong class="text-slate-300">Различава се едно: колко артикула следим вместо вас.</strong>
+                Доставчиците са неограничени навсякъде — колкото повече сравнявате, толкова
+                по-евтино купувате, и не е редно да ви таксуваме за това.
               </p>
               <p class="mt-3 text-[14px] text-slate-500">
                 Един спестен кабел на месец плаща абонамента.
               </p>
             </div>
 
-            <div class="mt-14 grid items-start gap-6 lg:grid-cols-3">
-              <!-- Бизнес -->
+            <!-- The free plan sits above the paid ones rather than as a fourth
+                 card: it is the way in, not the cheapest purchase. -->
+            <div
+              class="mx-auto mt-10 flex max-w-3xl flex-col items-center gap-4 rounded-2xl border border-white/8 bg-ink-900 p-6 text-center sm:flex-row sm:justify-between sm:text-left"
+            >
+              <div>
+                <h3 class="text-[15px] font-semibold text-slate-200">
+                  Безплатно · 10 следени артикула
+                </h3>
+                <p class="mt-1.5 text-[13.5px] leading-relaxed text-slate-400">
+                  Същите функции, по-малък списък. Без карта — получавате ключ на имейла си и
+                  започвате веднага.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-signup
+                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-accent-500/40 bg-accent-500/10 px-5 py-3 text-[14px] font-semibold text-accent-600 transition hover:bg-accent-500/20 dark:text-accent-300"
+              >
+                <i class="fa-solid fa-key text-[13px]"></i>
+                Вземи безплатен ключ
+              </button>
+            </div>
+
+            <div class="mt-10 grid items-start gap-6 lg:grid-cols-3">
+              <!-- Занаят -->
               <article
                 class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
               >
@@ -724,27 +837,27 @@
                 <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span><strong class="font-semibold text-slate-200">Неограничени доставчици</strong></span>
+                    <span><strong class="font-semibold text-slate-200">100 следени артикула</strong></span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Неограничени търсения на живо</span>
+                    <span><strong class="font-semibold text-slate-200">Неограничени доставчици</strong> — включително тези без сайт, чийто ценоразпис качвате</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>До <strong class="font-semibold text-slate-200">100 следени артикула</strong></span>
+                    <span>Търсене на живо при всичките ви доставчици</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Доставчици без сайт — качвате ценоразписа им</span>
+                    <span>Цена на <strong class="font-semibold text-slate-200">цяла поръчка</strong>, не само на отделен артикул</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Известие при поскъпване</span>
+                    <span>Известия при поскъпване — по имейл, Slack и webhook</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>История на цените 6 месеца</span>
+                    <span>REST API с вашия ключ, CSV експорт, история на цените</span>
                   </li>
                 </ul>
                 <button
@@ -756,7 +869,7 @@
                 </button>
               </article>
 
-              <!-- ПРО -->
+              <!-- Магазин -->
               <article
                 class="relative flex h-full flex-col rounded-2xl border border-accent-500/40 bg-ink-850 p-7 shadow-glow lg:-mt-4 lg:pb-9 lg:pt-9"
               >
@@ -776,30 +889,27 @@
                 <ul class="mt-7 space-y-3 text-[14px] text-slate-200">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Всичко от <strong class="font-semibold text-slate-200">Занаят</strong></span>
+                    <span><strong class="font-semibold text-slate-200">500 следени артикула</strong></span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>До <strong class="font-semibold text-slate-200">500 следени артикула</strong></span>
+                    <span><strong class="font-semibold text-slate-200">Неограничени доставчици</strong> — включително тези без сайт, чийто ценоразпис качвате</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>
-                      <strong class="font-semibold text-slate-200">Сравнение на цяла заявка</strong> —
-                      кой е най-евтин за поръчката, не за артикула
-                    </span>
+                    <span>Търсене на живо при всичките ви доставчици</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Проверка на всеки час</span>
+                    <span>Цена на <strong class="font-semibold text-slate-200">цяла поръчка</strong>, не само на отделен артикул</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Аларми по e-mail, Slack и webhook</span>
+                    <span>Известия при поскъпване — по имейл, Slack и webhook</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Експорт към Excel · история 24 месеца</span>
+                    <span>REST API с вашия ключ, CSV експорт, история на цените</span>
                   </li>
                 </ul>
                 <button
@@ -811,13 +921,13 @@
                 </button>
               </article>
 
-              <!-- Корпоративен -->
+              <!-- Верига -->
               <article
                 class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
               >
                 <h3 class="text-[15px] font-semibold text-slate-200">Верига</h3>
                 <p class="mt-1.5 text-[13px] text-slate-500">
-                  За няколко обекта или дистрибутор с ERP.
+                  За няколко обекта или дистрибутор.
                 </p>
                 <div class="mt-6 flex items-baseline gap-1.5">
                   <span class="num text-5xl font-extrabold tracking-tight text-slate-200">€99</span>
@@ -826,42 +936,530 @@
                 <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span><strong class="font-semibold text-slate-200">Неограничени</strong> домейни</span>
+                    <span><strong class="font-semibold text-slate-200">2 000 следени артикула</strong></span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span><strong class="font-semibold text-slate-200">Real-time</strong> скрейпинг</span>
+                    <span><strong class="font-semibold text-slate-200">Неограничени доставчици</strong> — включително тези без сайт, чийто ценоразпис качвате</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span><strong class="font-semibold text-slate-200">ERP интеграция</strong> (SAP, Microsoft Dynamics)</span>
+                    <span>Търсене на живо при всичките ви доставчици</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Неограничени артикули</span>
+                    <span>Цена на <strong class="font-semibold text-slate-200">цяла поръчка</strong>, не само на отделен артикул</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Отделен акаунт мениджър и SLA</span>
+                    <span>Известия при поскъпване — по имейл, Slack и webhook</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
-                    <span>Пълна история на цените</span>
+                    <span>REST API с вашия ключ, CSV експорт, история на цените</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Поддръжка с приоритет и помощ при първоначалната настройка</span>
                   </li>
                 </ul>
                 <button
                   type="button"
-                  data-contact="enterprise"
+                  data-checkout="business"
                   class="mt-8 w-full rounded-xl border border-white/12 bg-ink-800 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25 hover:bg-ink-700"
                 >
-                  Свържете се с нас
+                  Вземи плана
                 </button>
               </article>
             </div>
 
             <p class="mt-10 text-center text-[13px] text-slate-500">
-              Цените са без ДДС. Плащането се обработва от Paddle като merchant of record.
+              Цените са без ДДС. Плащането се обработва от Stripe — данните на картата ви не минават през нас.
             </p>
+          </div>
+        </div>
+
+        <!-- API -->
+        <div id="api" class="border-t border-white/5">
+          <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+            <div class="grid items-start gap-10 lg:grid-cols-2">
+              <div>
+                <span
+                  class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-ink-900 px-3 py-1 text-[12px] font-medium text-slate-400"
+                >
+                  <i class="fa-solid fa-code text-[11px] text-accent-500"></i>
+                  Включено във всеки план
+                </span>
+                <h2 class="mt-6 text-3xl font-bold text-slate-200 sm:text-4xl">
+                  Да, има API — и това е същият API
+                </h2>
+                <p class="mt-5 text-[16px] leading-relaxed text-slate-400">
+                  Таблото не знае нищо, което вие не можете да поискате сами. Всяка справка —
+                  търсене, остойностяване на поръчка, история, известия — е REST заявка с вашия
+                  ключ в хедъра
+                  <code class="rounded bg-ink-800 px-1.5 py-0.5 text-[13px] text-slate-300">X-API-KEY</code>.
+                </p>
+                <ul class="mt-6 space-y-3 text-[14.5px] text-slate-300">
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Ключът се издава веднъж и се пази само като хеш. Загубен ключ се заменя, не се възстановява.</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Всяка заявка вижда само вашите доставчици, цени и отстъпки.</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>OpenAPI описание, от което се генерира клиент за езика ви.</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span>Webhook при промяна в цената, подписан с ваш ключ.</span>
+                  </li>
+                </ul>
+                <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+                  <a
+                    href="/api/docs"
+                    target="_blank"
+                    rel="noopener"
+                    class="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+                  >
+                    <i class="fa-solid fa-book text-[13px]"></i>
+                    Отвори документацията
+                  </a>
+                  <button
+                    type="button"
+                    data-signup
+                    class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-ink-900 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25"
+                  >
+                    <i class="fa-solid fa-key text-[13px]"></i>
+                    Вземи ключ за проба
+                  </button>
+                </div>
+              </div>
+
+              <!-- A real request against a real route, so the reader can paste it. -->
+              <div class="overflow-hidden rounded-2xl border border-white/8 bg-ink-950 shadow-panel">
+                <div
+                  class="flex items-center gap-2 border-b border-white/5 bg-ink-900 px-4 py-2.5 text-[12px] text-slate-500"
+                >
+                  <i class="fa-solid fa-terminal text-[11px]"></i>
+                  Цена на цяла поръчка при всичките ви доставчици
+                </div>
+                <pre class="overflow-x-auto px-4 py-4 text-[12.5px] leading-relaxed text-slate-300"><code>curl -X POST https://<span class="text-accent-400">вашият-домейн</span>/api/v1/discovery/basket \
+  -H "X-API-KEY: <span class="text-accent-400">pk_live_…</span>" \
+  -H "content-type: application/json" \
+  -d '{
+    "lines": [
+      { "query": "КАБЕЛ СВТ 3x2.5", "quantity": 100 },
+      { "query": "ПВЦ тръба ф20",   "quantity": 50 }
+    ],
+    "currency": "EUR"
+  }'</code></pre>
+                <div class="border-t border-white/5 px-4 py-3 text-[12.5px] leading-relaxed text-slate-500">
+                  Отговорът съдържа всеки доставчик с обща сума за поръчката, кои редове е покрил и
+                  кои не — защото доставчик, който няма два от двайсет реда, не е най-евтиният.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FAQ -->
+        <div id="faq" class="border-t border-white/5 bg-ink-900/40">
+          <div class="mx-auto max-w-3xl px-5 py-20 sm:px-8">
+            <h2 class="text-3xl font-bold text-slate-200 sm:text-4xl">Честите въпроси</h2>
+            <div class="mt-10 divide-y divide-white/8 border-y border-white/8">
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Законно ли е да четете цени от чужди сайтове?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Четем публично достъпни страници, спазваме
+                  <code class="rounded bg-ink-800 px-1.5 py-0.5 text-[12.5px] text-slate-300">robots.txt</code>
+                  включително забавянето, което сайтът иска, и не заобикаляме логин или защита.
+                  Доставчик, който забранява обхождане, не се добавя — казваме ви го при
+                  добавянето, вместо да опитваме тайно. Общите условия на конкретен сайт може да
+                  забраняват повече от robots.txt; отговорността кои доставчици следите остава ваша.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Най-евтиният ми доставчик няма сайт. Безполезно ли е за мен?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Не. Добавяте го като доставчик без сайт и въвеждате цените от ценоразписа, който
+                  ви праща. Влиза в същото сравнение и в същите справки; в таблицата се вижда, че
+                  цената е ваша, а не прочетена — за да знаете кога е стара.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Колко бързо получавам отговор?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Първото търсене при нов доставчик отнема между 6 и 20 секунди — тогава четем
+                  сайта му наживо. Следващите са мигновени, защото отговорът се пази. Следените
+                  артикули се проверяват всеки час, без да чакате.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Вижда ли някой друг моите цени и отстъпки?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Не. Доставчиците, договорените отстъпки и въведените от вас цени са видими само с
+                  вашия ключ. Публичните числа на тази страница са общи бройки — колко доставчици и
+                  артикула има в системата — и никога чии са.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Как спирам абонамента?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Пишете ни на имейла по-долу и прекратяваме от следващия период; ако плащате с
+                  карта, можете и сами през Stripe. След края на периода акаунтът минава на
+                  безплатния план — данните ви остават, ключът продължава да работи.
+                </p>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <!-- Contact -->
+        <div id="contact" class="border-t border-white/5">
+          <div class="mx-auto max-w-3xl px-5 py-20 text-center sm:px-8">
+            <h2 class="text-3xl font-bold text-slate-200 sm:text-4xl">Питайте направо</h2>
+            <p class="mx-auto mt-4 max-w-xl text-[16px] leading-relaxed text-slate-400">
+              Ако не сте сигурни дали вашите доставчици са четими, пишете ни имената им — ще ги
+              проверим и ще ви отговорим честно, включително когато отговорът е „този не става".
+            </p>
+            <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a
+                data-contact-email
+                href="mailto:"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+              >
+                <i class="fa-solid fa-envelope text-[13px]"></i>
+                <span data-contact-email-label>Пишете ни</span>
+              </a>
+              <button
+                type="button"
+                data-signup
+                class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-ink-900 px-5 py-3 text-[14px] font-semibold text-slate-200 transition hover:border-white/25"
+              >
+                Или започнете сами, безплатно
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- SECTION — LEGAL                                                  -->
+      <!--                                                                  -->
+      <!-- Company particulars appear as [data-company] spans, filled from  -->
+      <!-- the COMPANY block in the script below. One edit there fills      -->
+      <!-- every page; until it is edited the placeholders are visible on   -->
+      <!-- purpose, so nobody ships these to customers half-written.        -->
+      <!-- ================================================================ -->
+      <section id="view-terms" class="view" role="region" aria-label="Общи условия" hidden>
+        <div class="mx-auto max-w-3xl px-5 py-16 sm:px-8">
+          <button
+            type="button"
+            data-view="landing"
+            class="nav-link mb-8 inline-flex items-center gap-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-300"
+          >
+            <i class="fa-solid fa-arrow-left text-[11px]"></i>Начало
+          </button>
+          <h1 class="text-3xl font-bold text-slate-200">Общи условия</h1>
+          <p class="mt-2 text-[13px] text-slate-500">
+            В сила от <span data-company="effectiveDate">[ДАТА]</span>.
+          </p>
+
+          <div class="prose-legal mt-10 space-y-8 text-[14.5px] leading-relaxed text-slate-400">
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">1. Кой предоставя услугата</h2>
+              <p class="mt-2">
+                PriceGuard („услугата") се предоставя от
+                <span data-company="name">[ФИРМА]</span>, ЕИК
+                <span data-company="eik">[ЕИК]</span>, със седалище и адрес на управление
+                <span data-company="address">[АДРЕС]</span>, наричано по-нататък „ние".
+                Връзка с нас: <span data-company="email">[ИМЕЙЛ]</span>.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">2. Какво прави услугата</h2>
+              <p class="mt-2">
+                Услугата чете публично достъпни цени от сайтове на доставчици, посочени от вас,
+                съхранява ги, сравнява ги и ви известява при промяна. Вие можете да въвеждате и
+                собствени цени — например от ценоразпис на доставчик без сайт.
+              </p>
+              <p class="mt-2">
+                Цените са информация, не оферта. Обвързваща е единствено цената, която доставчикът
+                ви потвърди. Не гарантираме, че всяка прочетена цена е актуална или вярна: сайтове
+                се променят, страници падат, а някои доставчици показват различни цени на различни
+                клиенти. Решенията за покупка са ваши.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">3. Акаунт и ключ</h2>
+              <p class="mt-2">
+                Достъпът става с API ключ, издаден при регистрация или при плащане. Ключът е
+                равнозначен на парола — пазете го. Ние съхраняваме само негов хеш и не можем да ви
+                го покажем повторно; загубен ключ се заменя с нов, при което старият спира да
+                работи веднага.
+              </p>
+              <p class="mt-2">
+                Отговаряте за действията, извършени с вашия ключ. Ако смятате, че е изтекъл,
+                пишете ни и ще издадем нов.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">4. Планове, плащане, прекратяване</h2>
+              <p class="mt-2">
+                Плановете се различават по броя артикули, които следим вместо вас. Безплатният
+                план не изисква карта. Платените са месечни, цените са без ДДС, а плащането се
+                обработва от Stripe — данни на карти не се съхраняват при нас.
+              </p>
+              <p class="mt-2">
+                Можете да прекратите по всяко време; услугата остава активна до края на платения
+                период, след което акаунтът минава на безплатния план. Не връщаме суми за
+                започнат период, освен когато услугата не е работила по наша вина.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">5. Как трябва да се ползва</h2>
+              <p class="mt-2">Не се допуска:</p>
+              <ul class="mt-2 list-disc space-y-1 pl-5">
+                <li>добавяне на доставчик, чиито условия ви забраняват автоматизиран достъп;</li>
+                <li>препродажба или публикуване на чужди цени, получени през услугата;</li>
+                <li>натоварване, което пречи на услугата или на сайтовете на доставчиците;</li>
+                <li>споделяне на ключа с трети лица извън вашата организация.</li>
+              </ul>
+              <p class="mt-2">
+                Спазваме <code class="rounded bg-ink-800 px-1.5 py-0.5 text-[12.5px] text-slate-300">robots.txt</code>
+                и не заобикаляме защити, но проверката дали конкретен доставчик позволява
+                следенето му според собствените си условия остава ваша.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">6. Достъпност и отговорност</h2>
+              <p class="mt-2">
+                Стремим се услугата да работи непрекъснато, но не обещаваме конкретна
+                достъпност, освен ако не сме я договорили писмено с вас. Отговорността ни за
+                вреди е ограничена до платеното от вас за последните три месеца. Не отговаряме за
+                пропуснати ползи, включително за покупка, направена на база показана цена.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">7. Промени в условията</h2>
+              <p class="mt-2">
+                При промяна ви уведомяваме по имейл поне 14 дни предварително. Ако не сте
+                съгласни, можете да прекратите преди влизането ѝ в сила.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">8. Приложимо право</h2>
+              <p class="mt-2">
+                Прилага се българското право. Спорове се решават от компетентния съд по
+                седалището ни, освен ако императивна норма не предвижда друго. Потребителските
+                спорове могат да се отнасят и до Комисията за защита на потребителите.
+              </p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-privacy" class="view" role="region" aria-label="Поверителност" hidden>
+        <div class="mx-auto max-w-3xl px-5 py-16 sm:px-8">
+          <button
+            type="button"
+            data-view="landing"
+            class="nav-link mb-8 inline-flex items-center gap-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-300"
+          >
+            <i class="fa-solid fa-arrow-left text-[11px]"></i>Начало
+          </button>
+          <h1 class="text-3xl font-bold text-slate-200">Политика за поверителност</h1>
+          <p class="mt-2 text-[13px] text-slate-500">
+            В сила от <span data-company="effectiveDate">[ДАТА]</span>.
+          </p>
+
+          <div class="mt-10 space-y-8 text-[14.5px] leading-relaxed text-slate-400">
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Администратор</h2>
+              <p class="mt-2">
+                <span data-company="name">[ФИРМА]</span>, ЕИК
+                <span data-company="eik">[ЕИК]</span>,
+                <span data-company="address">[АДРЕС]</span>. Въпроси по тази политика:
+                <span data-company="email">[ИМЕЙЛ]</span>.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Какво събираме</h2>
+              <ul class="mt-2 list-disc space-y-1.5 pl-5">
+                <li>
+                  <strong class="text-slate-300">Имейл адрес</strong> — за акаунта, за изпращане на
+                  ключа и на известията, които сте включили.
+                </li>
+                <li>
+                  <strong class="text-slate-300">Име на фирма</strong>, ако сте го посочили.
+                </li>
+                <li>
+                  <strong class="text-slate-300">Хеш на API ключа</strong> и кога е използван за
+                  последно. Самият ключ не се съхранява.
+                </li>
+                <li>
+                  <strong class="text-slate-300">Данните, които въвеждате</strong> — доставчици,
+                  артикули, цени, отстъпки. Те са ваши.
+                </li>
+                <li>
+                  <strong class="text-slate-300">Технически журнали</strong> — IP адрес, време и
+                  адрес на заявката, за сигурност и отстраняване на проблеми.
+                </li>
+              </ul>
+              <p class="mt-2">
+                Плащането минава през Stripe и данните на картата ви не достигат до нас. Не
+                използваме рекламни или проследяващи бисквитки. Ключът ви се пази в
+                <code class="rounded bg-ink-800 px-1.5 py-0.5 text-[12.5px] text-slate-300">localStorage</code>
+                на вашия браузър, за да не го въвеждате при всяко отваряне — това не е бисквитка и
+                не напуска устройството ви, освен като хедър при заявка към нашия API.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">На какво основание и колко дълго</h2>
+              <p class="mt-2">
+                Обработваме данните за изпълнение на договора с вас (чл. 6, ал. 1, б. „б" GDPR), за
+                спазване на счетоводни задължения (б. „в") и за сигурност на услугата на основание
+                легитимен интерес (б. „е"). Данните на акаунта пазим, докато е активен, и до 12
+                месеца след закриването му; счетоводните документи — 10 години, както изисква
+                законът; журналите — до 90 дни.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">С кого ги споделяме</h2>
+              <p class="mt-2">
+                Само с доставчици, без които услугата не работи: хостинг и база данни, Stripe за
+                плащанията, и доставчикът на изходяща поща. Всеки от тях обработва данните по наше
+                възлагане и няма право да ги ползва за свои цели. Не продаваме данни.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Вашите права</h2>
+              <p class="mt-2">
+                Имате право на достъп, коригиране, изтриване, ограничаване, преносимост и
+                възражение. Пишете на <span data-company="email">[ИМЕЙЛ]</span> — отговаряме до
+                един месец. Ако смятате, че нарушаваме правата ви, можете да сезирате Комисията за
+                защита на личните данни (София, бул. „Проф. Цветан Лазаров" 2).
+              </p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-gdpr" class="view" role="region" aria-label="Обработка на данни" hidden>
+        <div class="mx-auto max-w-3xl px-5 py-16 sm:px-8">
+          <button
+            type="button"
+            data-view="landing"
+            class="nav-link mb-8 inline-flex items-center gap-2 text-[13px] font-medium text-slate-500 transition hover:text-slate-300"
+          >
+            <i class="fa-solid fa-arrow-left text-[11px]"></i>Начало
+          </button>
+          <h1 class="text-3xl font-bold text-slate-200">Обработка на данни (GDPR)</h1>
+          <p class="mt-2 text-[13px] text-slate-500">
+            Приложение към Общите условия. В сила от
+            <span data-company="effectiveDate">[ДАТА]</span>.
+          </p>
+
+          <div class="mt-10 space-y-8 text-[14.5px] leading-relaxed text-slate-400">
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Кой какъв е</h2>
+              <p class="mt-2">
+                За данните, които вие качвате в услугата — вашите доставчици, артикули, цени и
+                контактите на ваши служители — вие сте администратор, а
+                <span data-company="name">[ФИРМА]</span> е обработващ. За данните на вашия акаунт
+                (имейл, плащане) администратор сме ние.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Какво правим с тях</h2>
+              <p class="mt-2">
+                Обработваме ги само по ваши указания и само за да предоставим услугата: съхранение,
+                сравнение, известяване и достъп през API с вашия ключ. Не ги ползваме за свои цели
+                и не ги предаваме на трети лица извън изброените обработващи.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Мерки за сигурност</h2>
+              <ul class="mt-2 list-disc space-y-1.5 pl-5">
+                <li>Пренос само по TLS.</li>
+                <li>API ключове се съхраняват като SHA-256 хеш, никога в явен вид.</li>
+                <li>Данните на всеки клиент са отделени и всяка заявка е ограничена до неговия акаунт.</li>
+                <li>Достъп до продукционната база само за лица, на които е необходим.</li>
+                <li>Резервни копия на базата, с възможност за възстановяване.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Подизпълнители</h2>
+              <p class="mt-2">
+                Хостинг и база данни (Supabase), плащания (Stripe), изходяща поща
+                (<span data-company="mailProvider">[ДОСТАВЧИК НА ПОЩА]</span>). Ще ви уведомим
+                предварително, ако сменим някой от тях, за да можете да възразите.
+              </p>
+              <p class="mt-2">
+                Данните се съхраняват на сървъри в Европейския съюз. Когато обработващ е извън ЕС,
+                прехвърлянето става по стандартни договорни клаузи на Европейската комисия.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Нарушения и прекратяване</h2>
+              <p class="mt-2">
+                При нарушение на сигурността, засягащо ваши данни, ви уведомяваме без ненужно
+                забавяне и не по-късно от 72 часа, откакто узнаем. При прекратяване изтриваме
+                данните ви до 30 дни, ако не поискате експорт преди това — можете да го направите
+                и сами през API или с CSV експорт.
+              </p>
+            </section>
+
+            <section>
+              <h2 class="text-[16px] font-semibold text-slate-200">Подписан документ</h2>
+              <p class="mt-2">
+                Ако ви е необходим подписан договор за обработка на лични данни, пишете на
+                <span data-company="email">[ИМЕЙЛ]</span> и ще ви го изпратим.
+              </p>
+            </section>
           </div>
         </div>
       </section>
@@ -1099,7 +1697,7 @@
               <button
                 type="button"
                 id="copy-api-link"
-                title="Копирай API линк за Shopify / WooCommerce"
+                title="Копирай API заявка за тази справка"
                 class="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-ink-950 transition hover:bg-accent-400"
               >
                 <i id="copy-icon" class="fa-solid fa-link text-[12px]"></i>
@@ -1290,15 +1888,40 @@
       <div
         class="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-[12.5px] text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8"
       >
-        <div class="flex items-center gap-2.5">
-          <i class="fa-solid fa-shield-halved text-accent-500/70"></i>
-          <span>PriceGuard — мониторинг на цени на едро</span>
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-2.5">
+            <i class="fa-solid fa-shield-halved text-accent-500/70"></i>
+            <span>PriceGuard — сравнение на цени при вашите доставчици</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700">
+            <span data-company="name">[ФИРМА]</span>
+            <span aria-hidden="true">·</span>
+            <span>ЕИК <span data-company="eik">[ЕИК]</span></span>
+            <span aria-hidden="true">·</span>
+            <a
+              data-contact-email
+              href="mailto:"
+              class="transition hover:text-slate-400"
+              ><span data-company="email">[ИМЕЙЛ]</span></a
+            >
+          </div>
         </div>
         <div class="flex flex-wrap items-center gap-5">
-          <span>Общи условия</span>
-          <span>Поверителност</span>
-          <span>Обработка на данни (GDPR)</span>
-          <span>Статус на системата</span>
+          <button type="button" data-view="terms" class="nav-link transition hover:text-slate-400">
+            Общи условия
+          </button>
+          <button type="button" data-view="privacy" class="nav-link transition hover:text-slate-400">
+            Поверителност
+          </button>
+          <button type="button" data-view="gdpr" class="nav-link transition hover:text-slate-400">
+            Обработка на данни (GDPR)
+          </button>
+          <a href="/health" target="_blank" rel="noopener" class="transition hover:text-slate-400">
+            Статус на системата
+          </a>
+          <a href="/api/docs" target="_blank" rel="noopener" class="transition hover:text-slate-400">
+            API документация
+          </a>
           <span id="build-stamp" class="font-mono text-slate-700"></span>
         </div>
       </div>
@@ -1371,9 +1994,6 @@
 
           <p id="key-status" class="mt-2.5 hidden text-[12.5px]"></p>
 
-          <!-- There is no signup form anywhere in this product, and until now
-               nothing said so. People were looking for a registration screen
-               that does not exist. -->
           <div class="mt-4 rounded-xl border border-white/8 bg-ink-900 p-4">
             <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-500">
               Откъде идва ключът
@@ -1386,8 +2006,15 @@
                 <code class="ml-1 rounded bg-ink-850 px-1 py-0.5 font-mono text-[11.5px] text-slate-300"
                   >pk_live_…</code
                 >
-                — издава се автоматично при успешно плащане. Отделна регистрация няма: акаунтът се
-                създава от имейла, който платежният доставчик подава.
+                — от безплатната регистрация или автоматично при успешно плащане.
+                <button
+                  type="button"
+                  data-signup
+                  class="font-semibold text-accent-500 underline-offset-2 hover:underline"
+                >
+                  Вземете безплатен ключ
+                </button>
+                за минута.
                 <span class="text-slate-500">
                   Ключът се показва само веднъж — в базата стои единствено хеш, така че не може да
                   бъде възстановен, а само издаден наново.
@@ -1427,6 +2054,133 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- MODAL — free signup                                                 -->
+    <!--                                                                     -->
+    <!-- Two states in one dialog: ask for an email, then show the key once. -->
+    <!-- The key is shown rather than only mailed, because the person is     -->
+    <!-- here now and an inbox is the slowest part of any onboarding.        -->
+    <!-- ================================================================== -->
+    <div
+      id="signup-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="signup-modal-title"
+    >
+      <div
+        class="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7"
+      >
+        <div class="flex items-start gap-4">
+          <span
+            class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/30"
+          >
+            <i class="fa-solid fa-key text-[16px] text-accent-400"></i>
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 id="signup-modal-title" class="text-[16px] font-semibold text-slate-200">
+              Безплатен акаунт
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-slate-400">
+              10 следени артикула, неограничени доставчици, без карта.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="signup-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="signup-form" class="mt-6" novalidate>
+          <label for="signup-email" class="mb-2 block text-[13px] font-medium text-slate-300">
+            Имейл
+          </label>
+          <div class="relative">
+            <i
+              class="fa-solid fa-envelope pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+            ></i>
+            <input
+              type="email"
+              id="signup-email"
+              autocomplete="email"
+              required
+              placeholder="vie@vashata-firma.bg"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 py-3 pl-10 pr-4 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <label for="signup-name" class="mb-2 mt-4 block text-[13px] font-medium text-slate-300">
+            Фирма <span class="font-normal text-slate-500">(по избор)</span>
+          </label>
+          <input
+            type="text"
+            id="signup-name"
+            autocomplete="organization"
+            placeholder="Електро Иванов ЕООД"
+            class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+          />
+
+          <p id="signup-status" class="mt-3 hidden text-[12.5px]"></p>
+
+          <button
+            type="submit"
+            class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+          >
+            <i id="signup-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+            Създай акаунт и издай ключ
+          </button>
+
+          <p class="mt-3 text-center text-[12px] leading-relaxed text-slate-500">
+            С регистрацията приемате
+            <button type="button" data-view="terms" class="nav-link underline underline-offset-2 hover:text-slate-300">
+              Общите условия</button
+            >
+            и
+            <button type="button" data-view="privacy" class="nav-link underline underline-offset-2 hover:text-slate-300">
+              Политиката за поверителност</button
+            >.
+          </p>
+        </form>
+
+        <!-- Shown once the key exists. It is never retrievable again, so this
+             is the only screen that will ever display it. -->
+        <div id="signup-done" class="mt-6 hidden">
+          <p class="text-[13.5px] leading-relaxed text-slate-300">
+            Акаунтът е готов. Ето ключа ви — виждате го само сега.
+          </p>
+          <div
+            class="mt-3 flex items-center gap-2 rounded-xl border border-accent-500/30 bg-ink-900 p-3"
+          >
+            <code
+              id="signup-key"
+              class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-accent-400"
+            ></code>
+            <button
+              type="button"
+              id="signup-copy"
+              class="shrink-0 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100"
+            >
+              <i class="fa-solid fa-copy text-[12px]"></i>
+              Копирай
+            </button>
+          </div>
+          <p id="signup-mailed" class="mt-2.5 text-[12.5px] text-slate-500"></p>
+          <button
+            type="button"
+            id="signup-continue"
+            class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+          >
+            Към търсенето
+            <i class="fa-solid fa-arrow-right text-[13px]"></i>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -2387,6 +3141,8 @@
         billingUsers: API_BASE + '/billing/users',
         billingCheckout: API_BASE + '/billing/checkout',
         billingPlans: API_BASE + '/billing/plans',
+        billingSignup: API_BASE + '/billing/signup',
+        stats: API_BASE + '/stats',
         billingRotateKey: API_BASE + '/billing/users/api-key',
       };
 
@@ -2516,7 +3272,15 @@
        * View switching
        * ------------------------------------------------------------------ */
 
-      const VIEWS = ['landing', 'catalogue', 'dashboard', 'operator'];
+      const VIEWS = [
+        'landing',
+        'catalogue',
+        'dashboard',
+        'operator',
+        'terms',
+        'privacy',
+        'gdpr',
+      ];
       let currentView = '';
 
       function switchView(name, options) {
@@ -2563,6 +3327,15 @@
       $$('.nav-link').forEach(function (button) {
         button.addEventListener('click', function () {
           switchView(button.dataset.view);
+
+          // `switchView` scrolls to the top, and returns early when the view is
+          // already open — so the section scroll is queued after it either way.
+          const section = button.dataset.scroll && document.getElementById(button.dataset.scroll);
+          if (section) {
+            window.setTimeout(function () {
+              section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 60);
+          }
         });
       });
 
@@ -2653,7 +3426,7 @@
         button.addEventListener('click', () => closeModal(button.dataset.closeModal));
       });
 
-      ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
+      ['key-modal', 'signup-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
         // Clicking the backdrop closes; clicking the panel must not.
         document.getElementById(id).addEventListener('click', function (event) {
           if (event.target === this) closeModal(id);
@@ -2670,7 +3443,7 @@
           return;
         }
 
-        ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
+        ['key-modal', 'signup-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
       });
 
       /* ------------------------------------------------------------------ *
@@ -6033,16 +6806,207 @@
 
           button.textContent = 'Свържете се с нас';
           button.addEventListener('click', function () {
-            toast('Пишете ни и ще ви активираме акаунт.', 'info');
+            // Not a toast: "write to us" without an address in view is a dead
+            // end. The contact section carries the address.
+            const contact = document.getElementById('contact');
+            if (contact) contact.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            toast('Пишете ни и ще активираме акаунта ви ръчно.', 'info');
           });
         });
       })();
 
-      $$('[data-contact]').forEach(function (button) {
-        button.addEventListener('click', function () {
-          // Deliberately not a checkout: this tier is priced per agreement.
-          toast('Пишете ни и ще подготвим оферта за вашия обем.', 'info');
+      /* ------------------------------------------------------------------ *
+       * Company particulars
+       *
+       * One place. The legal pages, the footer and every "write to us" button
+       * read from here, so filling this block in fills the whole site — and
+       * leaving it unfilled is visible on every page rather than hidden in one.
+       * ------------------------------------------------------------------ */
+
+      const COMPANY = {
+        name: '[ФИРМА]',
+        eik: '[ЕИК]',
+        address: '[АДРЕС]',
+        email: '[ИМЕЙЛ]',
+        mailProvider: '[ДОСТАВЧИК НА ПОЩА]',
+        effectiveDate: '[ДАТА]',
+      };
+
+      (function fillCompany() {
+        $$('[data-company]').forEach(function (element) {
+          const value = COMPANY[element.dataset.company];
+          if (value) element.textContent = value;
         });
+
+        // A mailto: with a placeholder address opens an empty draft to nowhere,
+        // so the link only becomes a link once there is an address to send to.
+        const looksLikeEmail = COMPANY.email.indexOf('@') !== -1;
+
+        $$('[data-contact-email]').forEach(function (element) {
+          if (looksLikeEmail) {
+            element.setAttribute('href', 'mailto:' + COMPANY.email);
+            const label = element.querySelector('[data-contact-email-label]');
+            if (label) label.textContent = COMPANY.email;
+            return;
+          }
+
+          element.removeAttribute('href');
+          element.classList.add('cursor-not-allowed', 'opacity-60');
+          element.setAttribute('title', 'Имейлът за контакт още не е попълнен.');
+        });
+      })();
+
+      /* ------------------------------------------------------------------ *
+       * Public counters
+       *
+       * The landing page prints only what this returns. When the database is
+       * empty the strip stays hidden: four zeroes persuade nobody, and the
+       * numbers that used to be here were typed rather than counted.
+       * ------------------------------------------------------------------ */
+
+      (async function loadPublicStats() {
+        const strip = $('#live-stats');
+        if (!strip) return;
+
+        let stats;
+        try {
+          const response = await fetch(ENDPOINTS.stats, { headers: { Accept: 'application/json' } });
+          if (!response.ok) return;
+          stats = await response.json();
+        } catch (error) {
+          return; // A marketing page must survive its own API being down.
+        }
+
+        const hasAnything = stats.shops > 0 || stats.products > 0;
+        if (!hasAnything) return;
+
+        $('#live-shops').textContent = formatCount(stats.shops);
+        $('#live-products').textContent = formatCount(stats.products);
+        $('#live-movements').textContent = formatCount(stats.priceMovements);
+        $('#live-success').textContent =
+          stats.successRate === null ? '—' : stats.successRate.toFixed(1) + '%';
+        strip.hidden = false;
+
+        if (stats.lastCheckAt) {
+          $('#hero-live-text').textContent = 'Последна проверка ' + timeAgo(stats.lastCheckAt);
+          $('#hero-live').hidden = false;
+        }
+      })();
+
+      function formatCount(value) {
+        return new Intl.NumberFormat('bg-BG').format(value || 0);
+      }
+
+      function timeAgo(iso) {
+        const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+        if (minutes < 1) return 'току-що';
+        if (minutes < 60) return 'преди ' + minutes + ' мин';
+
+        const hours = Math.round(minutes / 60);
+        if (hours < 24) return 'преди ' + hours + (hours === 1 ? ' час' : ' часа');
+
+        const days = Math.round(hours / 24);
+        return 'преди ' + days + (days === 1 ? ' ден' : ' дни');
+      }
+
+      /* ------------------------------------------------------------------ *
+       * Free signup
+       * ------------------------------------------------------------------ */
+
+      $$('[data-signup]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          // Reset to the form: the dialog may still be showing a key from a
+          // previous account, and that key must not be attributed to this one.
+          $('#signup-form').classList.remove('hidden');
+          $('#signup-done').classList.add('hidden');
+          $('#signup-status').classList.add('hidden');
+          $('#signup-key').textContent = '';
+          openModal('signup-modal');
+        });
+      });
+
+      function showSignupStatus(message, tone) {
+        const element = $('#signup-status');
+        element.textContent = message;
+        element.className =
+          'mt-3 text-[12.5px] ' +
+          (tone === 'error'
+            ? 'text-red-400'
+            : tone === 'success'
+              ? 'text-emerald-400'
+              : 'text-slate-400');
+        element.classList.remove('hidden');
+      }
+
+      $('#signup-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const email = $('#signup-email').value.trim();
+        const name = $('#signup-name').value.trim();
+
+        if (!email || email.indexOf('@') === -1) {
+          showSignupStatus('Въведете имейл, на който да получите ключа.', 'error');
+          return;
+        }
+
+        $('#signup-spinner').classList.remove('hidden');
+        showSignupStatus('Създаваме акаунта…', 'info');
+
+        try {
+          const response = await fetch(ENDPOINTS.billingSignup, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(name ? { email, name } : { email }),
+          });
+
+          const payload = await response.json().catch(() => ({}));
+
+          if (response.status === 409) {
+            showSignupStatus(
+              payload.message || 'Този имейл вече има акаунт.',
+              'error',
+            );
+            return;
+          }
+          if (response.status === 429) {
+            showSignupStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+            return;
+          }
+          if (!response.ok) {
+            throw new Error(payload.message || 'HTTP ' + response.status);
+          }
+
+          // Stored immediately: the whole point of showing the key here is that
+          // the next click already works.
+          setApiKey(payload.apiKey);
+          renderApiKeyBadge();
+
+          $('#signup-key').textContent = payload.apiKey;
+          $('#signup-mailed').textContent = payload.emailed
+            ? 'Изпратихме копие на ' + payload.email + '. Проверете и папка „Спам".'
+            : 'Копирайте го сега — показва се само веднъж и не може да бъде възстановен.';
+          $('#signup-form').classList.add('hidden');
+          $('#signup-done').classList.remove('hidden');
+          toast('Акаунтът е готов.', 'success');
+        } catch (error) {
+          showSignupStatus('Не се получи: ' + error.message, 'error');
+        } finally {
+          $('#signup-spinner').classList.add('hidden');
+        }
+      });
+
+      $('#signup-copy').addEventListener('click', async function () {
+        try {
+          await navigator.clipboard.writeText($('#signup-key').textContent);
+          toast('Ключът е копиран.', 'success');
+        } catch (error) {
+          toast('Копирането не стана — маркирайте ключа и копирайте ръчно.', 'error');
+        }
+      });
+
+      $('#signup-continue').addEventListener('click', function () {
+        closeModal('signup-modal');
+        switchView('catalogue');
       });
 
       /**
