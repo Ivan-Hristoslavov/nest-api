@@ -14,7 +14,12 @@ import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
 import { rank, RankableOffer, RankedHit } from './ranking';
-import { SEARCH_PROVIDERS, SearchProvider, UNSEARCHABLE_SHOPS } from './search-providers';
+import {
+  SEARCH_PROVIDERS,
+  SearchProvider,
+  searchProviderFor,
+  UNSEARCHABLE_SHOPS,
+} from './search-providers';
 
 /** Results beyond this per shop are noise for a price-comparison workflow. */
 const MAX_RESULTS_PER_SHOP = 8;
@@ -65,54 +70,76 @@ export class DiscoveryService {
   }
 
   /**
-   * Every shop that can be searched: the ones compiled in, plus any the
-   * operator has configured through the API.
+   * The shops this search covers: **your supplier list, and nothing else.**
    *
-   * A supplier list only a developer can extend is a supplier list that stays
-   * at three. Any shop row carrying a `searchUrlTemplate` joins the search with
-   * no deployment.
+   * The compiled-in retailers used to join every search on their own. That was
+   * wrong in the way that matters — a buyer comparing their three negotiated
+   * suppliers got eMAG's retail prices mixed into the ranking, from a shop
+   * they have no account with and cannot buy from at those terms. An answer
+   * that includes a shop you cannot order from is not an answer.
+   *
+   * {@link SEARCH_PROVIDERS} stays, in a different role: a shelf of verified
+   * configurations. Add a shop whose host is on that shelf and it searches
+   * correctly from the first second, with selectors already checked against
+   * the live site — no detection step, no deploy. It just does not participate
+   * until you have added it.
+   *
+   * Deactivating a shop (`isActive = false`) takes it out of the search while
+   * keeping its discount and selectors, for the supplier you are between
+   * contracts with.
    */
   private async allProviders(): Promise<SearchProvider[]> {
-    const configured = await this.shops.find({
+    const shops = await this.shops.find({
       where: { isActive: true },
       order: { name: 'ASC' },
     });
 
-    const custom = configured
-      .filter((shop) => Boolean(shop.searchUrlTemplate))
-      .map<SearchProvider>((shop) => {
-        const host = shop.host.replace(/^www\./, '');
+    return shops
+      .map((shop) => this.providerFor(shop))
+      .filter((provider): provider is SearchProvider => provider !== null);
+  }
 
-        return {
-          host,
-          name: shop.name,
-          searchUrl: (query: string) => shop.searchUrlTemplate!.replace('{q}', query),
-          // Unset, the generic pattern accepts any same-host link with a path —
-          // enough for most storefronts and refinable per shop afterwards.
-          resultLinkSelector: shop.searchResultSelector ?? 'a[href]',
-          productUrlPattern: new RegExp(
-            `^https?://([a-z0-9-]+\\.)*${host.replace(/\./g, '\\.')}/[^?#]{6,}$`,
-            'i',
-          ),
-          // The detector's own tile selector when there is one. Falling back
-          // to the broad list is a last resort, and a poor one: `closest()`
-          // stops at the *nearest* match, so a generic `[class*="item"]` can
-          // settle on an inner wrapper that holds the link but not the price,
-          // and the offer comes back priceless from a shop that displays its
-          // prices perfectly well.
-          tileSelector:
-            shop.searchTileSelector ??
-            'li, article, .product, .product-item, [class*="product"], [class*="card"], [class*="item"]',
-          titleSelector: shop.searchTitleSelector ?? undefined,
-          priceSelector: shop.searchPriceSelector ?? '.price, [itemprop="price"]',
-        };
-      });
+  /**
+   * How to search one shop: the operator's own configuration first, then a
+   * verified shipped one for the same host, then nothing.
+   *
+   * A shop returning null here is not searchable, and {@link listProviders}
+   * says so with a reason rather than leaving it silently absent.
+   */
+  private providerFor(shop: Shop): SearchProvider | null {
+    const host = shop.host.replace(/^www\./, '');
 
-    // A database row wins over a compiled-in entry for the same host: the
-    // operator's tuning is newer than the shipped default.
-    const overridden = new Set(custom.map((provider) => provider.host));
+    if (shop.searchUrlTemplate) {
+      return {
+        host,
+        name: shop.name,
+        searchUrl: (query: string) => shop.searchUrlTemplate!.replace('{q}', query),
+        // Unset, the generic pattern accepts any same-host link with a path —
+        // enough for most storefronts and refinable per shop afterwards.
+        resultLinkSelector: shop.searchResultSelector ?? 'a[href]',
+        productUrlPattern: new RegExp(
+          `^https?://([a-z0-9-]+\\.)*${host.replace(/\./g, '\\.')}/[^?#]{6,}$`,
+          'i',
+        ),
+        // The detector's own tile selector when there is one. Falling back
+        // to the broad list is a last resort, and a poor one: `closest()`
+        // stops at the *nearest* match, so a generic `[class*="item"]` can
+        // settle on an inner wrapper that holds the link but not the price,
+        // and the offer comes back priceless from a shop that displays its
+        // prices perfectly well.
+        tileSelector:
+          shop.searchTileSelector ??
+          'li, article, .product, .product-item, [class*="product"], [class*="card"], [class*="item"]',
+        titleSelector: shop.searchTitleSelector ?? undefined,
+        priceSelector: shop.searchPriceSelector ?? '.price, [itemprop="price"]',
+      };
+    }
 
-    return [...custom, ...SEARCH_PROVIDERS.filter((entry) => !overridden.has(entry.host))];
+    // A shipped configuration for this host, verified against the live site.
+    // The shop's own name wins over the shipped label: the operator called it
+    // what they call it.
+    const shipped = searchProviderFor(host);
+    return shipped ? { ...shipped, name: shop.name } : null;
   }
   /**
    * Shops this instance knows how to search, and whether each one currently
@@ -129,11 +156,40 @@ export class DiscoveryService {
   async listProviders(): Promise<
     Array<{ host: string; name: string; searchable: boolean; reason: string | null }>
   > {
-    const providers = await this.allProviders();
+    // Your shops, and only yours. Deactivated ones are listed as well, so
+    // "why is this one not in my results" is answerable from the same screen
+    // that turned it off.
+    const shops = await this.shops.find({ order: { name: 'ASC' } });
+
+    // The same shop appears under different hostnames — the operator adds
+    // `bg.elmarkstore.eu` while the shipped list knows `elmarkstore.eu` — so
+    // the reason for a refusal is matched by suffix, not by string equality.
+    const sameShop = (a: string, b: string): boolean =>
+      a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
 
     const listed = await Promise.all(
-      providers.map(async (provider) => {
-        const base = { host: provider.host, name: provider.name };
+      shops.map(async (shop) => {
+        const host = shop.host.replace(/^www\./, '');
+        const base = { host, name: shop.name };
+
+        if (!shop.isActive) {
+          return { ...base, searchable: false, reason: 'изключен от търсенето' };
+        }
+
+        const provider = this.providerFor(shop);
+
+        if (!provider) {
+          const known = UNSEARCHABLE_SHOPS.find((entry) => sameShop(entry.host, host));
+
+          return {
+            ...base,
+            searchable: false,
+            reason:
+              shop.searchBlockedReason ??
+              known?.reason ??
+              'живото търсене не е настроено — добавете го от примерно търсене',
+          };
+        }
 
         if (!this.config.respectRobots) {
           return { ...base, searchable: true, reason: null };
@@ -158,52 +214,31 @@ export class DiscoveryService {
       }),
     );
 
-    // The same shop appears under different hostnames — the operator adds
-    // `bg.elmarkstore.eu` while the compiled list knows `elmarkstore.eu` — and
-    // exact-match bookkeeping would then show one shop twice with two verdicts.
-    const sameShop = (a: string, b: string): boolean =>
-      a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
-
-    // Configured shops with no search template are listed too, as
-    // unsearchable, with the most specific reason on record. Live search is
-    // the primary way this system answers, so a shop it cannot cover must say
-    // so — and why — rather than quietly not appearing.
-    const shops = await this.shops.find({ where: { isActive: true } });
-    const unlisted = shops.filter(
-      (shop) => !listed.some((entry) => sameShop(entry.host, shop.host.replace(/^www\./, ''))),
+    return listed.sort(
+      (a, b) => Number(b.searchable) - Number(a.searchable) || a.name.localeCompare(b.name),
     );
+  }
 
-    const withoutSearch = unlisted.map((shop) => {
-      const host = shop.host.replace(/^www\./, '');
-      const known = UNSEARCHABLE_SHOPS.find((entry) => sameShop(entry.host, host));
+  /**
+   * Shops we ship a verified configuration for, that are not yet on your list.
+   *
+   * Offered as something to *add*, never searched on their own — a buyer
+   * comparing three negotiated suppliers does not want a retailer they have no
+   * account with quietly setting the benchmark.
+   */
+  async listAvailable(): Promise<Array<{ host: string; name: string; reason: string | null }>> {
+    const shops = await this.shops.find();
+    const mine = (host: string): boolean =>
+      shops.some((shop) => {
+        const own = shop.host.replace(/^www\./, '');
+        return own === host || own.endsWith(`.${host}`) || host.endsWith(`.${own}`);
+      });
 
-      return {
-        host,
-        name: shop.name,
-        searchable: false,
-        reason:
-          shop.searchBlockedReason ??
-          known?.reason ??
-          'живото търсене не е настроено — добавете го от примерно търсене',
-      };
-    });
-
-    // Shops we have already established cannot be searched are listed too, with
-    // the reason. Omitting them silently is how the same dead end gets
-    // rediscovered every few months.
-    const covered = [...listed, ...withoutSearch];
-
-    return [
-      ...covered,
-      ...UNSEARCHABLE_SHOPS.filter(
-        (shop) => !covered.some((entry) => sameShop(entry.host, shop.host)),
-      ).map((shop) => ({
-        host: shop.host,
-        name: shop.name,
-        searchable: false,
-        reason: shop.reason,
-      })),
-    ].sort((a, b) => Number(b.searchable) - Number(a.searchable) || a.name.localeCompare(b.name));
+    return SEARCH_PROVIDERS.filter((provider) => !mine(provider.host)).map((provider) => ({
+      host: provider.host,
+      name: provider.name,
+      reason: null,
+    }));
   }
 
   /**
@@ -300,7 +335,12 @@ export class DiscoveryService {
       }
     }
 
-    const hits = rank(offers, (options.currency ?? 'EUR').toUpperCase(), options.limit ?? 60);
+    const hits = rank(
+      offers,
+      (options.currency ?? 'EUR').toUpperCase(),
+      options.limit ?? 60,
+      trimmed,
+    );
 
     // Remember how each shop behaved, so a storefront that quietly stopped
     // answering shows up in the supplier list instead of only in the logs.

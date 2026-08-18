@@ -110,6 +110,56 @@ describe('ranking', () => {
     });
   });
 
+  describe('fuzzy shop results', () => {
+    // homefinishing.bg, verified 2026-08: searching "СВТ" returns
+    // "САТ.НИКЕЛ", "Суши сет" and a picture light — none of which contains
+    // "СВТ". That is their search engine being generous, not our extraction
+    // being wrong, but presenting a guess as a match makes the tool look
+    // broken.
+    it('marks results whose name does not contain the query', () => {
+      const hits = rank(
+        [
+          offer({ title: 'ЛУНА ЗА ВГРАЖДАНЕ SA-50R САТ. НИКЕЛ', price: 9 }),
+          offer({ title: 'Суши сет PORTATA FUTARI, 8 части', price: 20 }),
+        ],
+        'EUR',
+        60,
+        'СВТ',
+      );
+
+      expect(hits.every((hit) => hit.matched)).toBe(false);
+    });
+
+    it('ranks real matches above the shop’s guesses, price notwithstanding', () => {
+      const hits = rank(
+        [
+          offer({ title: 'ЛУНА САТ.НИКЕЛ', price: 1 }),
+          offer({ title: 'КРУШКА LED E27 9W', price: 40 }),
+        ],
+        'EUR',
+        60,
+        'крушка',
+      );
+
+      expect(hits[0].name).toBe('КРУШКА LED E27 9W');
+      expect(hits[0].matched).toBe(true);
+      expect(hits[1].matched).toBe(false);
+    });
+
+    it('counts a Cyrillic/Latin homoglyph spelling as a match', () => {
+      // The shop writes Cyrillic "Е27", the buyer types Latin "E27".
+      const hits = rank([offer({ title: 'КРУШКА Е27 9W' })], 'EUR', 60, 'E27');
+
+      expect(hits[0].matched).toBe(true);
+    });
+
+    it('treats everything as matched when the query is too short to judge', () => {
+      const hits = rank([offer({ title: 'КАБЕЛ' })], 'EUR', 60, 'AB');
+
+      expect(hits[0].matched).toBe(true);
+    });
+  });
+
   describe('groupOf', () => {
     it('groups by model code when the name carries one', () => {
       expect(groupOf('КАБЕЛ H05V-K 1x1.5 ЧЕРЕН').label).toBe('КАБЕЛ H05V-K');

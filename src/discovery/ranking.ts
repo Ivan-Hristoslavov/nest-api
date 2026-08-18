@@ -25,6 +25,16 @@ export interface RankableOffer {
 export interface RankedHit {
   groupKey: string;
   groupLabel: string;
+  /**
+   * Whether the product's own name contains what was searched for.
+   *
+   * Shop search engines are fuzzy, and some are very fuzzy: homefinishing.bg
+   * answers "СВТ" with "САТ.НИКЕЛ", "Суши **сет**" and a picture light. Those
+   * are the shop's guesses, not matches, and presenting them the same way as a
+   * real hit makes the tool look broken when the shop was merely being
+   * generous.
+   */
+  matched: boolean;
   shopId: string | null;
   shopName: string;
   host: string;
@@ -98,8 +108,40 @@ function round(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Cyrillic letters that look Latin, folded onto their twins.
+ *
+ * Shops write "Е27" in Cyrillic about half the time and buyers type "E27" in
+ * Latin. Without folding, a genuine match is reported as a fuzzy guess.
+ */
+const HOMOGLYPH_FROM = 'аеорсухкмтвнАЕОРСУХКМТВН';
+const HOMOGLYPH_TO = 'aeopcyxkmtbhAEOPCYXKMTBH';
+
+function fold(text: string): string {
+  let out = '';
+  for (const letter of text) {
+    const index = HOMOGLYPH_FROM.indexOf(letter);
+    out += index === -1 ? letter : HOMOGLYPH_TO[index];
+  }
+  return out.toLowerCase();
+}
+
+/** The words worth matching on: short ones match everything. */
+function queryWords(query: string): string[] {
+  return fold(query)
+    .split(/[\s,./-]+/)
+    .filter((word) => word.length >= 3);
+}
+
+/** True when the name carries every word of the query. */
+function namesMatch(name: string, words: string[]): boolean {
+  if (words.length === 0) return true;
+  const folded = fold(name);
+  return words.every((word) => folded.includes(word));
+}
+
 /** Applies the customer's discount and converts into one currency. */
-export function toHit(offer: RankableOffer, target: string): RankedHit {
+export function toHit(offer: RankableOffer, target: string, words: string[] = []): RankedHit {
   const listed = offer.price;
   const currency = (offer.currency ?? 'EUR').toUpperCase();
 
@@ -119,6 +161,7 @@ export function toHit(offer: RankableOffer, target: string): RankedHit {
   return {
     groupKey: group.key,
     groupLabel: group.label,
+    matched: namesMatch(offer.title, words),
     shopId: offer.shopId,
     shopName: offer.shopName,
     host: offer.host,
@@ -140,8 +183,9 @@ export function toHit(offer: RankableOffer, target: string): RankedHit {
  * dropped — the shop does stock the item, which is worth knowing, and the link
  * still works. Silently discarding them would misreport coverage.
  */
-export function rank(offers: RankableOffer[], target = 'EUR', limit = 60): RankedHit[] {
-  const hits = offers.map((offer) => toHit(offer, target));
+export function rank(offers: RankableOffer[], target = 'EUR', limit = 60, query = ''): RankedHit[] {
+  const words = queryWords(query);
+  const hits = offers.map((offer) => toHit(offer, target, words));
 
   const byPrice = (a: RankedHit, b: RankedHit): number => {
     if (a.effectivePrice === null) return 1;
@@ -158,8 +202,13 @@ export function rank(offers: RankableOffer[], target = 'EUR', limit = 60): Ranke
     else groups.set(hit.groupKey, [hit]);
   }
 
-  return [...groups.values()]
-    .sort((a, b) => byPrice(a[0], b[0]))
-    .flat()
-    .slice(0, limit);
+  // Real matches first, the shop's guesses after — each still cheapest-first
+  // within its own half. Interleaving them by price alone put a satin-nickel
+  // downlight above the thing the user actually asked for, purely because the
+  // shop's search engine was feeling helpful.
+  const ordered = [...groups.values()].sort((a, b) => byPrice(a[0], b[0]));
+  const matched = ordered.filter((group) => group.some((hit) => hit.matched));
+  const guessed = ordered.filter((group) => !group.some((hit) => hit.matched));
+
+  return [...matched, ...guessed].flat().slice(0, limit);
 }

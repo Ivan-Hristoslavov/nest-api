@@ -1264,6 +1264,17 @@
                 Всяко търсене пита магазините в момента. Нищо не се копира и не се обхожда.
               </p>
             </div>
+            <!-- Column headings on the same grid as the rows, so the numbers
+                 under "отстъпка" are labelled once instead of on every row. -->
+            <div
+              id="shops-head"
+              class="hidden grid-cols-[minmax(0,1fr)_7.5rem_11.5rem_5.5rem] items-center gap-4 border-b border-white/8 px-5 py-2 text-[10.5px] uppercase tracking-wide text-slate-500"
+            >
+              <span>Доставчик</span>
+              <span class="text-right">Отстъпка</span>
+              <span>Живо търсене</span>
+              <span class="text-right">В търсенето</span>
+            </div>
             <div id="shops-list" class="divide-y divide-white/[0.06]"></div>
             <div id="shop-check-result"></div>
             <div id="shops-empty" class="hidden px-5 py-12 text-center text-[13.5px] text-slate-500">
@@ -2633,6 +2644,7 @@
         discoverySearch: API_BASE + '/discovery/search',
         discoveryShops: API_BASE + '/discovery/shops',
         discoveryDetect: API_BASE + '/discovery/detect',
+        discoveryAvailable: API_BASE + '/discovery/available',
         discoveryCompare: API_BASE + '/discovery/compare',
         shops: API_BASE + '/shops',
         billingUsers: API_BASE + '/billing/users',
@@ -5046,8 +5058,10 @@
        * ------------------------------------------------------------------ */
 
       let shops = [];
-      /** Everything /discovery/shops knows: host, name, searchable, reason. */
+      /** Everything /discovery/shops knows about YOUR shops: searchable, reason. */
       let liveProviders = [];
+      /** Shops we ship a verified configuration for, that are not yours yet. */
+      let availableShops = [];
 
       /** Same shop under two spellings: bg.elmarkstore.eu is elmarkstore.eu. */
       function sameShopHost(a, b) {
@@ -5091,15 +5105,18 @@
           // Both lists at once: a shop row cannot say whether it is searchable
           // without the providers list, and fetching it separately made the
           // two screens disagree about the same shop.
-          const [shopsResponse, providersResponse] = await Promise.all([
+          const [shopsResponse, providersResponse, availableResponse] = await Promise.all([
             fetch(ENDPOINTS.shops, { headers: authHeaders() }),
             fetch(ENDPOINTS.discoveryShops, { headers: authHeaders() }).catch(() => null),
+            fetch(ENDPOINTS.discoveryAvailable, { headers: authHeaders() }).catch(() => null),
           ]);
 
           if (!shopsResponse.ok) throw new Error('HTTP ' + shopsResponse.status);
           shops = await shopsResponse.json();
           liveProviders =
             providersResponse && providersResponse.ok ? await providersResponse.json() : [];
+          availableShops =
+            availableResponse && availableResponse.ok ? await availableResponse.json() : [];
         } catch (error) {
           shops = [];
           list.innerHTML =
@@ -5111,6 +5128,9 @@
         }
 
         $('#shops-empty').classList.toggle('hidden', shops.length > 0);
+        // The heading only earns its place once there is something under it.
+        $('#shops-head').classList.toggle('hidden', shops.length === 0);
+        $('#shops-head').classList.toggle('grid', shops.length > 0);
         list.innerHTML = shops.map(shopRowHtml).join('');
         renderProvidersStrip();
         bindShopRows();
@@ -5124,90 +5144,160 @@
        */
       function renderProvidersStrip() {
         const strip = $('#providers-strip');
-        const extra = liveProviders.filter(
-          (provider) => !shops.some((shop) => sameShopHost(shop.host, provider.host)),
-        );
 
-        if (!extra.length) {
+        if (!availableShops.length) {
           strip.classList.add('hidden');
           return;
         }
 
+        // Offered, not included. These are shops we already know how to search
+        // correctly — adding one takes a click and no configuration — but none
+        // of them takes part in a search until it is on your list. The strip
+        // used to read "Търсим на живо и в: eMAG", which was true and wrong:
+        // nobody wants a retailer they hold no account with setting the
+        // benchmark their suppliers are judged against.
         strip.classList.remove('hidden');
         strip.innerHTML =
-          '<i class="fa-solid fa-bolt mr-1.5 text-[10px] text-accent-400"></i>Търсим на живо и в: ' +
-          extra
+          '<i class="fa-solid fa-circle-plus mr-1.5 text-[10px] text-slate-500"></i>' +
+          'Готови за добавяне (не се търсят, докато не ги добавите): ' +
+          availableShops
             .map(function (provider) {
-              return provider.searchable
-                ? '<span class="text-slate-300">' + escapeHtml(provider.name) + '</span>'
-                : '<span class="text-slate-600 line-through" title="' +
-                    escapeHtml(provider.reason || 'не може да се търси') +
-                    '">' +
-                    escapeHtml(provider.name) +
-                    '</span>';
+              return (
+                '<button type="button" data-add-known="' +
+                escapeHtml(provider.host) +
+                '" class="mx-0.5 rounded-md border border-white/10 bg-ink-850 px-2 py-0.5 text-[11.5px] text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+                escapeHtml(provider.name) +
+                '</button>'
+              );
             })
-            .join(', ') +
-          '.';
+            .join('') ;
+
+        $$('[data-add-known]').forEach(function (button) {
+          button.addEventListener('click', async function () {
+            button.disabled = true;
+            try {
+              const response = await fetch(ENDPOINTS.shops, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ host: button.dataset.addKnown }),
+              });
+              if (!response.ok) throw new Error('HTTP ' + response.status);
+              toast('Добавен — търси се на живо.', 'success');
+              await loadShops();
+            } catch (error) {
+              button.disabled = false;
+              toast('Неуспешно: ' + error.message, 'error');
+            }
+          });
+        });
       }
 
+      /**
+       * One supplier row.
+       *
+       * A grid with declared column widths, not a wrapping flex line. Flex
+       * sized the right-hand controls from their own content, so a row whose
+       * button read "Настрой търсене" pushed its discount field left of a row
+       * reading "Пренастрой" — five rows, five different alignments. Columns
+       * that mean the same thing have to line up, or the eye cannot scan down
+       * one.
+       */
       function shopRowHtml(shop) {
         const live = liveStatusFor(shop);
+        const off = shop.isActive === false;
 
-        const liveChip = live.searchable
-          ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-400">' +
-            '<i class="fa-solid fa-bolt text-[9px]"></i>търси се на живо</span>'
-          : '<span class="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-400">' +
-            '<i class="fa-solid fa-bolt-lightning text-[9px] opacity-40"></i>без живо търсене</span>';
+        const liveChip = off
+          ? '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-500">' +
+            '<i class="fa-solid fa-pause text-[9px]"></i>спрян</span>'
+          : live.searchable
+            ? '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-400">' +
+              '<i class="fa-solid fa-bolt text-[9px]"></i>търси се на живо</span>'
+            : '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-400">' +
+              '<i class="fa-solid fa-bolt-lightning text-[9px] opacity-40"></i>без живо търсене</span>';
+
+        // Only the reason that still applies. A shop that is switched off is
+        // not searched for that reason, and repeating why it also lacks a
+        // configuration is noise the user cannot act on until it is back on.
+        const note = off
+          ? ''
+          : !live.searchable
+            ? '<span class="mt-1 block truncate text-[11.5px] text-slate-500" title="' +
+              escapeHtml(live.reason) +
+              '">' +
+              escapeHtml(live.reason) +
+              '</span>'
+            : '';
+
+        const error =
+          !off && shop.lastError
+            ? '<span class="mt-1 flex items-start gap-1.5 text-[11.5px] text-amber-400/90" title="' +
+              escapeHtml(shop.lastError) +
+              '"><i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-[9px]"></i>' +
+              '<span class="min-w-0 truncate">последно търсене: ' +
+              escapeHtml(shop.lastError) +
+              '</span></span>'
+            : '';
+
+        const action = off
+          ? '<span class="text-[12px] text-slate-600">—</span>'
+          : isHardBlocked(live)
+            ? '<span class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/8 bg-ink-850/60 px-3 py-2 text-[12.5px] text-slate-500" ' +
+              'title="Магазинът забранява търсене. Артикулите му се следят нормално — намерете продукта в сайта им и добавете линка от „Следени цени&quot;.">' +
+              '<i class="fa-solid fa-link text-[11px]"></i>следи се по линк</span>'
+            : '<button type="button" data-detect="' +
+              escapeHtml(shop.id) +
+              '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+              '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
+              (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
+              '</button>';
 
         return (
-          '<div class="flex flex-wrap items-center gap-4 px-5 py-4" data-shop="' +
+          '<div class="grid grid-cols-[minmax(0,1fr)_7.5rem_11.5rem_5.5rem] items-center gap-4 px-5 py-4' +
+          (off ? ' opacity-55' : '') +
+          '" data-shop="' +
           escapeHtml(shop.id) +
           '">' +
-          '<span class="min-w-0 flex-1">' +
-          '<span class="flex items-center gap-2"><span class="truncate font-medium text-slate-200">' +
+          /* 1 — identity and status */
+          '<span class="min-w-0">' +
+          '<span class="flex min-w-0 items-center gap-2">' +
+          '<span class="truncate font-medium text-slate-200">' +
           escapeHtml(shop.name) +
           '</span>' +
           liveChip +
           '</span>' +
-          '<span class="block truncate font-mono text-[11.5px] text-slate-500">' +
+          '<span class="mt-0.5 block truncate font-mono text-[11.5px] text-slate-500">' +
           escapeHtml(shop.host) +
           '</span>' +
-          (live.searchable
-            ? ''
-            : '<span class="mt-0.5 block truncate text-[11.5px] text-slate-500">' +
-              escapeHtml(live.reason) +
-              '</span>') +
-          (shop.lastError
-            ? '<span class="mt-0.5 flex items-start gap-1.5 text-[11.5px] text-amber-400" title="' +
-              escapeHtml(shop.lastError) +
-              '"><i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-[9px]"></i>' +
-              '<span class="leading-snug">последно търсене: ' +
-              escapeHtml(shop.lastError) +
-              '</span></span>'
-            : '') +
+          note +
+          error +
           '</span>' +
-          // The discount is the number that decides which supplier the search
-          // calls cheapest, so it is editable right here rather than buried.
-          '<label class="flex shrink-0 items-center gap-2 text-[12.5px] text-slate-400">отстъпка' +
+          /* 2 — the discount, which decides which shop the search calls cheapest */
+          '<label class="flex items-center justify-end gap-1.5 text-[12px] text-slate-500">' +
           '<input type="number" min="0" max="100" step="0.5" value="' +
           Number(shop.discountPercent) +
           '" data-discount="' +
           escapeHtml(shop.id) +
-          '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[13px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
-          '<span class="flex shrink-0 items-center gap-1.5">' +
-          // A shop that has refused in its robots.txt gets no "configure"
-          // button, because configuring it changes nothing. It gets the one
-          // route that does work instead.
-          (isHardBlocked(live)
-            ? '<span class="inline-flex items-center gap-2 rounded-lg border border-white/8 bg-ink-850/60 px-3 py-2 text-[12.5px] text-slate-500" ' +
-              'title="Магазинът забранява търсене. Артикулите му се следят нормално — намерете продукта в сайта им и добавете линка от „Следени цени".">' +
-              '<i class="fa-solid fa-link text-[11px]"></i>следи се по линк</span>'
-            : '<button type="button" data-detect="' +
-              escapeHtml(shop.id) +
-              '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
-              '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
-              (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
-              '</button>') +
+          '" aria-label="Отстъпка при ' +
+          escapeHtml(shop.name) +
+          '" class="num w-16 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[13px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
+          /* 3 — the one action this row offers */
+          '<span class="min-w-0">' +
+          action +
+          '</span>' +
+          /* 4 — include in search, and remove */
+          '<span class="flex items-center justify-end gap-1">' +
+          '<button type="button" role="switch" aria-checked="' +
+          (off ? 'false' : 'true') +
+          '" data-toggle-shop="' +
+          escapeHtml(shop.id) +
+          '" title="' +
+          (off ? 'Включи в търсенето' : 'Изключи от търсенето') +
+          '" class="relative h-5 w-9 shrink-0 rounded-full transition ' +
+          (off ? 'bg-white/10' : 'bg-accent-500/70') +
+          '">' +
+          '<span class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ' +
+          (off ? 'left-0.5' : 'left-4') +
+          '"></span></button>' +
           iconButton('delete-shop', shop.id, 'fa-trash', 'Премахни доставчика', 'hover:text-red-400') +
           '</span></div>'
         );
@@ -5216,6 +5306,39 @@
       function bindShopRows() {
         $$('[data-detect]').forEach(function (button) {
           button.addEventListener('click', () => openDetectModal(button.dataset.detect));
+        });
+
+        // Switching a shop off keeps its discount and its selectors. It is the
+        // supplier you are between contracts with, not one you are finished
+        // with — deleting would make you configure it again in March.
+        $$('[data-toggle-shop]').forEach(function (button) {
+          button.addEventListener('click', async function () {
+            const shop = shops.find((item) => item.id === button.dataset.toggleShop);
+            if (!shop) return;
+
+            const next = shop.isActive === false;
+            button.disabled = true;
+
+            try {
+              const response = await fetch(ENDPOINTS.shops + '/' + shop.id, {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ isActive: next }),
+              });
+              if (!response.ok) throw new Error('HTTP ' + response.status);
+
+              toast(
+                next
+                  ? shop.name + ' влиза в търсенето.'
+                  : shop.name + ' е изключен — няма да се търси там.',
+                'success',
+              );
+              await loadShops();
+            } catch (error) {
+              button.disabled = false;
+              toast('Не се смени: ' + error.message, 'error');
+            }
+          });
         });
 
         $$('[data-discount]').forEach(function (input) {
@@ -5870,8 +5993,14 @@
               '">' +
               escapeHtml(hit.name) +
               '</a>' +
-              (specs
-                ? '<span class="mt-1 flex flex-wrap items-center gap-1">' + specs + '</span>'
+              (specs || !hit.matched
+                ? '<span class="mt-1 flex flex-wrap items-center gap-1">' +
+                  (hit.matched
+                    ? ''
+                    : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-400/90" ' +
+                      'title="Търсачката на магазина върна това по подобие — името не съдържа търсеното.">по подобие</span>') +
+                  specs +
+                  '</span>'
                 : '') +
               '</span></span></td>' +
               (showSupplier
@@ -5977,8 +6106,20 @@
                 '</span>'
               : '';
 
+        // When a shop's search guesses at everything, say so once at the top
+        // rather than leaving the user to wonder why "СВТ" returned downlights.
+        const anyMatched = hits.some((hit) => hit.matched);
+        const guessNote = anyMatched
+          ? ''
+          : '<div class="border-b border-white/8 bg-amber-500/[0.06] px-5 py-2.5 text-[12px] text-amber-400">' +
+            '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
+            'Никой магазин не намери точно „' +
+            escapeHtml(query) +
+            '". Показаното е това, което техните търсачки върнаха по подобие.</div>';
+
         results.innerHTML =
           '<div class="overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">' +
+          guessNote +
           '<div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-3.5">' +
           '<p class="text-[12.5px] text-slate-500">' +
           '<strong class="text-slate-300">' +

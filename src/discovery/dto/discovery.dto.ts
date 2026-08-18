@@ -199,6 +199,13 @@ export class RankedHitDto {
 
   @ApiProperty({ example: 'КАБЕЛ H05V-K' }) groupLabel!: string;
 
+  @ApiProperty({
+    description:
+      'True when the product\'s own name contains what was searched for. Shop search engines are fuzzy — homefinishing.bg answers "СВТ" with "САТ.НИКЕЛ" — and a guess presented as a match makes the tool look broken when the shop was merely being generous. Unmatched rows are ranked after every real match.',
+    example: true,
+  })
+  matched!: boolean;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true }) shopId!: string | null;
 
   @ApiProperty({ example: 'ТМТ ЕЛКОМ' }) shopName!: string;

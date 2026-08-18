@@ -62,6 +62,28 @@ export class DiscoveryController {
     return this.discoveryService.listProviders();
   }
 
+  @Get('available')
+  @ApiOperation({
+    summary: 'Shops we already know how to search, that you have not added',
+    description:
+      'A shelf of verified configurations. Adding one of these makes it searchable immediately — the selectors were checked against the live site — but none of them takes part in a search until you add it.\n\nThat separation is deliberate: a buyer comparing three negotiated suppliers does not want a retailer they hold no account with quietly setting the benchmark.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          host: { type: 'string', example: 'emag.bg' },
+          name: { type: 'string', example: 'eMAG' },
+        },
+      },
+    },
+  })
+  listAvailable(): Promise<Array<{ host: string; name: string; reason: string | null }>> {
+    return this.discoveryService.listAvailable();
+  }
+
   @Post('detect')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
