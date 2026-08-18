@@ -5071,6 +5071,19 @@
         };
       }
 
+      /**
+       * True when no amount of configuration will make this shop searchable.
+       *
+       * A shop whose robots.txt forbids its search path has decided the matter
+       * — tmt-elkom.com publishes `Disallow: /search?`. Offering "Настрой
+       * търсене" there walks the user into a dialog that cannot succeed, and
+       * the refusal then reads as our bug rather than their rule. Their
+       * *product* pages stay open, so the honest advice is to track by link.
+       */
+      function isHardBlocked(status) {
+        return !status.searchable && /robots\.txt|не приема заявка|JavaScript/i.test(status.reason || '');
+      }
+
       async function loadShops() {
         const list = $('#shops-list');
 
@@ -5182,12 +5195,19 @@
           escapeHtml(shop.id) +
           '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[13px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
           '<span class="flex shrink-0 items-center gap-1.5">' +
-          '<button type="button" data-detect="' +
-          escapeHtml(shop.id) +
-          '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
-          '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
-          (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
-          '</button>' +
+          // A shop that has refused in its robots.txt gets no "configure"
+          // button, because configuring it changes nothing. It gets the one
+          // route that does work instead.
+          (isHardBlocked(live)
+            ? '<span class="inline-flex items-center gap-2 rounded-lg border border-white/8 bg-ink-850/60 px-3 py-2 text-[12.5px] text-slate-500" ' +
+              'title="Магазинът забранява търсене. Артикулите му се следят нормално — намерете продукта в сайта им и добавете линка от „Следени цени".">' +
+              '<i class="fa-solid fa-link text-[11px]"></i>следи се по линк</span>'
+            : '<button type="button" data-detect="' +
+              escapeHtml(shop.id) +
+              '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+              '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
+              (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
+              '</button>') +
           iconButton('delete-shop', shop.id, 'fa-trash', 'Премахни доставчика', 'hover:text-red-400') +
           '</span></div>'
         );
@@ -5458,15 +5478,24 @@
           const shop = await response.json();
           await loadShops();
 
-          // Straight into the one step that actually makes the shop useful.
-          // Adding a supplier that cannot be searched is half a job, and the
-          // half that is missing is not obvious from the row.
-          const live = liveStatusFor(shop);
-          if (!live.searchable) {
+          // Straight into the one step that actually makes the shop useful —
+          // but only where that step can succeed. A shop whose robots.txt
+          // forbids its search is told so now, not after the user has hunted
+          // down a search URL for a dialog that was always going to refuse it.
+          const live = liveStatusFor(shops.find((item) => item.id === shop.id) || shop);
+
+          if (live.searchable) {
+            toast('Добавен — търси се на живо.', 'success');
+          } else if (isHardBlocked(live)) {
+            toast(
+              'Добавен, но не може да се търси: ' +
+                live.reason +
+                '. Артикулите му се следят по линк.',
+              'info',
+            );
+          } else {
             openDetectModal(shop.id);
             toast('Добавен. Сега да го научим да търси.', 'info');
-          } else {
-            toast('Добавен — търси се на живо.', 'success');
           }
         } catch (error) {
           toast('Неуспешно: ' + error.message, 'error');
