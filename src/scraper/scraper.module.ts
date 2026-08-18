@@ -42,8 +42,8 @@ import { ScraperService } from './scraper.service';
     },
   ],
   // The parser, robots client, rate limiter and the selected fetcher are reused
-  // by DiscoveryModule and CatalogueModule, so a search or a catalogue crawl
-  // obeys exactly the same manners as a price check.
+  // by DiscoveryModule, so a live search obeys exactly the same manners as a
+  // tracked-price check: robots.txt, one host at a time, the same delay.
   exports: [
     ScraperService,
     PriceParserService,

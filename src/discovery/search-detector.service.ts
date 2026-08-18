@@ -205,9 +205,23 @@ export class SearchDetectorService {
         // One anchor per tile: a tile usually links to the same product
         // several times (image, title, button) and each would otherwise
         // become a separate result.
+        //
+        // The one kept is the anchor with the most text, because that is the
+        // title link. Keeping whichever came first in the document picked the
+        // image link on homefinishing.bg — an empty <a> wrapping an <img> —
+        // and every detected row came back with a price and no name.
         const unique = new Map<Element, Candidate>();
         group.forEach((candidate) => {
-          if (!unique.has(candidate.tile)) unique.set(candidate.tile, candidate);
+          const existing = unique.get(candidate.tile);
+          if (!existing) {
+            unique.set(candidate.tile, candidate);
+            return;
+          }
+
+          const length = (node: Element): number => $(node).text().trim().length;
+          if (length(candidate.anchor) > length(existing.anchor)) {
+            unique.set(candidate.tile, candidate);
+          }
         });
 
         const tiles = Array.from(unique.values());
@@ -226,7 +240,17 @@ export class SearchDetectorService {
 
     const winner = scored[0];
 
-    if (!winner || winner.relevant < Math.max(2, winner.tiles.length / 2)) {
+    // At least one result must mention what was searched for — that is what
+    // separates a results list from a navigation menu, which is the failure
+    // this check exists to prevent.
+    //
+    // It used to demand *half* the tiles mention it, and that rejected shops
+    // whose search plainly works: homefinishing.bg answers "крушка" with 24
+    // products of which 2 carry the word in their name — the rest are listed
+    // as "ЛАМПА" or by brand. Requiring a real search engine to behave like a
+    // substring filter throws away the shops most worth having, and the guess
+    // is shown back with sample rows for the user to reject anyway.
+    if (!winner || (words.length > 0 && winner.relevant < 1)) {
       throw new Error(
         'Не разпознах списък с продукти на тази страница. Възможно е магазинът да зарежда резултатите с JavaScript — такъв магазин не може да се търси по този начин.',
       );
@@ -241,9 +265,14 @@ export class SearchDetectorService {
       const $tile = $(candidate.tile);
       const href = $(candidate.anchor).attr('href') ?? '';
 
-      const titleText = titleSelector
-        ? $tile.find(titleSelector).first().text()
-        : $(candidate.anchor).text();
+      // Three sources, weakest last. A named selector is best; the anchor's
+      // own text is usually the product name; and where the markup gives
+      // neither, the longest run of text in the tile that is not the price
+      // beats reporting a nameless row.
+      const titleText =
+        (titleSelector ? $tile.find(titleSelector).first().text() : '').trim() ||
+        $(candidate.anchor).text().trim() ||
+        this.longestTextIn($, candidate.tile);
 
       const priceText = priceSelector
         ? $tile.find(priceSelector).first().text()
@@ -263,12 +292,57 @@ export class SearchDetectorService {
       name: this.shopNameFrom($, pageUrl),
       urlTemplate,
       tileSelector,
-      linkSelector: 'a[href]',
       titleSelector,
       priceSelector,
       confidence: rows.length ? complete / rows.length : 0,
       samples: rows.slice(0, 5),
+      // Scoped to the tile, never a bare `a[href]`. An unscoped selector makes
+      // the search read every anchor on the page, and a results page is also a
+      // footer: homefinishing.bg came back offering "Политика за бисквитки" at
+      // 1.99 €, priced from whatever promo box happened to sit near the link.
+      // A confidently wrong row is worse than a missing one.
+      linkSelector: `${tileSelector} a`,
     };
+  }
+
+  /**
+   * The longest own-text run inside a tile that is not a price or a button.
+   *
+   * The last resort for a product name, for markup that names nothing and
+   * hangs the title on a bare element.
+   */
+  private longestTextIn($: cheerio.CheerioAPI, tile: Element): string {
+    let best = '';
+
+    $(tile)
+      .find('*')
+      .each((_index, node) => {
+        if (/^(button|form|input|select|option|script|style)$/i.test(node.tagName)) return;
+        if ($(node).closest('button').length > 0) return;
+
+        const text = $(node)
+          .contents()
+          .filter((_i, child) => isText(child))
+          .text()
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        // A name is made of words. Without this the discount badge wins on
+        // any tile whose title link is empty, and the row comes back called
+        // "-20%".
+        const letters = (text.match(/[A-Za-zА-Яа-я]/g) ?? []).length;
+
+        if (
+          letters >= 3 &&
+          text.length > best.length &&
+          text.length <= 180 &&
+          !PRICE_TEXT.test(text)
+        ) {
+          best = text;
+        }
+      });
+
+    return best;
   }
 
   /** Same-site, has a path, and is not an obvious navigation or asset link. */

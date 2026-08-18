@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { Shop } from '../catalogue/entities/shop.entity';
+import { Shop } from '../shops/entities/shop.entity';
 import { ScraperModule } from '../scraper/scraper.module';
 import { DiscoveryController } from './discovery.controller';
 import { DiscoveryService } from './discovery.service';

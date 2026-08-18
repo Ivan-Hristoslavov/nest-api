@@ -78,6 +78,22 @@ export const SITE_PROFILES: SiteProfile[] = [
     outOfStockText: ['Не е наличен', 'Изчерпан'],
   },
   {
+    host: 'elmarkstore.eu',
+    name: 'Elmark Store',
+    // Verified 2026-08 against a live bg.elmarkstore.eu product page. The
+    // machine-readable markup there is a trap: the only `itemprop="price"` on
+    // the page sits inside an HTML comment, the visible buy-box price is
+    // written in by JavaScript at run time, and `.price` appears a dozen times
+    // — once per related-products tile, each with a different value — so the
+    // heuristic rightly refuses to choose between them. This is why a crawl of
+    // 121 pages once indexed nothing: every page "had no price".
+    //
+    // The one unambiguous server-rendered node is `.price-bgn`, whose class
+    // name lies: since the euro changeover it renders "83.52 €".
+    priceSelectors: ['.price-bgn'],
+    currency: 'EUR',
+  },
+  {
     host: 'technomarket.bg',
     name: 'Technomarket',
     // Verified 2026-08. The page prints both currencies and the JSON-LD block

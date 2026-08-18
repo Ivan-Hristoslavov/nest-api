@@ -12,11 +12,25 @@ import { DiscoveredProductDto, ShopSearchResultDto } from './dto/discovery.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { Shop } from '../catalogue/entities/shop.entity';
+import { Shop } from '../shops/entities/shop.entity';
+import { rank, RankableOffer, RankedHit } from './ranking';
 import { SEARCH_PROVIDERS, SearchProvider, UNSEARCHABLE_SHOPS } from './search-providers';
 
 /** Results beyond this per shop are noise for a price-comparison workflow. */
 const MAX_RESULTS_PER_SHOP = 8;
+
+/**
+ * Addresses that are never a product, however product-shaped they look.
+ *
+ * A results page is also a footer, and a shop configured with a generic link
+ * selector reads both. homefinishing.bg came back offering "Политика за
+ * бисквитки" at 1.99 € — the cookie policy, priced from whatever promo box sat
+ * nearest the link in the DOM. The pattern is caught here rather than only in
+ * the detector, because the detector's guess is not the only way a shop gets
+ * configured: an operator can paste a selector by hand.
+ */
+const NON_PRODUCT_PATH =
+  /\/(login|logout|register|account|profile|cart|checkout|wishlist|compare|contact|about|terms|privacy|policy|cookie|gdpr|delivery|shipping|payment|returns|warranty|faq|help|blog|news|career|jobs|sitemap|search|customer|order|newsletter|loyal|promo(tion)?s?)(\/|$|[-_.])|\/(politika|povaritelnost|poveritelnost|biskvitki|obshti-usloviya|dostavka|plashtane|za-nas|kontakt)/i;
 
 @Injectable()
 export class DiscoveryService {
@@ -80,7 +94,16 @@ export class DiscoveryService {
             `^https?://([a-z0-9-]+\\.)*${host.replace(/\./g, '\\.')}/[^?#]{6,}$`,
             'i',
           ),
-          tileSelector: 'li, article, .product, .product-item',
+          // The detector's own tile selector when there is one. Falling back
+          // to the broad list is a last resort, and a poor one: `closest()`
+          // stops at the *nearest* match, so a generic `[class*="item"]` can
+          // settle on an inner wrapper that holds the link but not the price,
+          // and the offer comes back priceless from a shop that displays its
+          // prices perfectly well.
+          tileSelector:
+            shop.searchTileSelector ??
+            'li, article, .product, .product-item, [class*="product"], [class*="card"], [class*="item"]',
+          titleSelector: shop.searchTitleSelector ?? undefined,
           priceSelector: shop.searchPriceSelector ?? '.price, [itemprop="price"]',
         };
       });
@@ -135,14 +158,46 @@ export class DiscoveryService {
       }),
     );
 
+    // The same shop appears under different hostnames — the operator adds
+    // `bg.elmarkstore.eu` while the compiled list knows `elmarkstore.eu` — and
+    // exact-match bookkeeping would then show one shop twice with two verdicts.
+    const sameShop = (a: string, b: string): boolean =>
+      a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+
+    // Configured shops with no search template are listed too, as
+    // unsearchable, with the most specific reason on record. Live search is
+    // the primary way this system answers, so a shop it cannot cover must say
+    // so — and why — rather than quietly not appearing.
+    const shops = await this.shops.find({ where: { isActive: true } });
+    const unlisted = shops.filter(
+      (shop) => !listed.some((entry) => sameShop(entry.host, shop.host.replace(/^www\./, ''))),
+    );
+
+    const withoutSearch = unlisted.map((shop) => {
+      const host = shop.host.replace(/^www\./, '');
+      const known = UNSEARCHABLE_SHOPS.find((entry) => sameShop(entry.host, host));
+
+      return {
+        host,
+        name: shop.name,
+        searchable: false,
+        reason:
+          shop.searchBlockedReason ??
+          known?.reason ??
+          'живото търсене не е настроено — добавете го от примерно търсене',
+      };
+    });
+
     // Shops we have already established cannot be searched are listed too, with
     // the reason. Omitting them silently is how the same dead end gets
     // rediscovered every few months.
-    const listedHosts = new Set(listed.map((entry) => entry.host));
+    const covered = [...listed, ...withoutSearch];
 
     return [
-      ...listed,
-      ...UNSEARCHABLE_SHOPS.filter((shop) => !listedHosts.has(shop.host)).map((shop) => ({
+      ...covered,
+      ...UNSEARCHABLE_SHOPS.filter(
+        (shop) => !covered.some((entry) => sameShop(entry.host, shop.host)),
+      ).map((shop) => ({
         host: shop.host,
         name: shop.name,
         searchable: false,
@@ -168,6 +223,112 @@ export class DiscoveryService {
       : available;
 
     return Promise.all(providers.map((provider) => this.searchOne(provider, trimmed)));
+  }
+
+  /**
+   * The whole product, in one call: ask every shop now, rank what comes back
+   * by what this customer actually pays.
+   *
+   * This is the request the system exists to serve, and it is deliberately the
+   * only expensive thing it does. One HTTP request per shop per question —
+   * never per *article*. A supplier with eight thousand items costs the same
+   * to answer for as one with eighty, which is what makes the economics work.
+   *
+   * Per-shop outcomes ride along with the ranking: "found at 4 of 6, eMAG
+   * refused" is a different answer from "not stocked anywhere", and a table of
+   * results alone cannot tell them apart.
+   */
+  async compare(
+    query: string,
+    options: { hosts?: string[]; currency?: string; inStockOnly?: boolean; limit?: number } = {},
+  ): Promise<{
+    query: string;
+    durationMs: number;
+    shops: Array<{
+      host: string;
+      name: string;
+      ok: boolean;
+      error: string | null;
+      durationMs: number;
+      count: number;
+      searchUrl: string;
+    }>;
+    hits: RankedHit[];
+  }> {
+    const startedAt = Date.now();
+    const trimmed = query.trim();
+
+    if (trimmed.length < 2) {
+      return { query: trimmed, durationMs: 0, shops: [], hits: [] };
+    }
+
+    const results = await this.search(trimmed, options.hosts);
+
+    // The discount lives on the shop row, and the search providers are keyed
+    // by host — so the two are joined here rather than threaded through every
+    // provider.
+    const shops = await this.shops.find();
+    const discountFor = (host: string): { id: string | null; percent: number } => {
+      const match = shops.find((shop) => {
+        const left = shop.host.replace(/^www\./, '').toLowerCase();
+        const right = host.replace(/^www\./, '').toLowerCase();
+        return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`);
+      });
+
+      return { id: match?.id ?? null, percent: match ? Number(match.discountPercent) : 0 };
+    };
+
+    const offers: RankableOffer[] = [];
+
+    for (const result of results) {
+      if (!result.ok) continue;
+      const shop = discountFor(result.host);
+
+      for (const product of result.products) {
+        if (options.inStockOnly && product.price === null) continue;
+
+        offers.push({
+          title: product.title,
+          url: product.url,
+          price: product.price,
+          currency: product.currency,
+          host: product.host,
+          shopName: product.shopName,
+          shopId: shop.id,
+          discountPercent: shop.percent,
+        });
+      }
+    }
+
+    const hits = rank(offers, (options.currency ?? 'EUR').toUpperCase(), options.limit ?? 60);
+
+    // Remember how each shop behaved, so a storefront that quietly stopped
+    // answering shows up in the supplier list instead of only in the logs.
+    await Promise.all(
+      results
+        .filter((result) => discountFor(result.host).id !== null)
+        .map((result) =>
+          this.shops.update(
+            { id: discountFor(result.host).id! },
+            { lastSearchedAt: new Date(), lastError: result.ok ? null : result.error },
+          ),
+        ),
+    ).catch(() => undefined);
+
+    return {
+      query: trimmed,
+      durationMs: Date.now() - startedAt,
+      shops: results.map((result) => ({
+        host: result.host,
+        name: result.name,
+        ok: result.ok,
+        error: result.error,
+        durationMs: result.durationMs,
+        count: result.products.length,
+        searchUrl: result.searchUrl,
+      })),
+      hits,
+    };
   }
 
   private async searchOne(provider: SearchProvider, query: string): Promise<ShopSearchResultDto> {
@@ -243,6 +404,7 @@ export class DiscoveryService {
 
       const absolute = this.absolute(href, provider.host);
       if (!absolute || !provider.productUrlPattern.test(absolute)) return;
+      if (NON_PRODUCT_PATH.test(absolute)) return;
       if (seen.has(absolute)) return;
       seen.add(absolute);
 

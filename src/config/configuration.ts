@@ -82,19 +82,11 @@ export interface ThrottleConfig {
   limit: number;
 }
 
-/** Background indexing of whole supplier catalogues. */
-export interface CatalogueConfig {
-  crawlEnabled: boolean;
-  crawlCron: string;
-  crawlBatch: number;
-}
-
 export interface Configuration {
   app: AppConfig;
   auth: AuthConfig;
   database: DatabaseConfig;
   supabase: SupabaseConfig;
-  catalogue: CatalogueConfig;
   scraper: ScraperConfig;
   billing: BillingConfig;
   alerts: AlertsConfig;
@@ -174,11 +166,6 @@ export const configuration = (): Configuration => {
       url: env.SUPABASE_URL,
       publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
       jwksUrl: env.SUPABASE_JWKS_URL,
-    },
-    catalogue: {
-      crawlEnabled: env.CATALOGUE_CRAWL_ENABLED,
-      crawlCron: env.CATALOGUE_CRAWL_CRON,
-      crawlBatch: env.CATALOGUE_CRAWL_BATCH,
     },
     scraper: {
       enabled: env.SCRAPER_ENABLED,

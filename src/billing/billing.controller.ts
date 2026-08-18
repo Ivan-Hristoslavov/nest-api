@@ -36,6 +36,7 @@ import { BillingService } from './billing.service';
 import { IssuedApiKeyDto, MyAccountDto, RotateApiKeyDto } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
+import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
@@ -197,6 +198,19 @@ export class BillingController {
     }
 
     return this.issue(user.id, 'live', Boolean(user.apiKeyPrefix));
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Get('users')
+  @ApiOperation({
+    summary: 'Every customer account (operator only)',
+    description:
+      'The operator\'s customer list: who has paid, on what plan, how many products they are allowed, and the prefix of the key they hold.\n\nThe key prefix is here so a customer reading "pk_live_9f2b…" down the phone can be matched to their account. The key itself is not recoverable — only a hash is stored — so a lost key is replaced, never retrieved.',
+  })
+  @ApiOkResponse({ type: User, isArray: true })
+  listUsers(): Promise<User[]> {
+    return this.usersService.findAll();
   }
 
   @ApiKeyAuth()

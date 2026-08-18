@@ -9,6 +9,11 @@ const varioFixture = readFileSync(
   'utf8',
 );
 
+const elmarkFixture = readFileSync(
+  join(__dirname, '../../../test/fixtures/elmarkstore-product.html'),
+  'utf8',
+);
+
 describe('PriceParserService', () => {
   let parser: PriceParserService;
 
@@ -82,6 +87,27 @@ describe('PriceParserService', () => {
 
       expect(result?.price).toBe(218.83);
       expect(result?.strategy).toBe('selector');
+    });
+  });
+
+  describe('elmarkstore.eu (real page markup)', () => {
+    // The page's only machine-readable price is inside an HTML comment, the
+    // buy box is filled by JavaScript, and `.price` appears once per
+    // related-products tile with a different value each. Without the profile
+    // this page parses as "no price" — which is exactly how a 121-page crawl
+    // once indexed zero offers.
+    it('reads the price via the profile, matched through the bg. subdomain', () => {
+      const profile = profileForHost('bg.elmarkstore.eu');
+      const result = parser.parse(elmarkFixture, { profile });
+
+      expect(profile?.host).toBe('elmarkstore.eu');
+      expect(result?.price).toBe(83.52);
+      expect(result?.currency).toBe('EUR');
+      expect(result?.strategy).toBe('site-profile');
+    });
+
+    it('refuses to guess without the profile rather than pick a carousel price', () => {
+      expect(parser.parse(elmarkFixture)).toBeNull();
     });
   });
 

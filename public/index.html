@@ -463,6 +463,18 @@
           >
             <i class="fa-solid fa-lock mr-1.5 text-[11px]"></i>Достъпи
           </button>
+          <!-- Revealed only when the key in use turns out to be an operator
+               key. Offering it to a customer and then answering 403 reads as a
+               fault in us rather than a boundary. -->
+          <button
+            type="button"
+            id="nav-operator"
+            data-view="operator"
+            hidden
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-amber-400/80 transition hover:text-amber-300"
+          >
+            <i class="fa-solid fa-user-shield mr-1.5 text-[11px]"></i>Клиенти
+          </button>
         </nav>
 
         <div class="ml-auto flex items-center gap-2 md:ml-0">
@@ -1180,12 +1192,47 @@
       </section>
 
       <!-- ================================================================ -->
-      <!-- SECTION 3 — SUPPLIER CATALOGUE SEARCH                            -->
+      <!-- SECTION — OPERATOR PANEL                                         -->
       <!--                                                                  -->
-      <!-- Distinct from the search inside "Добави продукт": that one asks   -->
-      <!-- shops live and only works where a shop permits it. This one       -->
-      <!-- searches our own indexed copy of a supplier's catalogue, which is -->
-      <!-- how it answers for shops whose search is closed or client-side.   -->
+      <!-- Visible only to an operator key (API_KEY in the environment).     -->
+      <!-- A customer key gets 403 from these endpoints, so the nav entry is -->
+      <!-- hidden rather than offered and then refused.                     -->
+      <!-- ================================================================ -->
+      <section id="view-operator" class="view" role="region" aria-label="Операторски панел" hidden>
+        <div class="mx-auto max-w-[1400px] px-5 py-12 sm:px-8">
+          <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 class="text-3xl font-bold text-slate-200">Клиенти</h2>
+              <p class="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-400">
+                Кой е платил, на какъв план е и с кой ключ работи. Ключът
+                <strong class="text-slate-300">не може да се прочете</strong> — пази се само
+                отпечатък. Загубен ключ се заменя с нов, не се възстановява.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="operator-refresh"
+              class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-300 transition hover:border-accent-500/40"
+            >
+              <i class="fa-solid fa-rotate text-[12px]"></i>
+              Опресни
+            </button>
+          </div>
+
+          <div class="mt-8 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
+            <div id="operator-list"></div>
+          </div>
+
+          <div id="operator-issued" class="mt-6"></div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- SECTION 3 — LIVE SUPPLIER COMPARISON                             -->
+      <!--                                                                  -->
+      <!-- Asks every configured shop's own search at the moment you ask,   -->
+      <!-- and ranks the answers by what you pay after your discount.       -->
+      <!-- Nothing is crawled: one request per shop per question.           -->
       <!-- ================================================================ -->
       <section id="view-catalogue" class="view" role="region" aria-label="Търсене при доставчици" hidden>
         <div class="mx-auto max-w-[1400px] px-5 py-12 sm:px-8">
@@ -1193,8 +1240,9 @@
             <div>
               <h2 class="text-3xl font-bold text-slate-200">Търси при доставчиците</h2>
               <p class="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-400">
-                Пишете артикул и вижте кой от вашите доставчици го дава най-евтино —
-                <strong class="text-slate-300">с вашата отстъпка</strong>, не по цената на етикета.
+                Пишете артикул — питаме търсачката на всеки магазин
+                <strong class="text-slate-300">в момента</strong> и подреждаме по това, което
+                <strong class="text-slate-300">вие плащате</strong> с вашата отстъпка, не по цената на етикета.
               </p>
             </div>
             <button
@@ -1212,16 +1260,17 @@
             <div class="flex items-center justify-between border-b border-white/8 px-5 py-3.5">
               <p class="text-[13px] font-medium text-slate-300">Вашите доставчици</p>
               <p class="text-[12px] text-slate-500">
-                <i class="fa-solid fa-rotate mr-1.5 text-[10px] text-accent-400"></i>
-                Каталозите се обхождат сами на фон. Бутонът само избързва.
+                <i class="fa-solid fa-bolt mr-1.5 text-[10px] text-accent-400"></i>
+                Всяко търсене пита магазините в момента. Нищо не се копира и не се обхожда.
               </p>
             </div>
             <div id="shops-list" class="divide-y divide-white/[0.06]"></div>
             <div id="shop-check-result"></div>
             <div id="shops-empty" class="hidden px-5 py-12 text-center text-[13.5px] text-slate-500">
               <i class="fa-solid fa-store mb-3 block text-2xl text-slate-700"></i>
-              Още няма доставчици. Добавете един и обходете каталога му.
+              Още няма ваши доставчици. Добавете един — ако търсачката му работи, търси се веднага, без обхождане.
             </div>
+            <div id="providers-strip" class="hidden border-t border-white/8 px-5 py-3 text-[12px] leading-relaxed text-slate-500"></div>
           </div>
 
           <!-- Search -->
@@ -1258,6 +1307,10 @@
               </button>
             </div>
 
+            <!-- Live answers first: the price the shop states right now beats
+                 any copy of it. The indexed table below covers the shops whose
+                 search cannot be asked. -->
+            <div id="live-results" class="mt-5"></div>
             <div id="catalogue-results" class="mt-5"></div>
             <div id="catalogue-suggestions"></div>
           </div>
@@ -2447,6 +2500,106 @@
       </div>
     </div>
 
+    <!-- ================================================================== -->
+    <!-- DETECT SEARCH MODAL                                                -->
+    <!--                                                                    -->
+    <!-- Teaches the system to search a shop from ONE example: the user     -->
+    <!-- searches the shop by hand, pastes the address bar and says what    -->
+    <!-- they typed. Everything else is inferred and shown back as sample   -->
+    <!-- rows, so the guess is checked before it is saved.                  -->
+    <!-- ================================================================== -->
+    <div
+      id="detect-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detect-modal-title"
+    >
+      <div class="my-8 w-full max-w-xl rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7">
+        <div class="flex items-start gap-4">
+          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25">
+            <i class="fa-solid fa-wand-magic-sparkles text-[16px] text-accent-500"></i>
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 id="detect-modal-title" class="text-[16px] font-semibold text-slate-200">
+              Настрой живо търсене
+            </h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-slate-400">
+              Потърсете нещо в сайта на
+              <strong id="detect-shop-name" class="text-slate-300">магазина</strong> както обикновено,
+              и поставете тук адреса от браузъра. Останалото системата разпознава сама.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="detect-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="detect-form" class="mt-6 space-y-4" novalidate>
+          <div>
+            <label for="detect-url" class="mb-2 block text-[13px] font-medium text-slate-300">
+              Адресът след търсенето <span class="text-accent-500">*</span>
+            </label>
+            <input
+              type="url"
+              id="detect-url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://shop.bg/search?q=крушка"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 font-mono text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+          <div>
+            <label for="detect-query" class="mb-2 block text-[13px] font-medium text-slate-300">
+              Какво написахте в търсачката му <span class="text-accent-500">*</span>
+            </label>
+            <input
+              type="text"
+              id="detect-query"
+              autocomplete="off"
+              placeholder="крушка"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <div id="detect-result" class="hidden"></div>
+          <p id="detect-status" class="hidden text-[12.5px]"></p>
+
+          <div class="flex flex-col gap-2.5 sm:flex-row">
+            <button
+              type="submit"
+              id="detect-run"
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+            >
+              <i class="fa-solid fa-wand-magic-sparkles text-[13px]"></i>
+              Разпознай
+            </button>
+            <button
+              type="button"
+              id="detect-save"
+              disabled
+              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-3 text-[14px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <i class="fa-solid fa-check text-[13px]"></i>
+              Запази и тествай
+            </button>
+            <button
+              type="button"
+              data-close-modal="detect-modal"
+              class="rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/25"
+            >
+              Отказ
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Toast -->
     <div
       id="toast"
@@ -2479,10 +2632,11 @@
         scraperRefresh: API_BASE + '/scraper/competitors',
         discoverySearch: API_BASE + '/discovery/search',
         discoveryShops: API_BASE + '/discovery/shops',
-        catalogueSearch: API_BASE + '/catalogue/search',
-        catalogueSuggest: API_BASE + '/catalogue/suggest',
-        catalogueIndexNow: API_BASE + '/catalogue/index-now',
-        catalogueShops: API_BASE + '/catalogue/shops',
+        discoveryDetect: API_BASE + '/discovery/detect',
+        discoveryCompare: API_BASE + '/discovery/compare',
+        shops: API_BASE + '/shops',
+        billingUsers: API_BASE + '/billing/users',
+        billingRotateKey: API_BASE + '/billing/users/api-key',
       };
 
       /**
@@ -2508,6 +2662,9 @@
           /* private browsing — the session simply stays unauthenticated */
         }
         renderApiKeyBadge();
+        // The operator entry belongs to the key, not to the session: pasting a
+        // customer key must take it away again.
+        void detectOperator();
       }
 
       /** Every authenticated call goes through here, so the header is never forgotten. */
@@ -2608,7 +2765,7 @@
        * View switching
        * ------------------------------------------------------------------ */
 
-      const VIEWS = ['landing', 'credentials', 'catalogue', 'dashboard'];
+      const VIEWS = ['landing', 'credentials', 'catalogue', 'dashboard', 'operator'];
       let currentView = '';
 
       function switchView(name, options) {
@@ -2649,6 +2806,7 @@
 
         if (name === 'dashboard') loadProducts();
         if (name === 'catalogue') void loadShops();
+        if (name === 'operator') void loadOperatorPanel();
       }
 
       $$('.nav-link').forEach(function (button) {
@@ -3072,7 +3230,7 @@
         button.addEventListener('click', () => closeModal(button.dataset.closeModal));
       });
 
-      ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal'].forEach(function (id) {
+      ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
         // Clicking the backdrop closes; clicking the panel must not.
         document.getElementById(id).addEventListener('click', function (event) {
           if (event.target === this) closeModal(id);
@@ -3089,7 +3247,7 @@
           return;
         }
 
-        ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal'].forEach(closeModal);
+        ['key-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
       });
 
       /* ------------------------------------------------------------------ *
@@ -4875,24 +5033,60 @@
       })();
 
       /* ------------------------------------------------------------------ *
-       * SECTION — supplier catalogue
+       * SECTION — suppliers and live comparison
        *
-       * Two searches live in this app and they answer different questions.
-       * The one in "Добави продукт" asks shops live, and only works where a
-       * shop allows it. This one searches our own indexed copy, which is the
-       * only thing that works for a supplier whose search is closed or
-       * rendered client-side — and it is the one that knows your discount.
+       * One question, asked live: "who sells this cheapest for me". Every
+       * configured shop's own search is queried at the moment you ask, and the
+       * answers are ranked by what you actually pay — listed price less your
+       * negotiated discount, in one currency.
+       *
+       * Nothing is crawled and nothing is stored. One request per shop per
+       * question, never one per article, which is why a supplier with eight
+       * thousand items costs the same to serve as one with eighty.
        * ------------------------------------------------------------------ */
 
       let shops = [];
+      /** Everything /discovery/shops knows: host, name, searchable, reason. */
+      let liveProviders = [];
+
+      /** Same shop under two spellings: bg.elmarkstore.eu is elmarkstore.eu. */
+      function sameShopHost(a, b) {
+        const clean = (host) => String(host || '').toLowerCase().replace(/^www\./, '');
+        const left = clean(a);
+        const right = clean(b);
+        return left === right || left.endsWith('.' + right) || right.endsWith('.' + left);
+      }
+
+      /** The live-search verdict for one shop row. */
+      function liveStatusFor(shop) {
+        if (shop.searchUrlTemplate) return { searchable: true, reason: null };
+        const known = liveProviders.find((provider) => sameShopHost(provider.host, shop.host));
+        if (known && known.searchable) return { searchable: true, reason: null };
+        return {
+          searchable: false,
+          reason:
+            (known && known.reason) ||
+            shop.searchBlockedReason ||
+            'живото търсене не е настроено',
+        };
+      }
 
       async function loadShops() {
         const list = $('#shops-list');
 
         try {
-          const response = await fetch(ENDPOINTS.catalogueShops, { headers: authHeaders() });
-          if (!response.ok) throw new Error('HTTP ' + response.status);
-          shops = await response.json();
+          // Both lists at once: a shop row cannot say whether it is searchable
+          // without the providers list, and fetching it separately made the
+          // two screens disagree about the same shop.
+          const [shopsResponse, providersResponse] = await Promise.all([
+            fetch(ENDPOINTS.shops, { headers: authHeaders() }),
+            fetch(ENDPOINTS.discoveryShops, { headers: authHeaders() }).catch(() => null),
+          ]);
+
+          if (!shopsResponse.ok) throw new Error('HTTP ' + shopsResponse.status);
+          shops = await shopsResponse.json();
+          liveProviders =
+            providersResponse && providersResponse.ok ? await providersResponse.json() : [];
         } catch (error) {
           shops = [];
           list.innerHTML =
@@ -4905,24 +5099,80 @@
 
         $('#shops-empty').classList.toggle('hidden', shops.length > 0);
         list.innerHTML = shops.map(shopRowHtml).join('');
+        renderProvidersStrip();
         bindShopRows();
       }
 
+      /**
+       * The retailers searched besides your own suppliers.
+       *
+       * Named rather than left implicit: a result from eMAG in a list you
+       * thought covered only your three suppliers looks like a bug.
+       */
+      function renderProvidersStrip() {
+        const strip = $('#providers-strip');
+        const extra = liveProviders.filter(
+          (provider) => !shops.some((shop) => sameShopHost(shop.host, provider.host)),
+        );
+
+        if (!extra.length) {
+          strip.classList.add('hidden');
+          return;
+        }
+
+        strip.classList.remove('hidden');
+        strip.innerHTML =
+          '<i class="fa-solid fa-bolt mr-1.5 text-[10px] text-accent-400"></i>Търсим на живо и в: ' +
+          extra
+            .map(function (provider) {
+              return provider.searchable
+                ? '<span class="text-slate-300">' + escapeHtml(provider.name) + '</span>'
+                : '<span class="text-slate-600 line-through" title="' +
+                    escapeHtml(provider.reason || 'не може да се търси') +
+                    '">' +
+                    escapeHtml(provider.name) +
+                    '</span>';
+            })
+            .join(', ') +
+          '.';
+      }
+
       function shopRowHtml(shop) {
-        const crawled = shop.lastCrawledAt
-          ? 'обходен ' + escapeHtml(formatRelative(shop.lastCrawledAt))
-          : 'още не е обхождан';
+        const live = liveStatusFor(shop);
+
+        const liveChip = live.searchable
+          ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-400">' +
+            '<i class="fa-solid fa-bolt text-[9px]"></i>търси се на живо</span>'
+          : '<span class="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-400">' +
+            '<i class="fa-solid fa-bolt-lightning text-[9px] opacity-40"></i>без живо търсене</span>';
 
         return (
           '<div class="flex flex-wrap items-center gap-4 px-5 py-4" data-shop="' +
           escapeHtml(shop.id) +
           '">' +
-          '<span class="min-w-0 flex-1"><span class="block truncate font-medium text-slate-200">' +
+          '<span class="min-w-0 flex-1">' +
+          '<span class="flex items-center gap-2"><span class="truncate font-medium text-slate-200">' +
           escapeHtml(shop.name) +
-          '</span><span class="block truncate font-mono text-[11.5px] text-slate-500">' +
+          '</span>' +
+          liveChip +
+          '</span>' +
+          '<span class="block truncate font-mono text-[11.5px] text-slate-500">' +
           escapeHtml(shop.host) +
-          (shop.sitemapUrl ? '' : ' · <span class="text-amber-400">няма sitemap</span>') +
-          '</span></span>' +
+          '</span>' +
+          (live.searchable
+            ? ''
+            : '<span class="mt-0.5 block truncate text-[11.5px] text-slate-500">' +
+              escapeHtml(live.reason) +
+              '</span>') +
+          (shop.lastError
+            ? '<span class="mt-0.5 flex items-start gap-1.5 text-[11.5px] text-amber-400" title="' +
+              escapeHtml(shop.lastError) +
+              '"><i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-[9px]"></i>' +
+              '<span class="leading-snug">последно търсене: ' +
+              escapeHtml(shop.lastError) +
+              '</span></span>'
+            : '') +
+          '</span>' +
           // The discount is the number that decides which supplier the search
           // calls cheapest, so it is editable right here rather than buried.
           '<label class="flex shrink-0 items-center gap-2 text-[12.5px] text-slate-400">отстъпка' +
@@ -4931,58 +5181,21 @@
           '" data-discount="' +
           escapeHtml(shop.id) +
           '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[13px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
-          // Progress, not a bare count. "115 артикула" invites the wrong
-          // conclusion — that the supplier only sells lamps — when the truth is
-          // that the other seven thousand pages have not been read yet.
-          '<span class="w-44 shrink-0">' +
-          '<span class="flex items-baseline justify-between gap-2">' +
-          '<span class="num text-[14px] font-semibold text-slate-200">' +
-          shop.offerCount +
-          '<span class="ml-1 text-[11px] font-normal text-slate-500">' +
-          plural(shop.offerCount, 'артикул', 'артикула') +
-          '</span></span>' +
-          (shop.cataloguePages
-            ? '<span class="num text-[11px] text-slate-500">' +
-              Math.min(100, Math.round((shop.pagesSeen / shop.cataloguePages) * 100)) +
-              '%</span>'
-            : '') +
-          '</span>' +
-          (shop.cataloguePages
-            ? '<span class="mt-1.5 block h-1 rounded-full bg-white/[0.06]">' +
-              '<span class="block h-1 rounded-full bg-accent-500/70" style="width:' +
-              Math.min(100, Math.round((shop.pagesSeen / shop.cataloguePages) * 100)) +
-              '%"></span></span>' +
-              '<span class="num mt-1 block text-[10.5px] text-slate-600">' +
-              shop.pagesSeen +
-              ' от ' +
-              shop.cataloguePages +
-              ' страници</span>'
-            : '') +
-          '</span>' +
-          '<span class="w-52 shrink-0 text-[11.5px] text-slate-500">' +
-          crawled +
-          (shop.lastError
-            ? '<span class="mt-0.5 flex items-start gap-1.5 text-amber-400" title="' +
-              escapeHtml(shop.lastError) +
-              '"><i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-[9px]"></i>' +
-              '<span class="leading-snug">' +
-              escapeHtml(shop.lastError) +
-              '</span></span>'
-            : '') +
-          '</span>' +
           '<span class="flex shrink-0 items-center gap-1.5">' +
-          '<button type="button" data-crawl="' +
+          '<button type="button" data-detect="' +
           escapeHtml(shop.id) +
           '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
-          '<i class="fa-solid fa-spider text-[11px]"></i>Обходи</button>' +
+          '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
+          (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
+          '</button>' +
           iconButton('delete-shop', shop.id, 'fa-trash', 'Премахни доставчика', 'hover:text-red-400') +
           '</span></div>'
         );
       }
 
       function bindShopRows() {
-        $$('[data-crawl]').forEach(function (button) {
-          button.addEventListener('click', () => crawlShop(button.dataset.crawl, button));
+        $$('[data-detect]').forEach(function (button) {
+          button.addEventListener('click', () => openDetectModal(button.dataset.detect));
         });
 
         $$('[data-discount]').forEach(function (input) {
@@ -4991,16 +5204,14 @@
             input.value = value;
 
             try {
-              const response = await fetch(
-                ENDPOINTS.catalogueShops + '/' + input.dataset.discount,
-                {
-                  method: 'PATCH',
-                  headers: authHeaders({ 'Content-Type': 'application/json' }),
-                  body: JSON.stringify({ discountPercent: value }),
-                },
-              );
+              const response = await fetch(ENDPOINTS.shops + '/' + input.dataset.discount, {
+                method: 'PATCH',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ discountPercent: value }),
+              });
               if (!response.ok) throw new Error('HTTP ' + response.status);
               toast('Отстъпката е записана. Търсенето вече смята с нея.', 'success');
+              await loadShops();
             } catch (error) {
               toast('Отстъпката не се запази: ' + error.message, 'error');
             }
@@ -5014,17 +5225,15 @@
 
             const confirmed = await confirmDialog(
               'Премахване на доставчик',
-              'Ще изтрия „' +
+              'Ще премахна „' +
                 shop.name +
-                '" и всичките ' +
-                shop.offerCount +
-                ' индексирани артикула. Действието е необратимо.',
-              'Изтрий',
+                '" от търсенето. Следените продукти оттам остават — те се пазят отделно.',
+              'Премахни',
             );
             if (!confirmed) return;
 
             try {
-              const response = await fetch(ENDPOINTS.catalogueShops + '/' + shop.id, {
+              const response = await fetch(ENDPOINTS.shops + '/' + shop.id, {
                 method: 'DELETE',
                 headers: authHeaders(),
               });
@@ -5038,63 +5247,179 @@
         });
       }
 
-      /**
-       * Crawls one batch and reports what it did.
-       *
-       * One batch, not the whole catalogue: several thousand pages at a polite
-       * crawl rate is hours. The button says how many remain so pressing it
-       * again is an obvious thing to do.
-       */
-      async function crawlShop(shopId, button) {
-        const original = button.innerHTML;
-        button.disabled = true;
-        button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-[11px]"></i>Обхожда…';
+      /* --- Teaching the system to search a new shop ---------------------- */
 
-        try {
-          const response = await fetch(
-            ENDPOINTS.catalogueShops + '/' + shopId + '/crawl?limit=40',
-            { method: 'POST', headers: authHeaders() },
-          );
+      let detectTargetId = null;
+      let detected = null;
 
-          if (!response.ok) {
-            throw new Error((await response.text()).slice(0, 160) || 'HTTP ' + response.status);
-          }
+      function openDetectModal(shopId) {
+        const shop = shops.find((item) => item.id === shopId);
+        if (!shop) return;
 
-          const run = await response.json();
+        detectTargetId = shopId;
+        detected = null;
 
-          // Says what happened to every page tried, not just the wins: a batch
-          // that indexed nothing is not the same as one that failed, and the
-          // difference decides whether pressing again is worth it.
-          const parts = [];
-          if (run.indexed) parts.push(run.indexed + ' ' + plural(run.indexed, 'нов артикул', 'нови артикула'));
-          if (run.skipped) parts.push(run.skipped + ' без цена');
-          if (run.failed) parts.push(run.failed + ' с грешка');
+        $('#detect-shop-name').textContent = shop.name;
+        $('#detect-form').reset();
+        $('#detect-result').classList.add('hidden');
+        $('#detect-status').classList.add('hidden');
+        $('#detect-save').disabled = true;
+        openModal('detect-modal');
+      }
 
-          toast(
-            (parts.length ? parts.join(' · ') : 'нищо ново') +
-              ' · остават ' +
-              run.remaining +
-              ' ' +
-              plural(run.remaining, 'страница', 'страници'),
-            run.failed > 0 ? 'info' : run.indexed > 0 ? 'success' : 'info',
-          );
-
-          await loadShops();
-        } catch (error) {
-          toast('Обхождането не успя: ' + error.message, 'error');
-          button.disabled = false;
-          button.innerHTML = original;
-        }
+      function showDetectStatus(message, tone) {
+        const element = $('#detect-status');
+        const palette = {
+          success: 'text-emerald-400',
+          error: 'text-red-400',
+          info: 'text-slate-400',
+        };
+        element.className = 'text-[12.5px] leading-relaxed ' + (palette[tone] || palette.info);
+        element.textContent = message;
+        element.classList.remove('hidden');
       }
 
       /**
-       * Adds a supplier and says at once whether we can read it.
+       * Shows the guess back before it is saved.
        *
-       * The server checks robots.txt, finds the sitemap and fetches one real
-       * product page before answering. A few seconds spent here saves finding
-       * out after an hour of crawling that the shop renders its prices with
-       * JavaScript — and the sample price is the proof, not a promise.
+       * A detector that silently configures a shop is a detector nobody can
+       * tell has gone wrong: the shop simply returns nonsense for months. The
+       * sample rows make the guess falsifiable in two seconds.
        */
+      function renderDetectResult(result) {
+        const box = $('#detect-result');
+        const percent = Math.round(result.confidence * 100);
+
+        const tone =
+          percent >= 70
+            ? { border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.07]', text: 'text-emerald-400', icon: 'fa-circle-check' }
+            : { border: 'border-amber-500/30', bg: 'bg-amber-500/[0.07]', text: 'text-amber-400', icon: 'fa-triangle-exclamation' };
+
+        const rows = result.samples
+          .map(function (sample) {
+            return (
+              '<li class="flex items-baseline justify-between gap-3 border-t border-white/8 py-1.5">' +
+              '<span class="min-w-0 flex-1 truncate text-[12px] text-slate-300" title="' +
+              escapeHtml(sample.title) +
+              '">' +
+              escapeHtml(sample.title || '(без име)') +
+              '</span>' +
+              (sample.price === null
+                ? '<span class="shrink-0 text-[11.5px] text-amber-400">без цена</span>'
+                : '<span class="num shrink-0 text-[12px] font-semibold text-slate-200">' +
+                  Number(sample.price).toFixed(2) +
+                  '</span>') +
+              '</li>'
+            );
+          })
+          .join('');
+
+        box.className = 'rounded-xl border ' + tone.border + ' ' + tone.bg + ' px-4 py-3.5';
+        box.innerHTML =
+          '<p class="text-[13px] font-semibold ' +
+          tone.text +
+          '"><i class="fa-solid ' +
+          tone.icon +
+          ' mr-1.5"></i>Разпознах ' +
+          result.samples.length +
+          ' ' +
+          plural(result.samples.length, 'резултат', 'резултата') +
+          ' (' +
+          percent +
+          '% пълни)</p>' +
+          (percent >= 70
+            ? '<p class="mt-1 text-[12px] text-slate-400">Проверете имената и цените — ако отговарят на видяното в сайта, запазете.</p>'
+            : '<p class="mt-1 text-[12px] text-slate-400">Част от редовете са непълни. Запазването пак работи, но проверете внимателно.</p>') +
+          '<ul class="mt-2">' +
+          rows +
+          '</ul>' +
+          '<p class="mt-2.5 break-all font-mono text-[10.5px] text-slate-500">' +
+          escapeHtml(result.urlTemplate) +
+          '</p>';
+        box.classList.remove('hidden');
+      }
+
+      $('#detect-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const searchUrl = $('#detect-url').value.trim();
+        const sampleQuery = $('#detect-query').value.trim();
+
+        if (!searchUrl || !sampleQuery) {
+          showDetectStatus('Попълнете и адреса, и думата, която сте търсили.', 'error');
+          return;
+        }
+
+        const button = $('#detect-run');
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML =
+          '<i class="fa-solid fa-circle-notch fa-spin text-[13px]"></i>Разпознавам…';
+        $('#detect-status').classList.add('hidden');
+
+        try {
+          const response = await fetch(ENDPOINTS.discoveryDetect, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ searchUrl: searchUrl, sampleQuery: sampleQuery }),
+          });
+
+          const body = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            // The server speaks in sentences meant for this box.
+            throw new Error(body.message || 'HTTP ' + response.status);
+          }
+
+          detected = body;
+          renderDetectResult(body);
+          $('#detect-save').disabled = false;
+        } catch (error) {
+          detected = null;
+          $('#detect-result').classList.add('hidden');
+          $('#detect-save').disabled = true;
+          showDetectStatus(error.message, 'error');
+        } finally {
+          button.disabled = false;
+          button.innerHTML = original;
+        }
+      });
+
+      $('#detect-save').addEventListener('click', async function () {
+        if (!detected || !detectTargetId) return;
+
+        const button = $('#detect-save');
+        button.disabled = true;
+
+        try {
+          const response = await fetch(ENDPOINTS.shops + '/' + detectTargetId, {
+            method: 'PATCH',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              searchUrlTemplate: detected.urlTemplate,
+              searchResultSelector: detected.linkSelector || undefined,
+              searchTileSelector: detected.tileSelector || undefined,
+              searchTitleSelector: detected.titleSelector || undefined,
+              searchPriceSelector: detected.priceSelector || undefined,
+              searchConfidence: detected.confidence,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error((await response.text()).slice(0, 200) || 'HTTP ' + response.status);
+          }
+
+          closeModal('detect-modal');
+          toast('Готово — магазинът вече се търси на живо.', 'success');
+          await loadShops();
+        } catch (error) {
+          button.disabled = false;
+          showDetectStatus('Не се запази: ' + error.message, 'error');
+        }
+      });
+
+      /* --- Add supplier --------------------------------------------------- */
+
       $('#add-shop').addEventListener('click', function () {
         $('#shop-form').reset();
         $('#shop-status').classList.add('hidden');
@@ -5119,101 +5444,36 @@
 
         closeModal('shop-modal');
 
-        const list = $('#shops-list');
-        list.insertAdjacentHTML(
-          'afterbegin',
-          '<div id="shop-checking" class="flex items-center gap-2.5 px-5 py-4 text-[13px] text-slate-400">' +
-            '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>' +
-            'Проверявам ' +
-            escapeHtml(host.trim()) +
-            ' — robots.txt, sitemap и една истинска страница…</div>',
-        );
-
         try {
-          const response = await fetch(ENDPOINTS.catalogueShops, {
+          const response = await fetch(ENDPOINTS.shops, {
             method: 'POST',
             headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ host: host.trim() }),
+            body: JSON.stringify({ host: host }),
           });
 
           if (!response.ok) {
-            throw new Error((await response.text()).slice(0, 160) || 'HTTP ' + response.status);
+            throw new Error((await response.text()).slice(0, 200) || 'HTTP ' + response.status);
           }
 
-          const result = await response.json();
-          const check = result.check || {};
-
+          const shop = await response.json();
           await loadShops();
 
-          $('#shop-check-result').innerHTML = check.usable
-            ? '<div class="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] px-5 py-4">' +
-              '<p class="text-[13.5px] font-semibold text-emerald-400">' +
-              '<i class="fa-solid fa-circle-check mr-1.5"></i>' +
-              escapeHtml(check.host) +
-              ' може да се търси</p>' +
-              '<p class="mt-1.5 text-[12.5px] text-slate-400">' +
-              'Намерих ' +
-              check.pages +
-              ' страници и прочетох цена от пробна: <strong class="text-slate-200">' +
-              escapeHtml(check.sampleName || 'артикул') +
-              '</strong> — <span class="num text-emerald-400">' +
-              (check.samplePrice === null ? '—' : Number(check.samplePrice).toFixed(2)) +
-              '</span>. Каталогът се индексира на фон; търсете още отсега.</p></div>'
-            : '<div class="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] px-5 py-4">' +
-              '<p class="text-[13.5px] font-semibold text-amber-400">' +
-              '<i class="fa-solid fa-triangle-exclamation mr-1.5"></i>' +
-              escapeHtml(check.host || host) +
-              ' не може да се търси</p>' +
-              '<p class="mt-1.5 text-[12.5px] leading-relaxed text-slate-400">' +
-              escapeHtml(check.reason || 'Магазинът не дава достъп до каталога си.') +
-              '</p></div>';
+          // Straight into the one step that actually makes the shop useful.
+          // Adding a supplier that cannot be searched is half a job, and the
+          // half that is missing is not obvious from the row.
+          const live = liveStatusFor(shop);
+          if (!live.searchable) {
+            openDetectModal(shop.id);
+            toast('Добавен. Сега да го научим да търси.', 'info');
+          } else {
+            toast('Добавен — търси се на живо.', 'success');
+          }
         } catch (error) {
           toast('Неуспешно: ' + error.message, 'error');
-        } finally {
-          const spinner = document.getElementById('shop-checking');
-          if (spinner) spinner.remove();
         }
       });
 
-      async function searchCatalogue() {
-        const query = $('#catalogue-query').value.trim();
-        const results = $('#catalogue-results');
-
-        if (query.length < 2) {
-          results.innerHTML =
-            '<p class="text-[13px] text-amber-400">Въведете поне 2 знака.</p>';
-          return;
-        }
-
-        $('#catalogue-spinner').classList.remove('hidden');
-
-        try {
-          const url =
-            ENDPOINTS.catalogueSearch +
-            '?q=' +
-            encodeURIComponent(query) +
-            ($('#catalogue-instock').checked ? '&inStockOnly=true' : '');
-
-          const response = await fetch(url, { headers: authHeaders() });
-          if (!response.ok) throw new Error('HTTP ' + response.status);
-
-          const hits = await response.json();
-          renderCatalogueResults(hits, query);
-
-          // Whatever is indexed shows immediately; anything the sitemap knows
-          // about but we have not priced yet is fetched straight away and the
-          // results re-drawn. Typing a word and getting the answer is the whole
-          // job — it should not need a second button press.
-          await fillMissingPrices(query, hits);
-        } catch (error) {
-          results.innerHTML =
-            '<p class="text-[13px] text-red-400">Търсенето не успя: ' +
-            escapeHtml(error.message) +
-            '</p>';
-        } finally {
-          $('#catalogue-spinner').classList.add('hidden');
-        }
-      }
+      /* --- The comparison ------------------------------------------------- */
 
       /**
        * Pulls the specification out of a wholesaler's product name.
@@ -5223,8 +5483,8 @@
        * into power, socket, colour temperature and output it becomes the thing
        * you are actually choosing between.
        *
-       * Folded through the same homoglyphs as the search: shops write the
-       * socket as Cyrillic "Е27" about half the time.
+       * Folded through homoglyphs first: shops write the socket as Cyrillic
+       * "Е27" about half the time.
        */
       function parseSpecs(name) {
         const latin = String(name || '').replace(/[аеорсухкмтвн]/gi, function (letter) {
@@ -5343,15 +5603,16 @@
                 'Ефективност',
                 Math.round(specs.lumens / Number.parseFloat(specs.watt)) + ' lm/W',
               )
-            : '') +
-          (hit.shopCode
-            ? hoverRow('Код', '<span class="font-mono">' + escapeHtml(hit.shopCode) + '</span>')
             : '');
 
         const pricing =
           hoverRow(
             'Цена по етикет',
-            '<span class="num">' + hit.listedPrice.toFixed(2) + ' ' + escapeHtml(hit.listedCurrency) + '</span>',
+            '<span class="num">' +
+              (hit.listedPrice === null ? '—' : hit.listedPrice.toFixed(2)) +
+              ' ' +
+              escapeHtml(hit.listedCurrency) +
+              '</span>',
           ) +
           (hit.discountPercent > 0
             ? hoverRow('Вашата отстъпка', '−' + hit.discountPercent + '%', 'text-accent-300')
@@ -5370,7 +5631,7 @@
             hit.inStock === false ? 'изчерпан' : hit.inStock === true ? 'наличен' : 'не е посочена',
             hit.inStock === false ? 'text-amber-400' : 'text-slate-200',
           ) +
-          hoverRow('Проверено', escapeHtml(formatRelative(hit.lastSeenAt)));
+          hoverRow('Прочетено', 'сега, от сайта на магазина', 'text-emerald-400');
 
         return (
           '<div class="px-4 pb-2 pt-3">' +
@@ -5389,6 +5650,68 @@
         );
       }
 
+      /**
+       * Which shops answered, which found nothing, which refused.
+       *
+       * "Found at 4 of 6" and "not stocked anywhere" are different answers, and
+       * a table of results cannot tell them apart. A shop that failed is named
+       * with its reason — otherwise its absence reads as "they don't sell it".
+       */
+      function renderShopOutcomes(result) {
+        const box = $('#live-results');
+        const carrying = result.shops.filter((shop) => shop.ok && shop.count > 0);
+        const empty = result.shops.filter((shop) => shop.ok && shop.count === 0);
+        const refused = result.shops.filter((shop) => !shop.ok);
+
+        box.innerHTML =
+          '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-4 shadow-panel">' +
+          '<div class="flex flex-wrap items-baseline justify-between gap-2">' +
+          '<p class="text-[13px] font-medium ' +
+          (carrying.length ? 'text-slate-200' : 'text-slate-400') +
+          '">' +
+          (carrying.length
+            ? 'Намерено в ' + carrying.length + ' от ' + result.shops.length + ' магазина'
+            : 'Не се намери в нито един магазин') +
+          '</p>' +
+          '<p class="text-[11.5px] text-slate-500"><i class="fa-solid fa-bolt mr-1 text-[9px] text-accent-400"></i>' +
+          'попитани на живо за ' +
+          (result.durationMs / 1000).toFixed(1) +
+          ' сек</p>' +
+          '</div>' +
+          (carrying.length
+            ? '<div class="mt-2.5 flex flex-wrap gap-1.5">' +
+              carrying
+                .map(function (shop) {
+                  return (
+                    '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-medium text-emerald-400">' +
+                    '<i class="fa-solid fa-store text-[9px]"></i>' +
+                    escapeHtml(shop.name) +
+                    '<span class="text-emerald-400/70">' +
+                    shop.count +
+                    '</span></span>'
+                  );
+                })
+                .join('') +
+              '</div>'
+            : '') +
+          (empty.length
+            ? '<p class="mt-2 text-[11.5px] text-slate-500">Няма го в: ' +
+              escapeHtml(empty.map((shop) => shop.name).join(', ')) +
+              '</p>'
+            : '') +
+          (refused.length
+            ? '<p class="mt-1.5 text-[11.5px] text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>' +
+              'Не отговориха: ' +
+              escapeHtml(
+                refused
+                  .map((shop) => shop.name + ' (' + (shop.error || 'неуспешно') + ')')
+                  .join(', '),
+              ) +
+              '</p>'
+            : '') +
+          '</div>';
+      }
+
       function renderCatalogueResults(hits, query) {
         const results = $('#catalogue-results');
         catalogueHits = hits;
@@ -5397,9 +5720,9 @@
           results.innerHTML =
             '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-12 text-center text-[13.5px] text-slate-500 shadow-panel">' +
             '<i class="fa-solid fa-inbox mb-3 block text-2xl text-slate-700"></i>' +
-            'Няма „' +
+            'Нищо за „' +
             escapeHtml(query) +
-            '" в индексирания каталог. Обходете още от доставчика или пробвайте с друга дума.</div>';
+            '". Пробвайте с модел или артикулен номер вместо описание.</div>';
           return;
         }
 
@@ -5407,18 +5730,9 @@
         const cheapest = priced.length ? priced[0].effectivePrice : 0;
         const dearest = priced.length ? priced[priced.length - 1].effectivePrice : 0;
 
-        const suppliers = new Set(hits.map((hit) => hit.shopId));
-
-        // The shop is always shown. It was hidden when every row came from one
-        // supplier, on the reasoning that a repeated word earns no space — but
-        // the first thing anyone asks of a price is "from where", and a table
-        // that does not say is a table you cannot act on.
+        const suppliers = new Set(hits.map((hit) => hit.host));
         const showSupplier = true;
 
-        // Declared here, before the rows that read it. It used to be computed
-        // further down with the header, which put it in the temporal dead zone
-        // and threw "Cannot access 'singleGroup' before initialization" —
-        // taking the whole search down with it.
         // Per-group extremes: the cheapest cable is not comparable with the
         // cheapest reel, so each group is coloured against its own range.
         const groupStats = new Map();
@@ -5426,7 +5740,11 @@
           if (hit.effectivePrice === null) return;
           const stat = groupStats.get(hit.groupKey);
           if (!stat) {
-            groupStats.set(hit.groupKey, { min: hit.effectivePrice, max: hit.effectivePrice, count: 1 });
+            groupStats.set(hit.groupKey, {
+              min: hit.effectivePrice,
+              max: hit.effectivePrice,
+              count: 1,
+            });
             return;
           }
           stat.min = Math.min(stat.min, hit.effectivePrice);
@@ -5434,24 +5752,20 @@
           stat.count += 1;
         });
 
-        
         const groupCount = new Set(hits.map((hit) => hit.groupKey)).size;
         const singleGroup = groupCount <= 1;
         const anyDiscount = hits.some((hit) => hit.discountPercent > 0);
 
-const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
+        const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 1;
         let lastGroup = null;
 
         // A group of one is not a group. Nine offers under nine headings, each
         // heading repeating the row beneath it, is more text and less meaning
-        // than no grouping at all. A heading is earned only where there are two
-        // or more offers to compare; everything else is listed plainly.
+        // than no grouping at all.
         const comparable = new Set(
           [...groupStats.entries()].filter(([, stat]) => stat.count > 1).map(([key]) => key),
         );
 
-        // Real comparisons first — that is what somebody opened the page for —
-        // then the singles, cheapest first.
         const ordered = [
           ...hits.filter((hit) => comparable.has(hit.groupKey)),
           ...hits.filter((hit) => !comparable.has(hit.groupKey)),
@@ -5491,9 +5805,11 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
                 );
               }
             } else if (!singlesHeaderDone && comparable.size > 0) {
-              // One heading for the whole tail, not one per row.
               singlesHeaderDone = true;
-              header = groupHeader('Единични резултати', 'по една оферта — няма с какво да се сравнят');
+              header = groupHeader(
+                'Единични резултати',
+                'по една оферта — няма с какво да се сравнят',
+              );
             }
 
             const tone = priceTone(hit, stat.min, stat.max);
@@ -5507,9 +5823,8 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
               header +
               '<tr class="group border-b border-white/[0.06] transition hover:bg-white/[0.03]" ' +
               'data-hover="offer" data-hover-id="' +
-              escapeHtml(hit.offerId) +
+              index +
               '" tabindex="0">' +
-              /* Rank + name + parsed specification. */
               '<td class="py-3 pl-5 pr-3">' +
               '<span class="flex items-start gap-3">' +
               (index === 0
@@ -5526,13 +5841,12 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
               '">' +
               escapeHtml(hit.name) +
               '</a>' +
-              (specs ? '<span class="mt-1 flex flex-wrap items-center gap-1">' + specs + '</span>' : '') +
+              (specs
+                ? '<span class="mt-1 flex flex-wrap items-center gap-1">' + specs + '</span>'
+                : '') +
               '</span></span></td>' +
               (showSupplier
                 ? '<td class="px-3 py-3 text-[12px] text-slate-400">' +
-                  // The shop name links to the offer as well as the article
-                  // title does: whichever half of the row the eye lands on,
-                  // "where do I buy this" is one click away.
                   '<a href="' +
                   escapeHtml(hit.url) +
                   '" target="_blank" rel="noopener noreferrer" class="block truncate font-medium text-slate-300 transition hover:text-accent-500 hover:underline" title="Отвори в ' +
@@ -5554,12 +5868,9 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
                 ? '<td class="num px-3 py-3 text-right text-[12px] ' +
                   (hit.discountPercent > 0 ? 'text-slate-500 line-through' : 'text-slate-600') +
                   '">' +
-                  hit.listedPrice.toFixed(2) +
+                  (hit.listedPrice === null ? '—' : hit.listedPrice.toFixed(2)) +
                   '</td>'
                 : '') +
-              /* The price, coloured by where it sits in the range, with the
-                 same position drawn as a bar — the number says how much, the
-                 bar says how that compares without reading every other row. */
               '<td class="px-3 py-3">' +
               '<span class="flex items-baseline justify-end gap-2">' +
               '<span class="num text-[15px] font-semibold ' +
@@ -5582,40 +5893,27 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
               '">' +
               (over === null || over < 0.05 ? '—' : '+' + over.toFixed(0) + '%') +
               '</td>' +
-              '<td class="px-3 py-3">' +
+              '<td class="py-3 pl-3 pr-5">' +
               (hit.inStock === false
                 ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-400"><i class="fa-solid fa-circle-minus text-[8px]"></i>изчерпан</span>'
                 : hit.inStock === true
                   ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[11px] font-medium text-emerald-400"><i class="fa-solid fa-circle-check text-[8px]"></i>наличен</span>'
                   : '<span class="text-[11px] text-slate-600">—</span>') +
-              '</td>' +
-              '<td class="py-3 pl-3 pr-5 text-right text-[11px] text-slate-500">' +
-              escapeHtml(formatRelative(hit.lastSeenAt)) +
               '</td></tr>'
             );
           })
           .join('');
 
-        // Widths declared so the columns hold their shape and the table fits
-        // without a sideways scroll, whatever the longest product name is.
         const columns =
           '<col class="w-[' +
-          (showSupplier ? (anyDiscount ? '40%' : '46%') : anyDiscount ? '50%' : '56%') +
+          (anyDiscount ? '42%' : '48%') +
           ']" />' +
-          (showSupplier ? '<col class="w-[14%]" />' : '') +
+          '<col class="w-[16%]" />' +
           (anyDiscount ? '<col class="w-[10%]" />' : '') +
           '<col class="w-[16%]" />' +
           '<col class="w-[8%]" />' +
-          '<col class="w-[12%]" />' +
-          '<col class="w-[10%]" />';
+          '<col class="w-[12%]" />';
 
-        // A price range only means something within one kind of article.
-        // "Кабел" matches bare cable at 0.14 €/m and a cable reel at 19 €;
-        // printing "от 0.14 до 19.10" across the two invites precisely the
-        // wrong conclusion. With several kinds on screen the header counts them
-        // instead, and each group carries its own range.
-        // Only state a range when the offers on screen are actually comparable.
-        // "9 оферти в 9 вида артикул" tells the reader nothing they can use.
         const range =
           singleGroup && priced.length > 1
             ? ' · от <strong class="num text-emerald-400">' +
@@ -5627,7 +5925,6 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
               '</strong>'
             : '';
 
-        // The badge earns its place only when there is a saving to point at.
         const comparableGroups = [...groupStats.values()].filter((stat) => stat.count > 1);
         const bestSaving = comparableGroups.reduce(
           (most, stat) => Math.max(most, stat.max - stat.min),
@@ -5659,7 +5956,7 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
           hits.length +
           '</strong> оферти в ' +
           suppliers.size +
-          (suppliers.size === 1 ? ' доставчик' : ' доставчика') +
+          (suppliers.size === 1 ? ' магазин' : ' магазина') +
           range +
           '</p>' +
           spread +
@@ -5669,95 +5966,55 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
           '</colgroup>' +
           '<thead><tr class="border-b border-white/8 text-[10.5px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
           '<th class="py-2.5 pl-5 pr-3 font-semibold">Артикул</th>' +
-          (showSupplier ? '<th class="px-3 py-2.5 font-semibold">Доставчик</th>' : '') +
+          '<th class="px-3 py-2.5 font-semibold">Магазин</th>' +
           (anyDiscount ? '<th class="px-3 py-2.5 text-right font-semibold">Етикет</th>' : '') +
           '<th class="px-3 py-2.5 text-right font-semibold">Вие плащате</th>' +
           '<th class="px-3 py-2.5 text-right font-semibold">Спрямо №1</th>' +
-          '<th class="px-3 py-2.5 font-semibold">Наличност</th>' +
-          '<th class="py-2.5 pl-3 pr-5 text-right font-semibold">Проверено</th>' +
+          '<th class="py-2.5 pl-3 pr-5 font-semibold">Наличност</th>' +
           '</tr></thead><tbody>' +
           rows +
           '</tbody></table></div>';
       }
 
-      /**
-       * Prices whatever the search could not answer, immediately.
-       *
-       * The index only holds pages that have been crawled, and a supplier's
-       * catalogue takes hours to read in full — but its sitemap names every
-       * article from the first minute. So anything the sitemap knows and the
-       * index does not is fetched here and the results redrawn.
-       *
-       * Bounded to a handful: somebody is watching, and each page is a real
-       * request to somebody else's server.
-       */
-      async function fillMissingPrices(query, hits) {
-        const box = $('#catalogue-suggestions');
-        box.innerHTML = '';
+      async function searchCatalogue() {
+        const query = $('#catalogue-query').value.trim();
+        const results = $('#catalogue-results');
+        const live = $('#live-results');
 
-        let suggestions = [];
-        try {
-          const response = await fetch(
-            ENDPOINTS.catalogueSuggest + '?q=' + encodeURIComponent(query),
-            { headers: authHeaders() },
-          );
-          if (!response.ok) return;
-          suggestions = await response.json();
-        } catch (error) {
+        if (query.length < 2) {
+          results.innerHTML = '<p class="text-[13px] text-amber-400">Въведете поне 2 знака.</p>';
           return;
         }
 
-        if (!suggestions.length) return;
-
-        const batch = suggestions.slice(0, 8);
-
-        box.innerHTML =
-          '<div class="mt-4 flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
+        $('#catalogue-spinner').classList.remove('hidden');
+        live.innerHTML =
+          '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
           '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>' +
-          'Проверявам още ' +
-          batch.length +
-          ' ' +
-          plural(batch.length, 'артикул', 'артикула') +
-          ' при доставчиците…</div>';
+          'Питам магазините…</div>';
+        results.innerHTML = '';
 
         try {
-          const response = await fetch(ENDPOINTS.catalogueIndexNow, {
-            method: 'POST',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ urls: batch.map((item) => item.url) }),
-          });
+          const url =
+            ENDPOINTS.discoveryCompare +
+            '?q=' +
+            encodeURIComponent(query) +
+            ($('#catalogue-instock').checked ? '&inStockOnly=true' : '');
 
+          const response = await fetch(url, { headers: authHeaders() });
           if (!response.ok) throw new Error('HTTP ' + response.status);
-          const added = await response.json();
 
-          if (added.length) {
-            // Re-run the search so the new prices take their place in the
-            // ranking rather than being appended out of order.
-            const again = await fetch(
-              ENDPOINTS.catalogueSearch +
-                '?q=' +
-                encodeURIComponent(query) +
-                ($('#catalogue-instock').checked ? '&inStockOnly=true' : ''),
-              { headers: authHeaders() },
-            );
+          const result = await response.json();
 
-            if (again.ok) renderCatalogueResults(await again.json(), query);
-          }
-
-          const left = suggestions.length - batch.length;
-
-          box.innerHTML = left
-            ? '<p class="mt-3 text-center text-[12px] text-slate-500">' +
-              'Има още ' +
-              left +
-              ' ' +
-              plural(left, 'артикул', 'артикула') +
-              ' в каталозите. Обхождането на фон стига и до тях.</p>'
-            : '';
+          renderShopOutcomes(result);
+          renderCatalogueResults(result.hits, query);
         } catch (error) {
-          box.innerHTML =
-            '<p class="mt-3 text-center text-[12px] text-slate-500">' +
-            'Не успях да проверя останалите точно сега.</p>';
+          live.innerHTML = '';
+          results.innerHTML =
+            '<p class="text-[13px] text-red-400">Търсенето не успя: ' +
+            escapeHtml(error.message) +
+            '</p>';
+        } finally {
+          $('#catalogue-spinner').classList.add('hidden');
         }
       }
 
@@ -5765,6 +6022,220 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
       $('#catalogue-query').addEventListener('keydown', function (event) {
         if (event.key === 'Enter') searchCatalogue();
       });
+
+      /* ------------------------------------------------------------------ *
+       * SECTION — operator panel
+       *
+       * The customer list, behind an operator key. Two things live here that
+       * exist nowhere else: seeing who has paid, and replacing the key of a
+       * customer who has lost theirs.
+       *
+       * Key recovery has to be an operator action by construction. Presenting
+       * the lost key is exactly what the customer cannot do, and letting a
+       * customer key rotate an arbitrary account would turn "I know your email
+       * address" into "I can revoke your access", since issuing a key kills
+       * the previous one.
+       * ------------------------------------------------------------------ */
+
+      const PLAN_LABELS = { free: 'Безплатен', starter: 'Старт', pro: 'ПРО', business: 'Бизнес' };
+      const STATUS_STYLE = {
+        active: { label: 'активен', class: 'bg-emerald-500/12 text-emerald-400' },
+        pending: { label: 'чака плащане', class: 'bg-white/[0.06] text-slate-400' },
+        expired: { label: 'изтекъл', class: 'bg-amber-500/12 text-amber-400' },
+        suspended: { label: 'спрян', class: 'bg-red-500/12 text-red-400' },
+      };
+
+      /**
+       * Reveals the operator nav entry when the key in use is an operator key.
+       *
+       * Detected by asking: `/billing/users` answers 403 for a customer key.
+       * Inferring it from the key's own prefix would be guessing at a rule the
+       * server owns.
+       */
+      async function detectOperator() {
+        if (!getApiKey()) return false;
+
+        try {
+          const response = await fetch(ENDPOINTS.billingUsers, { headers: authHeaders() });
+          const isOperator = response.ok;
+          $('#nav-operator').hidden = !isOperator;
+          return isOperator;
+        } catch (error) {
+          $('#nav-operator').hidden = true;
+          return false;
+        }
+      }
+
+      async function loadOperatorPanel() {
+        const list = $('#operator-list');
+        list.innerHTML =
+          '<p class="px-5 py-8 text-center text-[13px] text-slate-500">Зареждам…</p>';
+
+        let users;
+        try {
+          const response = await fetch(ENDPOINTS.billingUsers, { headers: authHeaders() });
+
+          if (response.status === 403) {
+            list.innerHTML =
+              '<p class="px-5 py-10 text-center text-[13px] text-slate-500">' +
+              'Този екран иска операторски ключ — този от <code class="font-mono text-slate-400">API_KEY</code> в средата, ' +
+              'не клиентски.</p>';
+            return;
+          }
+
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          users = await response.json();
+        } catch (error) {
+          list.innerHTML =
+            '<p class="px-5 py-10 text-center text-[13px] text-red-400">Не се зареди: ' +
+            escapeHtml(error.message) +
+            '</p>';
+          return;
+        }
+
+        if (!users.length) {
+          list.innerHTML =
+            '<div class="px-5 py-12 text-center text-[13.5px] text-slate-500">' +
+            '<i class="fa-solid fa-users mb-3 block text-2xl text-slate-700"></i>' +
+            'Още няма клиенти. Акаунт се създава сам при първото успешно плащане.</div>';
+          return;
+        }
+
+        const rows = users
+          .map(function (user) {
+            const status = STATUS_STYLE[user.status] || STATUS_STYLE.pending;
+
+            return (
+              '<tr class="border-b border-white/[0.06] transition hover:bg-white/[0.03]">' +
+              '<td class="py-3 pl-5 pr-3">' +
+              '<span class="block truncate text-[13px] font-medium text-slate-200">' +
+              escapeHtml(user.email) +
+              '</span>' +
+              (user.name
+                ? '<span class="block truncate text-[11.5px] text-slate-500">' +
+                  escapeHtml(user.name) +
+                  '</span>'
+                : '') +
+              '</td>' +
+              '<td class="px-3 py-3">' +
+              '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ' +
+              status.class +
+              '">' +
+              status.label +
+              '</span></td>' +
+              '<td class="px-3 py-3 text-[12.5px] text-slate-300">' +
+              escapeHtml(PLAN_LABELS[user.plan] || user.plan) +
+              '</td>' +
+              '<td class="num px-3 py-3 text-right text-[12.5px] text-slate-400">' +
+              user.productLimit +
+              '</td>' +
+              '<td class="px-3 py-3">' +
+              (user.apiKeyPrefix
+                ? '<span class="font-mono text-[11.5px] text-slate-400">' +
+                  escapeHtml(user.apiKeyPrefix) +
+                  '…</span>'
+                : '<span class="text-[11.5px] text-slate-600">няма ключ</span>') +
+              '</td>' +
+              '<td class="px-3 py-3 text-[11.5px] text-slate-500">' +
+              escapeHtml(
+                user.apiKeyLastUsedAt ? formatRelative(user.apiKeyLastUsedAt) : 'не е ползван',
+              ) +
+              '</td>' +
+              '<td class="py-3 pl-3 pr-5 text-right">' +
+              '<button type="button" data-reissue="' +
+              escapeHtml(user.email) +
+              '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-amber-500/40 hover:text-amber-300">' +
+              '<i class="fa-solid fa-key text-[10px]"></i>Нов ключ</button>' +
+              '</td></tr>'
+            );
+          })
+          .join('');
+
+        list.innerHTML =
+          '<table class="w-full text-left">' +
+          '<thead><tr class="border-b border-white/8 text-[10.5px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
+          '<th class="py-2.5 pl-5 pr-3 font-semibold">Клиент</th>' +
+          '<th class="px-3 py-2.5 font-semibold">Състояние</th>' +
+          '<th class="px-3 py-2.5 font-semibold">План</th>' +
+          '<th class="px-3 py-2.5 text-right font-semibold">Лимит</th>' +
+          '<th class="px-3 py-2.5 font-semibold">Ключ</th>' +
+          '<th class="px-3 py-2.5 font-semibold">Ползван</th>' +
+          '<th class="py-2.5 pl-3 pr-5"></th>' +
+          '</tr></thead><tbody>' +
+          rows +
+          '</tbody></table>';
+
+        $$('[data-reissue]').forEach(function (button) {
+          button.addEventListener('click', () => reissueKey(button.dataset.reissue));
+        });
+      }
+
+      /**
+       * Issues a replacement key and shows it once.
+       *
+       * Confirmed first, and the confirmation says the destructive part out
+       * loud: this does not "recover" anything, it replaces. Whatever the
+       * customer is running with the old key stops working the moment this
+       * returns.
+       */
+      async function reissueKey(email) {
+        const confirmed = await confirmDialog(
+          'Нов ключ за ' + email,
+          'Старият ключ спира да работи веднага и не може да се върне. Ако клиентът има работеща интеграция, тя ще спре, докато не сложи новия ключ.',
+          'Издай нов ключ',
+        );
+        if (!confirmed) return;
+
+        try {
+          const response = await fetch(ENDPOINTS.billingRotateKey, {
+            method: 'POST',
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ email: email }),
+          });
+
+          if (!response.ok) {
+            throw new Error((await response.text()).slice(0, 200) || 'HTTP ' + response.status);
+          }
+
+          const issued = await response.json();
+
+          // Shown in the page rather than a toast: this is the only moment the
+          // plaintext exists anywhere, and a toast that fades after three
+          // seconds is how it gets lost a second time.
+          $('#operator-issued').innerHTML =
+            '<div class="rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] px-5 py-4">' +
+            '<p class="text-[13.5px] font-semibold text-amber-400">' +
+            '<i class="fa-solid fa-key mr-1.5"></i>Нов ключ за ' +
+            escapeHtml(issued.email) +
+            '</p>' +
+            '<p class="mt-1.5 text-[12.5px] text-slate-400">Копирайте го сега — след като напуснете страницата, ' +
+            'няма откъде да се прочете отново.</p>' +
+            '<div class="mt-3 flex flex-wrap items-center gap-2">' +
+            '<code class="min-w-0 flex-1 overflow-x-auto rounded-lg border border-white/10 bg-ink-950 px-3 py-2.5 font-mono text-[13px] text-emerald-400">' +
+            escapeHtml(issued.apiKey) +
+            '</code>' +
+            '<button type="button" id="copy-issued-key" class="rounded-lg border border-white/10 bg-ink-850 px-3 py-2.5 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40">' +
+            '<i class="fa-solid fa-copy mr-1.5 text-[11px]"></i>Копирай</button>' +
+            '</div>' +
+            (issued.replacedPreviousKey
+              ? '<p class="mt-2.5 text-[11.5px] text-amber-400/80">Предишният ключ вече не работи.</p>'
+              : '') +
+            '</div>';
+
+          $('#copy-issued-key').addEventListener('click', function () {
+            void navigator.clipboard
+              .writeText(issued.apiKey)
+              .then(() => toast('Ключът е копиран.', 'success'))
+              .catch(() => toast('Копирайте го на ръка.', 'info'));
+          });
+
+          await loadOperatorPanel();
+        } catch (error) {
+          toast('Ключът не се издаде: ' + error.message, 'error');
+        }
+      }
+
+      $('#operator-refresh').addEventListener('click', () => void loadOperatorPanel());
 
       /* --- Add supplier -------------------------------------------------- */
 
@@ -6062,13 +6533,14 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
           );
         }
 
-        // The honest explanation for a short list. Live search covers only the
-        // shops that permit it; adding a catalogue is how the list grows.
+        // The honest explanation for a short list, and the one action that
+        // lengthens it. A shop joins the search by being taught how to search
+        // it — one paste of a search URL — not by being crawled.
         notes.push(
           '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
-            'Живото търсене работи само при магазини, които го позволяват. За всички останали ' +
-            'добавете ги в <button type="button" data-goto-catalogue class="font-semibold text-accent-400 underline">Търси доставчици</button> ' +
-            'и обходете каталога им веднъж — после се търсят оттук моментално.',
+            'Търсим при магазините на живо, така че списъкът са тези, чиято търсачка сме научили. ' +
+            'Добавете още в <button type="button" data-goto-catalogue class="font-semibold text-accent-400 underline">Търсене</button> — ' +
+            'отнема едно поставяне на адрес.',
         );
 
         container.insertAdjacentHTML(
@@ -6246,51 +6718,21 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
         $('#discovery-results').innerHTML =
           '<p class="text-[12px] text-slate-500">Търсене…</p>';
 
-        // Both sources at once. The indexed catalogues answer in milliseconds
-        // and cover the shops that forbid live search; the live search covers
-        // shops nobody has indexed yet. Either failing must not hide the other.
-        const [catalogue, live] = await Promise.all([
-          fetch(ENDPOINTS.catalogueSearch + '?q=' + encodeURIComponent(query) + '&limit=20', {
-            headers: authHeaders(),
-          })
-            .then((response) => (response.ok ? response.json() : []))
-            .catch(() => []),
-          hosts.length
-            ? fetch(
-                ENDPOINTS.discoverySearch +
-                  '?q=' +
-                  encodeURIComponent(query) +
-                  '&hosts=' +
-                  encodeURIComponent(hosts.join(',')),
-                { headers: authHeaders() },
-              )
-                .then((response) => (response.ok ? response.json() : []))
-                .catch(() => [])
-            : Promise.resolve([]),
-        ]);
+        // One source now: the shops themselves, asked at this moment. There
+        // used to be a second — our own indexed copy of their catalogues — and
+        // merging the two meant the dialog showed prices of two different ages
+        // side by side without saying which was which.
+        const live = await fetch(
+          ENDPOINTS.discoverySearch +
+            '?q=' +
+            encodeURIComponent(query) +
+            (hosts.length ? '&hosts=' + encodeURIComponent(hosts.join(',')) : ''),
+          { headers: authHeaders() },
+        )
+          .then((response) => (response.ok ? response.json() : []))
+          .catch(() => []);
 
-        // Indexed hits are reshaped into the same rows as the live ones, so the
-        // dialog shows one list rather than making the user care where a result
-        // came from.
-        const fromCatalogue = catalogue.length
-          ? [
-              {
-                host: 'catalogue',
-                name: 'Вашите каталози',
-                ok: true,
-                error: null,
-                durationMs: 0,
-                products: catalogue.map((hit) => ({
-                  title: hit.name + ' — ' + hit.shopName,
-                  url: hit.url,
-                  price: hit.effectivePrice,
-                  currency: hit.effectiveCurrency,
-                })),
-              },
-            ]
-          : [];
-
-        renderDiscoveryResults(fromCatalogue.concat(Array.isArray(live) ? live : []));
+        renderDiscoveryResults(Array.isArray(live) ? live : []);
         $('#discovery-spinner').classList.add('hidden');
       });
 
@@ -6814,6 +7256,7 @@ const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
       renderApiKeyBadge();
       rebuildSupplierFilter();
       renderTable();
+      void detectOperator();
       switchView(window.location.hash.replace('#', '') || 'landing', { force: true });
     </script>
   </body>

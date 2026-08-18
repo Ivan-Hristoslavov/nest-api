@@ -40,6 +40,17 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { email: this.normaliseEmail(email) } });
   }
 
+  /**
+   * Every account, newest first — the operator's customer list.
+   *
+   * Deliberately never selects `apiKeyHash`: an operator screen needs to say
+   * *which* key an account holds, not to be able to reconstruct it. The prefix
+   * is enough to match a key a customer reads out over the phone.
+   */
+  findAll(): Promise<User[]> {
+    return this.usersRepository.find({ order: { createdAt: 'DESC' }, take: 500 });
+  }
+
   async findOne(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
 

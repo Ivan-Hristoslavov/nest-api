@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Trimmed from a live bg.elmarkstore.eu product page (2026-08).
+
+     Everything a parser could trust is a trap here:
+     - the only itemprop="price" on the page sits inside an HTML comment;
+     - `.price` appears once for the product and once per related-products
+       tile, each with a different value;
+     - the visible buy-box price is rendered by JavaScript at run time.
+     The one unambiguous server-rendered price is `.price-bgn` — whose class
+     name lies: since the euro changeover it renders euro. -->
+<html>
+  <head>
+    <title>ALMA ПЕНДЕЛ 1xE27 ЗЕЛЕН/ЗЛАТО</title>
+  </head>
+  <body>
+    <div itemscope itemtype="http://schema.org/Offer">
+      <!--<li>
+          Цена:
+          <div class="price" itemprop="priceCurrency" content="EUR">
+              83
+              <span>.</span>
+              <sup itemprop="price" content="83.52">52</sup>
+          </div>
+      </li>-->
+
+      <div class="price-bgn" style="text-align:center; font-weight:bold;">
+        83.52
+        &euro;
+      </div>
+    </div>
+
+    <div class="related">
+      <ol>
+        <li>
+          <div class="price">1<span>.</span><sup>50</sup><sub>&euro; с ДДС</sub></div>
+        </li>
+        <li>
+          <div class="price">5<span>.</span><sup>27</sup><sub>&euro; с ДДС</sub></div>
+        </li>
+        <li>
+          <div class="price">311<span>.</span><sup>20</sup><sub>&euro; с ДДС</sub></div>
+        </li>
+      </ol>
+    </div>
+  </body>
+</html>

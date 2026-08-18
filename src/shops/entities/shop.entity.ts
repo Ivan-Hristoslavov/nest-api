@@ -4,22 +4,28 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 import { numericTransformer } from '../../common/transformers/numeric-column.transformer';
-import { Offer } from './offer.entity';
 
 /**
- * A supplier whose catalogue we index.
+ * A supplier we can ask.
  *
- * Distinct from `competitors`, which are individual listings of a product we
- * already track. A shop here is the whole catalogue: we walk its sitemap, read
- * every product page it advertises, and keep our own searchable copy. That is
- * what makes "къде е най-евтината крушка 20W" answerable — the question spans
- * products nobody has added yet.
+ * Distinct from `competitors`, which are individual listings of a product
+ * already being tracked. A shop is the whole storefront, and what we keep of
+ * it is not its catalogue but the *way in*: how to phrase a search URL and
+ * where the answers sit on the page.
+ *
+ * Nothing of theirs is copied. "Къде е най-евтината крушка 20W" is answered by
+ * asking every shop's own search at the moment the question is asked — one
+ * request per shop, current prices, no index to go stale and no catalogue to
+ * walk. A supplier with eight thousand articles costs exactly as much to serve
+ * as one with eighty.
+ *
+ * The discount is the reason this beats reading the shops by hand: the ranking
+ * is by what *this customer* pays, and a higher shelf price can win.
  */
 @Entity('shops')
 @Index('idx_shops_host', ['host'], { unique: true })
@@ -60,6 +66,41 @@ export class Shop {
 
   @ApiPropertyOptional({
     description:
+      'CSS selector for one result tile — the box holding a product’s name, price and link. Without it the title and price selectors are searched in whatever element happens to surround the link, which is how a real price goes missing.',
+    example: 'form.item.product',
+    nullable: true,
+  })
+  @Column({ name: 'search_tile_selector', type: 'varchar', length: 255, nullable: true })
+  searchTileSelector!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'CSS selector for the product name inside a result tile. Left empty, the link text is used.',
+    example: '.product-name',
+    nullable: true,
+  })
+  @Column({ name: 'search_title_selector', type: 'varchar', length: 255, nullable: true })
+  searchTitleSelector!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Share of sample rows the detector could read completely, 0–1. Stored so a shop configured from a weak guess can be told apart from one verified against real results.',
+    type: Number,
+    nullable: true,
+    example: 0.9,
+  })
+  @Column({
+    name: 'search_confidence',
+    type: 'numeric',
+    precision: 4,
+    scale: 3,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  searchConfidence!: number | null;
+
+  @ApiPropertyOptional({
+    description:
       'Why this shop cannot be searched live, when it cannot. Filled in by the check so the reason survives instead of being rediscovered.',
     nullable: true,
     example: 'търсачката не приема заявка през GET',
@@ -67,19 +108,25 @@ export class Shop {
   @Column({ name: 'search_blocked_reason', type: 'varchar', length: 255, nullable: true })
   searchBlockedReason!: string | null;
 
+  @ApiPropertyOptional({
+    description: 'When this shop last answered a search, successfully or not.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ name: 'last_searched_at', type: 'timestamptz', nullable: true })
+  lastSearchedAt!: Date | null;
+
+  @ApiPropertyOptional({
+    description: 'What went wrong the last time this shop was searched.',
+    nullable: true,
+  })
+  @Column({ name: 'last_error', type: 'text', nullable: true })
+  lastError!: string | null;
+
   @ApiProperty({ description: 'Readable name for the dashboard.', example: 'ТМТ ЕЛКОМ' })
   @Column({ type: 'varchar', length: 160 })
   name!: string;
-
-  @ApiPropertyOptional({
-    description:
-      "Sitemap advertising the shop's product pages. Usually named in their own robots.txt, which is as close to an invitation as the web has.",
-    format: 'uri',
-    nullable: true,
-    example: 'https://www.tmt-elkom.com/sitemap.xml',
-  })
-  @Column({ name: 'sitemap_url', type: 'text', nullable: true })
-  sitemapUrl!: string | null;
 
   @ApiProperty({
     description:
@@ -100,39 +147,9 @@ export class Shop {
   @Column({ type: 'char', length: 3, default: 'EUR' })
   currency!: string;
 
-  @ApiProperty({ description: 'Inactive shops are skipped by the crawler.', example: true })
+  @ApiProperty({ description: 'Inactive shops are left out of every search.', example: true })
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
-
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  @Column({ name: 'last_crawled_at', type: 'timestamptz', nullable: true })
-  lastCrawledAt!: Date | null;
-
-  @ApiPropertyOptional({
-    description: 'Reason the last crawl stopped early, when it did.',
-    nullable: true,
-  })
-  @Column({ name: 'last_error', type: 'text', nullable: true })
-  lastError!: string | null;
-
-  @ApiProperty({ description: 'Offers currently indexed for this shop.', example: 782 })
-  @Column({ name: 'offer_count', type: 'int', default: 0 })
-  offerCount!: number;
-
-  @ApiProperty({
-    description:
-      'Pages the sitemap offers, after the obvious non-products are filtered out. Together with `offerCount` this is how far the indexing has got — without it the dashboard can only say "115 indexed" and leave you wondering out of how many.',
-    example: 7548,
-  })
-  @Column({ name: 'catalogue_pages', type: 'int', default: 0 })
-  cataloguePages!: number;
-
-  @ApiProperty({
-    description: 'Pages read so far, whether or not they held a price.',
-    example: 340,
-  })
-  @Column({ name: 'pages_seen', type: 'int', default: 0 })
-  pagesSeen!: number;
 
   @ApiProperty({ type: String, format: 'date-time' })
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
@@ -141,7 +158,4 @@ export class Shop {
   @ApiProperty({ type: String, format: 'date-time' })
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt!: Date;
-
-  @OneToMany(() => Offer, (offer) => offer.shop)
-  offers?: Offer[];
 }
