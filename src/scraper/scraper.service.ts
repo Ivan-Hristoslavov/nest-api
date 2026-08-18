@@ -169,13 +169,13 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
 
   /** Checks a single listing on demand, ignoring its check interval. */
   async scrapeCompetitorById(competitorId: string): Promise<PriceCheckResultDto> {
-    const competitor = await this.competitorsService.findOne(competitorId);
+    const competitor = await this.competitorsService.findOneForSystem(competitorId);
     return this.checkCompetitor(competitor);
   }
 
   /** Checks every active listing of a product, ignoring check intervals. */
   async scrapeProductById(productId: string): Promise<PriceCheckResultDto[]> {
-    const competitors = await this.competitorsService.findAllForProduct(productId);
+    const competitors = await this.competitorsService.findAllForProductForSystem(productId);
     const active = competitors.filter((competitor) => competitor.isActive);
 
     return this.mapWithConcurrency(active, this.config.concurrency, (competitor) =>

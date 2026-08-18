@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, Repository } from 'typeorm';
 
+import { User } from '../billing/entities/user.entity';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import {
@@ -77,13 +78,33 @@ export class ProductsService {
    * written in one transaction, so the denormalised column can never point at
    * a listing that does not exist.
    */
-  async create(createProductDto: CreateProductDto): Promise<Product> {
+  /**
+   * How many more products this account may track.
+   *
+   * The plan limit was stored and displayed but never checked, so every plan
+   * allowed the same thing and the price list meant nothing. Enforced on the
+   * way in, where the message can name the plan and the number.
+   */
+  async assertWithinLimit(owner: User, adding = 1): Promise<void> {
+    const used = await this.productsRepository.count({ where: { ownerId: owner.id } });
+
+    if (used + adding > owner.productLimit) {
+      throw new ForbiddenException(
+        `Планът ви позволява ${owner.productLimit} следени продукта, а вече следите ${used}. ` +
+          (adding > 1 ? `Този импорт добавя още ${adding}. ` : '') +
+          'Спрете някой продукт или преминете на по-голям план.',
+      );
+    }
+  }
+
+  async create(ownerId: string, createProductDto: CreateProductDto): Promise<Product> {
     const saved = await this.dataSource.transaction(async (manager) => {
       const products = manager.getRepository(Product);
 
       const product = await products.save(
         products.create({
           ...createProductDto,
+          ownerId,
           currency: createProductDto.currency ?? 'EUR',
           currentPrice: createProductDto.currentPrice ?? null,
           targetPrice: createProductDto.targetPrice ?? null,
@@ -150,7 +171,7 @@ export class ProductsService {
    *   doing 1500 HTTP requests inside one API call would time out and hammer
    *   every shop at once.
    */
-  async bulkImport(dto: BulkImportDto): Promise<BulkImportResultDto> {
+  async bulkImport(ownerId: string, dto: BulkImportDto): Promise<BulkImportResultDto> {
     const startedAt = Date.now();
     const rows: BulkRowResultDto[] = [];
     const updateExisting = dto.updateExisting ?? true;
@@ -166,7 +187,7 @@ export class ProductsService {
       const row = index + 1;
 
       try {
-        const result = await this.importOne(entry, { updateExisting, dryRun });
+        const result = await this.importOne(ownerId, entry, { updateExisting, dryRun });
         rows.push({ row, name: entry.name, ...result });
 
         if (result.status === 'created') created += 1;
@@ -206,6 +227,7 @@ export class ProductsService {
   }
 
   private async importOne(
+    ownerId: string,
     entry: BulkProductDto,
     options: { updateExisting: boolean; dryRun: boolean },
   ): Promise<Omit<BulkRowResultDto, 'row' | 'name'>> {
@@ -231,8 +253,10 @@ export class ProductsService {
       }
     }
 
+    // Scoped: two customers may legitimately use the same SKU, and matching
+    // across accounts would quietly update somebody else's row.
     const existing = entry.sku
-      ? await this.productsRepository.findOne({ where: { sku: entry.sku } })
+      ? await this.productsRepository.findOne({ where: { sku: entry.sku, ownerId } })
       : null;
 
     if (existing && !options.updateExisting) {
@@ -279,6 +303,7 @@ export class ProductsService {
       } else {
         product = await productsRepo.save(
           productsRepo.create({
+            ownerId,
             name: entry.name,
             sku: entry.sku ?? null,
             brand: entry.brand ?? null,
@@ -336,8 +361,10 @@ export class ProductsService {
     });
   }
 
-  async findAll(query: QueryProductsDto): Promise<PaginatedResponseDto<Product>> {
-    const qb = this.productsRepository.createQueryBuilder('product');
+  async findAll(ownerId: string, query: QueryProductsDto): Promise<PaginatedResponseDto<Product>> {
+    const qb = this.productsRepository
+      .createQueryBuilder('product')
+      .where('product.owner_id = :ownerId', { ownerId });
 
     if (query.search) {
       // Whoever is looking for "samsung" means the brand as readily as the
@@ -407,12 +434,15 @@ export class ProductsService {
     return new PaginatedResponseDto(items, total, query.limit, query.offset);
   }
 
-  async findOne(id: string, withCompetitors = false): Promise<Product> {
+  async findOne(ownerId: string, id: string, withCompetitors = false): Promise<Product> {
     const product = await this.productsRepository.findOne({
-      where: { id },
+      where: { id, ownerId },
       relations: withCompetitors ? { competitors: true } : undefined,
     });
 
+    // Somebody else's product is reported as missing, not as forbidden. The
+    // difference between the two answers is itself a way to discover what
+    // another customer tracks.
     if (!product) {
       throw new NotFoundException(`Product with id "${id}" not found.`);
     }
@@ -420,13 +450,16 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> {
-    const product = await this.findOne(id);
+  async update(ownerId: string, id: string, updateProductDto: UpdateProductDto): Promise<Product> {
+    const product = await this.findOne(ownerId, id);
     const urlChanged =
       updateProductDto.competitorUrl !== undefined &&
       updateProductDto.competitorUrl !== product.competitorUrl;
 
     Object.assign(product, updateProductDto);
+    // Never taken from the payload: accepting it would let a caller move a row
+    // into — or out of — somebody else's account.
+    product.ownerId = ownerId;
     const saved = await this.productsRepository.save(product);
 
     // Keep the primary listing pointing at the same URL as the product.
@@ -441,10 +474,10 @@ export class ProductsService {
     return saved;
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(ownerId: string, id: string): Promise<void> {
     // Delete by id and check the affected count: one round trip instead of
     // SELECT-then-DELETE, and no race between the two statements.
-    const result = await this.productsRepository.delete({ id });
+    const result = await this.productsRepository.delete({ id, ownerId });
 
     if (!result.affected) {
       throw new NotFoundException(`Product with id "${id}" not found.`);
@@ -454,11 +487,13 @@ export class ProductsService {
   }
 
   async findPriceHistory(
+    ownerId: string,
     id: string,
     pagination: PaginationQueryDto,
   ): Promise<PaginatedResponseDto<PriceHistory>> {
-    // Ensures a 404 (rather than an empty page) for an unknown product.
-    await this.findOne(id);
+    // Ensures a 404 (rather than an empty page) for an unknown product — and,
+    // just as importantly, for one belonging to somebody else.
+    await this.findOne(ownerId, id);
 
     const [items, total] = await this.priceHistoryRepository.findAndCount({
       where: { productId: id },
@@ -471,7 +506,11 @@ export class ProductsService {
   }
 
   /** The listing `Product.competitorUrl` points at. */
-  async findPrimaryCompetitor(productId: string): Promise<Competitor> {
+  async findPrimaryCompetitor(ownerId: string, productId: string): Promise<Competitor> {
+    // Ownership is proved on the product, which is where it is recorded;
+    // listings inherit it through the row they hang off.
+    await this.findOne(ownerId, productId);
+
     const competitor = await this.competitorsRepository.findOne({
       where: { productId, isPrimary: true },
     });
@@ -490,7 +529,7 @@ export class ProductsService {
    * and six pool connections; against a database in another region that is six
    * network round trips for numbers Postgres can produce in one pass.
    */
-  async getStats(): Promise<ProductStats> {
+  async getStats(ownerId: string): Promise<ProductStats> {
     const raw = await this.productsRepository
       .createQueryBuilder('product')
       .select('COUNT(*)::int', 'total')
@@ -503,6 +542,7 @@ export class ProductsService {
       )
       .addSelect('COALESCE(SUM(product.competitor_count), 0)::int', 'competitors')
       .addSelect('AVG(product.current_price)', 'averagePrice')
+      .where('product.owner_id = :ownerId', { ownerId })
       .addSelect('MAX(product.last_checked_at)', 'lastScrapeAt')
       .setParameters({ pending: ScrapeStatus.Pending, failed: ScrapeStatus.Failed })
       .getRawOne<{
@@ -539,23 +579,27 @@ export class ProductsService {
    * curation step where someone would maintain the second list, so it would
    * only ever drift out of date with the first.
    */
-  async getFacets(): Promise<ProductFacets> {
+  async getFacets(ownerId: string): Promise<ProductFacets> {
     const [brands, manufacturers, categories] = await Promise.all([
-      this.facet('brand'),
-      this.facet('manufacturer'),
-      this.facet('category'),
+      this.facet(ownerId, 'brand'),
+      this.facet(ownerId, 'manufacturer'),
+      this.facet(ownerId, 'category'),
     ]);
 
     return { brands, manufacturers, categories };
   }
 
   /** `column` is a literal from {@link getFacets}, never user input. */
-  private async facet(column: 'brand' | 'manufacturer' | 'category'): Promise<FacetBucket[]> {
+  private async facet(
+    ownerId: string,
+    column: 'brand' | 'manufacturer' | 'category',
+  ): Promise<FacetBucket[]> {
     const rows = await this.productsRepository
       .createQueryBuilder('product')
       .select(`product.${column}`, 'value')
       .addSelect('COUNT(*)::int', 'count')
-      .where(`product.${column} IS NOT NULL`)
+      .where('product.owner_id = :ownerId', { ownerId })
+      .andWhere(`product.${column} IS NOT NULL`)
       .andWhere(`product.${column} <> ''`)
       .groupBy(`product.${column}`)
       .orderBy('"count"', 'DESC')

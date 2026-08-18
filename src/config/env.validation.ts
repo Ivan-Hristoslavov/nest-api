@@ -217,6 +217,48 @@ export class EnvironmentVariables {
   @IsOptional()
   SUPABASE_JWKS_URL?: string;
 
+  // --- Outgoing email ------------------------------------------------------
+  // Leave SMTP_HOST empty to run without mail: the key is then issued and
+  // reported in the response, and an operator delivers it by hand.
+  @IsString()
+  @IsOptional()
+  SMTP_HOST?: string;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  @IsOptional()
+  SMTP_PORT = 587;
+
+  /** Implicit TLS. Defaults to true on 465, the port that requires it. */
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  SMTP_SECURE?: boolean;
+
+  @IsString()
+  @IsOptional()
+  SMTP_USERNAME?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASSWORD?: string;
+
+  /** Sender address, e.g. "PriceGuard <billing@example.com>". */
+  @IsString()
+  @IsOptional()
+  SMTP_FROM?: string;
+
+  /** Where customers sign in — put in the email beside their key. */
+  @IsString()
+  @IsOptional()
+  APP_PUBLIC_URL = 'http://localhost:3000';
+
+  @IsString()
+  @IsOptional()
+  SUPPORT_EMAIL?: string;
+
   // --- Scraper -------------------------------------------------------------
   @Transform(toBoolean)
   @IsBoolean()

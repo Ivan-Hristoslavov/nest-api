@@ -59,6 +59,13 @@ export class IssuedApiKeyDto {
     example: true,
   })
   replacedPreviousKey!: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the key was emailed to the customer. False means it exists only in this response — deliver it by hand, because it cannot be read back.',
+    example: true,
+  })
+  emailed!: boolean;
 }
 
 /** The caller's own account, for a customer holding a working key. */

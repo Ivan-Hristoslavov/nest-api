@@ -11,6 +11,7 @@ import {
 import { ApiBadRequestResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { DiscoveryService } from './discovery.service';
 import {
@@ -56,10 +57,10 @@ export class DiscoveryController {
       },
     },
   })
-  listShops(): Promise<
-    Array<{ host: string; name: string; searchable: boolean; reason: string | null }>
-  > {
-    return this.discoveryService.listProviders();
+  listShops(
+    @Owner() ownerId: string,
+  ): Promise<Array<{ host: string; name: string; searchable: boolean; reason: string | null }>> {
+    return this.discoveryService.listProviders(ownerId);
   }
 
   @Get('available')
@@ -80,8 +81,10 @@ export class DiscoveryController {
       },
     },
   })
-  listAvailable(): Promise<Array<{ host: string; name: string; reason: string | null }>> {
-    return this.discoveryService.listAvailable();
+  listAvailable(
+    @Owner() ownerId: string,
+  ): Promise<Array<{ host: string; name: string; reason: string | null }>> {
+    return this.discoveryService.listAvailable(ownerId);
   }
 
   @Post('detect')
@@ -117,8 +120,8 @@ export class DiscoveryController {
       'The request this system exists to serve. Every configured shop\'s own search is queried in parallel, and what comes back is ranked by **what you actually pay**: the listed price less your negotiated discount at that shop, converted to one currency. A shop with the higher shelf price can therefore rank first, which is the entire point.\n\nResults are grouped by kind of article, because "кабел" matches bare cable at 0.14 € and a cable drum at 19 €, and one price range across the two is a misreading waiting to happen.\n\nNothing is stored and nothing is crawled: one request per shop per question, never one per article. A supplier with eight thousand items costs exactly what one with eighty costs.',
   })
   @ApiOkResponse({ description: 'Ranked offers, plus what each shop did.', type: ComparisonDto })
-  compare(@Query() query: CompareQueryDto): Promise<ComparisonDto> {
-    return this.discoveryService.compare(query.q, {
+  compare(@Owner() ownerId: string, @Query() query: CompareQueryDto): Promise<ComparisonDto> {
+    return this.discoveryService.compare(ownerId, query.q, {
       hosts: query.hosts,
       currency: query.currency,
       inStockOnly: query.inStockOnly,
@@ -133,7 +136,7 @@ export class DiscoveryController {
       'Searches all configured retailers in parallel and returns their product URLs, ready to be tracked — so a product is added by name instead of by pasting a link per shop.\n\nOne shop failing never fails the search: each reports its own outcome.',
   })
   @ApiOkResponse({ description: 'One entry per shop.', type: ShopSearchResultDto, isArray: true })
-  search(@Query() query: SearchQueryDto): Promise<ShopSearchResultDto[]> {
-    return this.discoveryService.search(query.q, query.hosts);
+  search(@Owner() ownerId: string, @Query() query: SearchQueryDto): Promise<ShopSearchResultDto[]> {
+    return this.discoveryService.search(ownerId, query.q, query.hosts);
   }
 }

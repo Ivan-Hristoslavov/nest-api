@@ -24,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ShopProbeService } from '../discovery/shop-probe.service';
 import { CreateShopDto, UpdateShopDto } from './dto/shops.dto';
@@ -46,8 +47,8 @@ export class ShopsController {
       'Who you buy from, what discount you have negotiated with each, and whether their search can be queried live.',
   })
   @ApiOkResponse({ type: Shop, isArray: true })
-  list(): Promise<Shop[]> {
-    return this.shops.findAll();
+  list(@Owner() ownerId: string): Promise<Shop[]> {
+    return this.shops.findAll(ownerId);
   }
 
   @Post()
@@ -63,15 +64,19 @@ export class ShopsController {
   })
   @ApiCreatedResponse({ type: Shop })
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
-  async create(@Body() dto: CreateShopDto, @Query('probe') probe?: string): Promise<Shop> {
-    const shop = await this.shops.create(dto);
+  async create(
+    @Owner() ownerId: string,
+    @Body() dto: CreateShopDto,
+    @Query('probe') probe?: string,
+  ): Promise<Shop> {
+    const shop = await this.shops.create(ownerId, dto);
 
     // Already configured by hand, or explicitly not wanted.
     if (probe === 'false' || dto.searchUrlTemplate) return shop;
 
     const result = await this.probe.probe(shop.host);
 
-    return this.shops.applyProbe(shop.id, result);
+    return this.shops.applyProbe(ownerId, shop.id, result);
   }
 
   @Post(':id/probe')
@@ -84,11 +89,14 @@ export class ShopsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ type: Shop })
   @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
-  async reprobe(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Shop> {
-    const shop = await this.shops.findOne(id);
+  async reprobe(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<Shop> {
+    const shop = await this.shops.findOne(ownerId, id);
     const result = await this.probe.probe(shop.host);
 
-    return this.shops.applyProbe(shop.id, result);
+    return this.shops.applyProbe(ownerId, shop.id, result);
   }
 
   @Patch(':id')
@@ -101,10 +109,11 @@ export class ShopsController {
   @ApiOkResponse({ type: Shop })
   @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
   update(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdateShopDto,
   ): Promise<Shop> {
-    return this.shops.update(id, dto);
+    return this.shops.update(ownerId, id, dto);
   }
 
   @Delete(':id')
@@ -113,7 +122,10 @@ export class ShopsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiNoContentResponse({ description: 'Shop deleted.' })
   @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<void> {
-    return this.shops.remove(id);
+  remove(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    return this.shops.remove(ownerId, id);
   }
 }

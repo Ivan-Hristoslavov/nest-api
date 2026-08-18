@@ -24,6 +24,8 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner, OwnerAccount } from '../common/decorators/owner.decorator';
+import { User } from '../billing/entities/user.entity';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -60,8 +62,13 @@ export class ProductsController {
     description: 'A product with this SKU already exists.',
     type: ErrorResponseDto,
   })
-  create(@Body() createProductDto: CreateProductDto): Promise<Product> {
-    return this.productsService.create(createProductDto);
+  async create(
+    @OwnerAccount() owner: User,
+    @Body() createProductDto: CreateProductDto,
+  ): Promise<Product> {
+    await this.productsService.assertWithinLimit(owner);
+
+    return this.productsService.create(owner.id, createProductDto);
   }
 
   @Post('bulk')
@@ -82,8 +89,18 @@ export class ProductsController {
   })
   @ApiOkResponse({ description: 'Per-row outcome.', type: BulkImportResultDto })
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
-  bulkImport(@Body() dto: BulkImportDto): Promise<BulkImportResultDto> {
-    return this.productsService.bulkImport(dto);
+  async bulkImport(
+    @OwnerAccount() owner: User,
+    @Body() dto: BulkImportDto,
+  ): Promise<BulkImportResultDto> {
+    // Checked against the whole batch before a single row is written: an
+    // import that stops half way through the plan limit leaves the customer
+    // with a partial catalogue and no clear account of what landed.
+    if (!dto.dryRun) {
+      await this.productsService.assertWithinLimit(owner, dto.products.length);
+    }
+
+    return this.productsService.bulkImport(owner.id, dto);
   }
 
   @Get()
@@ -93,8 +110,11 @@ export class ProductsController {
   })
   @ApiPaginatedResponse(Product, 'Page of tracked products.')
   @ApiBadRequestResponse({ description: 'Invalid query parameters.', type: ErrorResponseDto })
-  findAll(@Query() query: QueryProductsDto): Promise<PaginatedResponseDto<Product>> {
-    return this.productsService.findAll(query);
+  findAll(
+    @Owner() ownerId: string,
+    @Query() query: QueryProductsDto,
+  ): Promise<PaginatedResponseDto<Product>> {
+    return this.productsService.findAll(ownerId, query);
   }
 
   // Declared before ':id' so the literal path is not swallowed by the uuid route.
@@ -125,8 +145,8 @@ export class ProductsController {
       },
     },
   })
-  getStats(): Promise<ProductStats> {
-    return this.productsService.getStats();
+  getStats(@Owner() ownerId: string): Promise<ProductStats> {
+    return this.productsService.getStats(ownerId);
   }
 
   // Also before ':id', for the same reason as 'stats'.
@@ -156,8 +176,8 @@ export class ProductsController {
       },
     },
   })
-  getFacets(): Promise<ProductFacets> {
-    return this.productsService.getFacets();
+  getFacets(@Owner() ownerId: string): Promise<ProductFacets> {
+    return this.productsService.getFacets(ownerId);
   }
 
   @Get(':id')
@@ -168,8 +188,11 @@ export class ProductsController {
   @ApiParam({ name: 'id', format: 'uuid', description: 'Product identifier.' })
   @ApiOkResponse({ description: 'The requested product.', type: Product })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
-  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Product> {
-    return this.productsService.findOne(id, true);
+  findOne(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<Product> {
+    return this.productsService.findOne(ownerId, id, true);
   }
 
   @Patch(':id')
@@ -182,10 +205,11 @@ export class ProductsController {
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   update(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() updateProductDto: UpdateProductDto,
   ): Promise<Product> {
-    return this.productsService.update(id, updateProductDto);
+    return this.productsService.update(ownerId, id, updateProductDto);
   }
 
   @Delete(':id')
@@ -197,8 +221,11 @@ export class ProductsController {
   @ApiParam({ name: 'id', format: 'uuid', description: 'Product identifier.' })
   @ApiNoContentResponse({ description: 'Product deleted.' })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<void> {
-    return this.productsService.remove(id);
+  remove(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    return this.productsService.remove(ownerId, id);
   }
 
   @Get(':id/history')
@@ -210,10 +237,11 @@ export class ProductsController {
   @ApiPaginatedResponse(PriceHistory, 'Page of price observations.')
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   findPriceHistory(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Query() pagination: PaginationQueryDto,
   ): Promise<PaginatedResponseDto<PriceHistory>> {
-    return this.productsService.findPriceHistory(id, pagination);
+    return this.productsService.findPriceHistory(ownerId, id, pagination);
   }
 
   @Post(':id/prices')
@@ -228,10 +256,11 @@ export class ProductsController {
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   async recordPrice(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() recordPriceDto: RecordPriceDto,
   ): Promise<PriceCheckResultDto> {
-    const primary = await this.productsService.findPrimaryCompetitor(id);
+    const primary = await this.productsService.findPrimaryCompetitor(ownerId, id);
 
     return this.competitorsService.applyPriceObservation(primary.id, {
       price: recordPriceDto.price,

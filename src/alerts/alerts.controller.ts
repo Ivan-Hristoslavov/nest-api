@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { ApiPaginatedResponse } from '../common/swagger/api-paginated-response.decorator';
@@ -28,8 +29,11 @@ export class AlertsController {
       'Price movements, undercuts and failing listings, newest first. Filter by product, type, severity or acknowledgement state.',
   })
   @ApiPaginatedResponse(Alert, 'Page of alerts.')
-  findAll(@Query() query: QueryAlertsDto): Promise<PaginatedResponseDto<Alert>> {
-    return this.alertsService.findAll(query);
+  findAll(
+    @Owner() ownerId: string,
+    @Query() query: QueryAlertsDto,
+  ): Promise<PaginatedResponseDto<Alert>> {
+    return this.alertsService.findAll(ownerId, query);
   }
 
   @Get(':id')
@@ -37,8 +41,11 @@ export class AlertsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ description: 'The requested alert.', type: Alert })
   @ApiNotFoundResponse({ description: 'No alert with this id.', type: ErrorResponseDto })
-  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Alert> {
-    return this.alertsService.findOne(id);
+  findOne(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<Alert> {
+    return this.alertsService.findOne(ownerId, id);
   }
 
   @Patch(':id/acknowledge')
@@ -50,7 +57,10 @@ export class AlertsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ description: 'The acknowledged alert.', type: Alert })
   @ApiNotFoundResponse({ description: 'No alert with this id.', type: ErrorResponseDto })
-  acknowledge(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): Promise<Alert> {
-    return this.alertsService.acknowledge(id);
+  acknowledge(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<Alert> {
+    return this.alertsService.acknowledge(ownerId, id);
   }
 }

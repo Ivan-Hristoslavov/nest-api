@@ -77,6 +77,28 @@ export interface AlertsConfig {
   cooldownMinutes: number;
 }
 
+/**
+ * Outgoing email.
+ *
+ * Not a nicety. A customer who pays and receives nothing has bought nothing:
+ * the API key is issued as a hash and the plaintext exists for one moment
+ * inside one request. Without a way to send it, every sale needs an operator
+ * to notice and hand a key over by chat.
+ */
+export interface MailConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  /** Implicit TLS (port 465). Otherwise STARTTLS is negotiated. */
+  secure: boolean;
+  username?: string;
+  password?: string;
+  from: string;
+  /** Where the customer is told to go and paste their key. */
+  appUrl: string;
+  supportEmail?: string;
+}
+
 export interface ThrottleConfig {
   ttlMs: number;
   limit: number;
@@ -89,6 +111,7 @@ export interface Configuration {
   supabase: SupabaseConfig;
   scraper: ScraperConfig;
   billing: BillingConfig;
+  mail: MailConfig;
   alerts: AlertsConfig;
   throttle: ThrottleConfig;
 }
@@ -145,6 +168,19 @@ export const configuration = (): Configuration => {
           ? env.PADDLE_WEBHOOK_SECRET
           : env.LEMONSQUEEZY_WEBHOOK_SECRET,
       signatureToleranceSeconds: env.BILLING_SIGNATURE_TOLERANCE_SECONDS,
+    },
+    mail: {
+      // Enabled by having somewhere to send from. A half-configured mailer
+      // that throws on every send is worse than one that is plainly off.
+      enabled: Boolean(env.SMTP_HOST && env.SMTP_FROM),
+      host: env.SMTP_HOST ?? '',
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE ?? env.SMTP_PORT === 465,
+      username: env.SMTP_USERNAME,
+      password: env.SMTP_PASSWORD,
+      from: env.SMTP_FROM ?? '',
+      appUrl: env.APP_PUBLIC_URL,
+      supportEmail: env.SUPPORT_EMAIL,
     },
     database: {
       host: env.DB_HOST,

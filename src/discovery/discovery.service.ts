@@ -102,9 +102,9 @@ export class DiscoveryService {
    * keeping its discount and selectors, for the supplier you are between
    * contracts with.
    */
-  private async allProviders(): Promise<SearchProvider[]> {
+  private async allProviders(ownerId: string): Promise<SearchProvider[]> {
     const shops = await this.shops.find({
-      where: { isActive: true },
+      where: { isActive: true, ownerId },
       order: { name: 'ASC' },
     });
 
@@ -167,13 +167,13 @@ export class DiscoveryService {
    *
    * Robots files are cached by {@link RobotsService}, so this stays cheap.
    */
-  async listProviders(): Promise<
-    Array<{ host: string; name: string; searchable: boolean; reason: string | null }>
-  > {
+  async listProviders(
+    ownerId: string,
+  ): Promise<Array<{ host: string; name: string; searchable: boolean; reason: string | null }>> {
     // Your shops, and only yours. Deactivated ones are listed as well, so
     // "why is this one not in my results" is answerable from the same screen
     // that turned it off.
-    const shops = await this.shops.find({ order: { name: 'ASC' } });
+    const shops = await this.shops.find({ where: { ownerId }, order: { name: 'ASC' } });
 
     // The same shop appears under different hostnames — the operator adds
     // `bg.elmarkstore.eu` while the shipped list knows `elmarkstore.eu` — so
@@ -240,8 +240,10 @@ export class DiscoveryService {
    * comparing three negotiated suppliers does not want a retailer they have no
    * account with quietly setting the benchmark.
    */
-  async listAvailable(): Promise<Array<{ host: string; name: string; reason: string | null }>> {
-    const shops = await this.shops.find();
+  async listAvailable(
+    ownerId: string,
+  ): Promise<Array<{ host: string; name: string; reason: string | null }>> {
+    const shops = await this.shops.find({ where: { ownerId } });
     const mine = (host: string): boolean =>
       shops.some((shop) => {
         const own = shop.host.replace(/^www\./, '');
@@ -262,11 +264,14 @@ export class DiscoveryService {
    * hide the four that answered. Each shop reports its own outcome so the UI
    * can say which ones were searched and which refused.
    */
-  async search(query: string, hosts?: string[]): Promise<ShopSearchResultDto[]> {
+  async search(ownerId: string, query: string, hosts?: string[]): Promise<ShopSearchResultDto[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
-    const shops = await this.shops.find({ where: { isActive: true }, order: { name: 'ASC' } });
+    const shops = await this.shops.find({
+      where: { isActive: true, ownerId },
+      order: { name: 'ASC' },
+    });
     const wanted = hosts?.length
       ? shops.filter((shop) => hosts.includes(shop.host.replace(/^www\./, '')))
       : shops;
@@ -313,6 +318,7 @@ export class DiscoveryService {
    * results alone cannot tell them apart.
    */
   async compare(
+    ownerId: string,
     query: string,
     options: { hosts?: string[]; currency?: string; inStockOnly?: boolean; limit?: number } = {},
   ): Promise<{
@@ -336,12 +342,12 @@ export class DiscoveryService {
       return { query: trimmed, durationMs: 0, shops: [], hits: [] };
     }
 
-    const results = await this.search(trimmed, options.hosts);
+    const results = await this.search(ownerId, trimmed, options.hosts);
 
     // The discount lives on the shop row, and the search providers are keyed
     // by host — so the two are joined here rather than threaded through every
     // provider.
-    const shops = await this.shops.find();
+    const shops = await this.shops.find({ where: { ownerId } });
     const discountFor = (host: string): { id: string | null; percent: number } => {
       const match = shops.find((shop) => {
         const left = shop.host.replace(/^www\./, '').toLowerCase();

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsQueryDto } from './dto/analytics-query.dto';
@@ -26,8 +27,8 @@ export class AnalyticsController {
       'How the catalog sits against the market right now: where we win on price, where we are undercut, and the largest moves of the last seven days.',
   })
   @ApiOkResponse({ description: 'Market overview.', type: MarketOverviewDto })
-  overview(): Promise<MarketOverviewDto> {
-    return this.analyticsService.overview();
+  overview(@Owner() ownerId: string): Promise<MarketOverviewDto> {
+    return this.analyticsService.overview(ownerId);
   }
 
   @Get('products/:id')
@@ -40,9 +41,10 @@ export class AnalyticsController {
   @ApiOkResponse({ description: 'Product analytics.', type: ProductAnalyticsDto })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   forProduct(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Query() query: AnalyticsQueryDto,
   ): Promise<ProductAnalyticsDto> {
-    return this.analyticsService.forProduct(id, query.days);
+    return this.analyticsService.forProduct(ownerId, id, query.days);
   }
 }

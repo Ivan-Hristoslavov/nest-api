@@ -58,8 +58,8 @@ export class CompetitorsService {
 
   // --- CRUD ----------------------------------------------------------------
 
-  async findAllForProduct(productId: string): Promise<Competitor[]> {
-    await this.assertProductExists(productId);
+  async findAllForProduct(ownerId: string, productId: string): Promise<Competitor[]> {
+    await this.assertProductExists(ownerId, productId);
 
     return this.competitorsRepository.find({
       where: { productId },
@@ -67,8 +67,15 @@ export class CompetitorsService {
     });
   }
 
-  async findOne(id: string): Promise<Competitor> {
-    const competitor = await this.competitorsRepository.findOne({ where: { id } });
+  async findOne(ownerId: string, id: string): Promise<Competitor> {
+    // Joined to the product rather than checked afterwards: one query, and no
+    // window in which the row is read before the entitlement is known.
+    const competitor = await this.competitorsRepository
+      .createQueryBuilder('competitor')
+      .innerJoin('competitor.product', 'product')
+      .where('competitor.id = :id', { id })
+      .andWhere('product.owner_id = :ownerId', { ownerId })
+      .getOne();
 
     if (!competitor) {
       throw new NotFoundException(`Competitor with id "${id}" not found.`);
@@ -77,8 +84,8 @@ export class CompetitorsService {
     return competitor;
   }
 
-  async create(productId: string, dto: CreateCompetitorDto): Promise<Competitor> {
-    await this.assertProductExists(productId);
+  async create(ownerId: string, productId: string, dto: CreateCompetitorDto): Promise<Competitor> {
+    await this.assertProductExists(ownerId, productId);
 
     // Checked explicitly so the caller learns *which* URL collided. Left to the
     // unique index, this surfaces as a generic "record already exists", which
@@ -119,8 +126,8 @@ export class CompetitorsService {
     return competitor;
   }
 
-  async update(id: string, dto: UpdateCompetitorDto): Promise<Competitor> {
-    const competitor = await this.findOne(id);
+  async update(ownerId: string, id: string, dto: UpdateCompetitorDto): Promise<Competitor> {
+    const competitor = await this.findOne(ownerId, id);
 
     Object.assign(competitor, dto);
     if (dto.url) {
@@ -133,8 +140,8 @@ export class CompetitorsService {
     return saved;
   }
 
-  async remove(id: string): Promise<void> {
-    const competitor = await this.findOne(id);
+  async remove(ownerId: string, id: string): Promise<void> {
+    const competitor = await this.findOne(ownerId, id);
 
     if (competitor.isPrimary) {
       throw new BadRequestException(
@@ -151,8 +158,8 @@ export class CompetitorsService {
    * `Product.competitorUrl` follows the primary, keeping the denormalised
    * column and the competitors table from drifting apart.
    */
-  async promoteToPrimary(id: string): Promise<Competitor> {
-    const competitor = await this.findOne(id);
+  async promoteToPrimary(ownerId: string, id: string): Promise<Competitor> {
+    const competitor = await this.findOne(ownerId, id);
 
     await this.dataSource.transaction(async (manager) => {
       await manager
@@ -164,7 +171,33 @@ export class CompetitorsService {
         .update({ id: competitor.productId }, { competitorUrl: competitor.url });
     });
 
-    return this.findOne(id);
+    return this.findOne(ownerId, id);
+  }
+
+  /**
+   * A listing by id, with no entitlement check.
+   *
+   * For the background sweep only, which works across every account by
+   * design — one cron, all customers' listings. Never reachable from a
+   * request: anything serving an HTTP caller must use {@link findOne}, which
+   * proves the listing hangs off a product they own.
+   */
+  async findOneForSystem(id: string): Promise<Competitor> {
+    const competitor = await this.competitorsRepository.findOne({ where: { id } });
+
+    if (!competitor) {
+      throw new NotFoundException(`Competitor with id "${id}" not found.`);
+    }
+
+    return competitor;
+  }
+
+  /** Every listing of a product, for the background sweep. See {@link findOneForSystem}. */
+  findAllForProductForSystem(productId: string): Promise<Competitor[]> {
+    return this.competitorsRepository.find({
+      where: { productId },
+      order: { isPrimary: 'DESC', currentPrice: 'ASC', name: 'ASC' },
+    });
   }
 
   // --- Scraper queue -------------------------------------------------------
@@ -618,8 +651,19 @@ export class CompetitorsService {
     };
   }
 
-  private async assertProductExists(productId: string): Promise<void> {
-    const exists = await this.productsRepository.exists({ where: { id: productId } });
+  /**
+   * Proves the product exists *and* belongs to this account.
+   *
+   * Listings carry no owner of their own — they hang off a product, which is
+   * where ownership is recorded. This is the one place that fact is checked,
+   * so every path into a listing goes through it.
+   *
+   * Another account's product is reported as missing rather than forbidden:
+   * the difference between those two answers is itself a way to discover what
+   * somebody else tracks.
+   */
+  private async assertProductExists(ownerId: string, productId: string): Promise<void> {
+    const exists = await this.productsRepository.exists({ where: { id: productId, ownerId } });
 
     if (!exists) {
       throw new NotFoundException(`Product with id "${productId}" not found.`);

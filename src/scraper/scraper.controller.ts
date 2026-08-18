@@ -9,8 +9,10 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { PriceCheckResultDto } from '../products/dto/price-check-result.dto';
+import { CompetitorsService } from '../products/competitors.service';
 import { ProductsService } from '../products/products.service';
 import { ScrapeRunResultDto, ScraperStatusDto } from './dto/scrape-run-result.dto';
 import { ScraperService } from './scraper.service';
@@ -22,6 +24,7 @@ export class ScraperController {
   constructor(
     private readonly scraperService: ScraperService,
     private readonly productsService: ProductsService,
+    private readonly competitorsService: CompetitorsService,
   ) {}
 
   @Get('status')
@@ -72,10 +75,13 @@ export class ScraperController {
   })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   async trigger(
+    @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<PriceCheckResultDto[]> {
-    // Resolve first so an unknown id is a clean 404 rather than an empty array.
-    await this.productsService.findOne(id);
+    // Resolves first, which makes an unknown id a clean 404 rather than an
+    // empty array — and refuses another customer's product, which would
+    // otherwise be a way to make us fetch pages on their behalf.
+    await this.productsService.findOne(ownerId, id);
     return this.scraperService.scrapeProductById(id);
   }
 
@@ -88,9 +94,14 @@ export class ScraperController {
   @ApiParam({ name: 'competitorId', format: 'uuid', description: 'Competitor identifier.' })
   @ApiOkResponse({ description: 'Check completed.', type: PriceCheckResultDto })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
-  refresh(
+  async refresh(
+    @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
   ): Promise<PriceCheckResultDto> {
+    // Proved before the fetch. Otherwise any key could make us go and read a
+    // page on behalf of another account's listing, and write the result to it.
+    await this.competitorsService.findOne(ownerId, competitorId);
+
     return this.scraperService.scrapeCompetitorById(competitorId);
   }
 }

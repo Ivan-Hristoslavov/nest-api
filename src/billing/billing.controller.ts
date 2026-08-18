@@ -33,6 +33,7 @@ import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AuthenticatedRequest } from '../common/guards/api-key.guard';
 import { BillingService } from './billing.service';
+import { MailService } from './mail.service';
 import { IssuedApiKeyDto, MyAccountDto, RotateApiKeyDto } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
@@ -49,6 +50,7 @@ export class BillingController {
     private readonly billingService: BillingService,
     private readonly signatureService: WebhookSignatureService,
     private readonly usersService: UsersService,
+    private readonly mail: MailService,
   ) {}
 
   /**
@@ -245,6 +247,11 @@ export class BillingController {
   ): Promise<IssuedApiKeyDto> {
     const { user, apiKey } = await this.usersService.issueApiKey(userId, environment);
 
+    // Emailed as well as returned. The response reaches whoever made the
+    // request — often an operator acting for the customer — and the customer
+    // is the one who needs the key.
+    const emailed = await this.mail.sendApiKey(user, apiKey, replacedPreviousKey);
+
     return {
       userId: user.id,
       email: user.email,
@@ -252,7 +259,31 @@ export class BillingController {
       prefix: user.apiKeyPrefix ?? '',
       issuedAt: (user.apiKeyIssuedAt ?? new Date()).toISOString(),
       replacedPreviousKey,
+      emailed,
     };
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Get('mail/health')
+  @ApiOperation({
+    summary: 'Is outgoing email working? (operator only)',
+    description:
+      'Opens a connection to the SMTP server and authenticates, without sending anything. Worth checking before a launch: a paid account whose key cannot be emailed is a support ticket, not a customer.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        enabled: { type: 'boolean' },
+        ok: { type: 'boolean' },
+        detail: { type: 'string' },
+      },
+    },
+  })
+  async mailHealth(): Promise<{ enabled: boolean; ok: boolean; detail: string }> {
+    const result = await this.mail.verify();
+    return { enabled: this.mail.enabled, ...result };
   }
 
   /** Not part of the public contract; used by the deployment smoke check. */

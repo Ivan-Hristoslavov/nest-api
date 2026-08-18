@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
+import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { CompetitorsService } from './competitors.service';
 import { CreateCompetitorDto } from './dto/create-competitor.dto';
@@ -46,9 +47,10 @@ export class CompetitorsController {
   @ApiOkResponse({ description: 'Competitor listings.', type: Competitor, isArray: true })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   findAll(
+    @Owner() ownerId: string,
     @Param('productId', new ParseUUIDPipe({ version: '4' })) productId: string,
   ): Promise<Competitor[]> {
-    return this.competitorsService.findAllForProduct(productId);
+    return this.competitorsService.findAllForProduct(ownerId, productId);
   }
 
   @Post()
@@ -66,10 +68,11 @@ export class CompetitorsController {
   })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   create(
+    @Owner() ownerId: string,
     @Param('productId', new ParseUUIDPipe({ version: '4' })) productId: string,
     @Body() dto: CreateCompetitorDto,
   ): Promise<Competitor> {
-    return this.competitorsService.create(productId, dto);
+    return this.competitorsService.create(ownerId, productId, dto);
   }
 
   @Patch(':competitorId')
@@ -79,10 +82,11 @@ export class CompetitorsController {
   @ApiOkResponse({ description: 'Updated listing.', type: Competitor })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
   update(
+    @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
     @Body() dto: UpdateCompetitorDto,
   ): Promise<Competitor> {
-    return this.competitorsService.update(competitorId, dto);
+    return this.competitorsService.update(ownerId, competitorId, dto);
   }
 
   @Delete(':competitorId')
@@ -100,9 +104,10 @@ export class CompetitorsController {
   })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
   remove(
+    @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
   ): Promise<void> {
-    return this.competitorsService.remove(competitorId);
+    return this.competitorsService.remove(ownerId, competitorId);
   }
 
   @Patch(':competitorId/promote')
@@ -115,9 +120,10 @@ export class CompetitorsController {
   @ApiOkResponse({ description: 'The promoted listing.', type: Competitor })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
   promote(
+    @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
   ): Promise<Competitor> {
-    return this.competitorsService.promoteToPrimary(competitorId);
+    return this.competitorsService.promoteToPrimary(ownerId, competitorId);
   }
 
   @Post(':competitorId/prices')
@@ -131,10 +137,16 @@ export class CompetitorsController {
   @ApiParam({ name: 'competitorId', format: 'uuid' })
   @ApiOkResponse({ description: 'Observation applied.', type: PriceCheckResultDto })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
-  recordPrice(
+  async recordPrice(
+    @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
     @Body() dto: RecordPriceDto,
   ): Promise<PriceCheckResultDto> {
+    // `applyPriceObservation` takes a bare id and is also called by the
+    // background sweep, so entitlement is proved here before it is reached.
+    // Without this, a caller could write prices onto another account's listing.
+    await this.competitorsService.findOne(ownerId, competitorId);
+
     return this.competitorsService.applyPriceObservation(competitorId, {
       price: dto.price,
       source: dto.source ?? 'manual',

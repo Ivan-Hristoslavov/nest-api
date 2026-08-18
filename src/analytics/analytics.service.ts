@@ -36,8 +36,8 @@ export class AnalyticsService {
    * rival is, the trend says which way it is moving, and the per-competitor
    * breakdown says who is actually setting the market price.
    */
-  async forProduct(productId: string, days: number): Promise<ProductAnalyticsDto> {
-    const product = await this.productsService.findOne(productId);
+  async forProduct(ownerId: string, productId: string, days: number): Promise<ProductAnalyticsDto> {
+    const product = await this.productsService.findOne(ownerId, productId);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     const history = await this.priceHistoryRepository
@@ -97,7 +97,7 @@ export class AnalyticsService {
    * Portfolio-level view: how the catalog sits against the market right now.
    * One pass over the products table plus one over the listings.
    */
-  async overview(): Promise<MarketOverviewDto> {
+  async overview(ownerId: string): Promise<MarketOverviewDto> {
     const products = await this.productsRepository
       .createQueryBuilder('product')
       .select('COUNT(*)::int', 'trackedProducts')
@@ -119,6 +119,7 @@ export class AnalyticsService {
         'AVG(product.our_price - product.current_price) FILTER (WHERE product.our_price IS NOT NULL AND product.current_price IS NOT NULL)',
         'averageGap',
       )
+      .where('product.owner_id = :ownerId', { ownerId })
       .getRawOne<{
         trackedProducts: number;
         activeProducts: number;
@@ -135,6 +136,9 @@ export class AnalyticsService {
       .addSelect('COUNT(*) FILTER (WHERE competitor.is_active)::int', 'active')
       .addSelect("COUNT(*) FILTER (WHERE competitor.scrape_status = 'failed')::int", 'failing')
       .addSelect('COUNT(DISTINCT competitor.host)::int', 'retailers')
+      // Listings hang off products, which is where ownership is recorded.
+      .innerJoin('competitor.product', 'product')
+      .where('product.owner_id = :ownerId', { ownerId })
       .getRawOne<{ total: number; active: number; failing: number; retailers: number }>();
 
     const movers = await this.priceHistoryRepository
@@ -145,7 +149,8 @@ export class AnalyticsService {
       .addSelect('history.change_percent', 'changePercent')
       .addSelect('history.price', 'price')
       .addSelect('history.recorded_at', 'recordedAt')
-      .where("history.recorded_at >= NOW() - INTERVAL '7 days'")
+      .where('product.owner_id = :ownerId', { ownerId })
+      .andWhere("history.recorded_at >= NOW() - INTERVAL '7 days'")
       .andWhere('history.change_percent IS NOT NULL')
       .orderBy('ABS(history.change_percent)', 'DESC')
       .limit(10)

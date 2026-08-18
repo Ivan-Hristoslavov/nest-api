@@ -128,11 +128,15 @@ export class AlertsService {
     return this.alertsRepository.save(alert);
   }
 
-  async findAll(query: QueryAlertsDto): Promise<PaginatedResponseDto<Alert>> {
+  async findAll(ownerId: string, query: QueryAlertsDto): Promise<PaginatedResponseDto<Alert>> {
     const qb = this.alertsRepository
       .createQueryBuilder('alert')
-      .leftJoinAndSelect('alert.product', 'product')
-      .leftJoinAndSelect('alert.competitor', 'competitor');
+      // An inner join, not a left one: an alert always concerns a product, and
+      // ownership is recorded there. Left-joining would return alerts whose
+      // product row failed the filter.
+      .innerJoinAndSelect('alert.product', 'product')
+      .leftJoinAndSelect('alert.competitor', 'competitor')
+      .where('product.owner_id = :ownerId', { ownerId });
 
     if (query.productId) {
       qb.andWhere('alert.productId = :productId', { productId: query.productId });
@@ -159,11 +163,14 @@ export class AlertsService {
     return new PaginatedResponseDto(items, total, query.limit, query.offset);
   }
 
-  async findOne(id: string): Promise<Alert> {
-    const alert = await this.alertsRepository.findOne({
-      where: { id },
-      relations: { product: true, competitor: true },
-    });
+  async findOne(ownerId: string, id: string): Promise<Alert> {
+    const alert = await this.alertsRepository
+      .createQueryBuilder('alert')
+      .innerJoinAndSelect('alert.product', 'product')
+      .leftJoinAndSelect('alert.competitor', 'competitor')
+      .where('alert.id = :id', { id })
+      .andWhere('product.owner_id = :ownerId', { ownerId })
+      .getOne();
 
     if (!alert) {
       throw new NotFoundException(`Alert with id "${id}" not found.`);
@@ -173,8 +180,8 @@ export class AlertsService {
   }
 
   /** Marks an alert as handled. Idempotent: the first timestamp is kept. */
-  async acknowledge(id: string): Promise<Alert> {
-    const alert = await this.findOne(id);
+  async acknowledge(ownerId: string, id: string): Promise<Alert> {
+    const alert = await this.findOne(ownerId, id);
 
     if (alert.acknowledgedAt === null) {
       alert.acknowledgedAt = new Date();
@@ -185,14 +192,19 @@ export class AlertsService {
   }
 
   /** Re-attempts delivery for an alert that previously failed. */
-  async retryDelivery(id: string, context: AlertContext): Promise<Alert> {
-    return this.deliver(await this.findOne(id), context);
+  async retryDelivery(ownerId: string, id: string, context: AlertContext): Promise<Alert> {
+    return this.deliver(await this.findOne(ownerId, id), context);
   }
 
-  async countUnacknowledged(): Promise<number> {
+  async countUnacknowledged(ownerId: string): Promise<number> {
     // IsNull(), not `undefined`: an undefined value is treated as "no filter"
     // by TypeORM and would silently count every alert ever raised.
-    return this.alertsRepository.count({ where: { acknowledgedAt: IsNull() } });
+    return this.alertsRepository
+      .createQueryBuilder('alert')
+      .innerJoin('alert.product', 'product')
+      .where('product.owner_id = :ownerId', { ownerId })
+      .andWhere('alert.acknowledged_at IS NULL')
+      .getCount();
   }
 
   /**

@@ -19,12 +19,20 @@ export class ShopsService {
 
   constructor(@InjectRepository(Shop) private readonly shops: Repository<Shop>) {}
 
-  findAll(): Promise<Shop[]> {
-    return this.shops.find({ order: { name: 'ASC' } });
+  findAll(ownerId: string): Promise<Shop[]> {
+    return this.shops.find({ where: { ownerId }, order: { name: 'ASC' } });
   }
 
-  async findOne(id: string): Promise<Shop> {
-    const shop = await this.shops.findOne({ where: { id } });
+  /**
+   * One supplier of this account.
+   *
+   * A shop belonging to somebody else is reported as missing rather than
+   * forbidden: "not found" and "not yours" are the same fact to a caller who
+   * is not entitled to know the row exists, and the difference between the two
+   * answers is itself a way to enumerate other customers' suppliers.
+   */
+  async findOne(ownerId: string, id: string): Promise<Shop> {
+    const shop = await this.shops.findOne({ where: { id, ownerId } });
     if (!shop) throw new NotFoundException(`Няма магазин с id "${id}".`);
     return shop;
   }
@@ -37,22 +45,25 @@ export class ShopsService {
    * *not* stripped — `bg.elmarkstore.eu` and `elmarkstore.eu` are different
    * storefronts with different catalogues and, often, different prices.
    */
-  async create(input: {
-    host: string;
-    name?: string;
-    discountPercent?: number;
-    currency?: string;
-    searchUrlTemplate?: string;
-    searchResultSelector?: string;
-    searchTileSelector?: string;
-    searchTitleSelector?: string;
-    searchPriceSelector?: string;
-    searchConfidence?: number;
-  }): Promise<Shop> {
+  async create(
+    ownerId: string,
+    input: {
+      host: string;
+      name?: string;
+      discountPercent?: number;
+      currency?: string;
+      searchUrlTemplate?: string;
+      searchResultSelector?: string;
+      searchTileSelector?: string;
+      searchTitleSelector?: string;
+      searchPriceSelector?: string;
+      searchConfidence?: number;
+    },
+  ): Promise<Shop> {
     const host = normaliseHost(input.host);
 
-    const existing = await this.shops.findOne({ where: { host } });
-    const shop = existing ?? this.shops.create({ host });
+    const existing = await this.shops.findOne({ where: { host, ownerId } });
+    const shop = existing ?? this.shops.create({ host, ownerId });
 
     shop.name = input.name ?? existing?.name ?? host;
     shop.discountPercent = input.discountPercent ?? existing?.discountPercent ?? 0;
@@ -85,8 +96,8 @@ export class ShopsService {
    * probed as live-searchable is searchable from that moment without a second
    * round trip to work out its selectors again.
    */
-  async applyProbe(id: string, result: ProbeResult): Promise<Shop> {
-    const shop = await this.findOne(id);
+  async applyProbe(ownerId: string, id: string, result: ProbeResult): Promise<Shop> {
+    const shop = await this.findOne(ownerId, id);
 
     shop.searchMethod = result.method;
     shop.searchSummary = result.summary;
@@ -106,14 +117,17 @@ export class ShopsService {
     return this.shops.save(shop);
   }
 
-  async update(id: string, changes: Partial<Shop>): Promise<Shop> {
-    const shop = await this.findOne(id);
+  async update(ownerId: string, id: string, changes: Partial<Shop>): Promise<Shop> {
+    const shop = await this.findOne(ownerId, id);
+    // The owner is never taken from the payload: accepting it there would let
+    // a caller move their row into somebody else's account.
+    delete changes.ownerId;
     Object.assign(shop, changes);
     return this.shops.save(shop);
   }
 
-  async remove(id: string): Promise<void> {
-    const shop = await this.findOne(id);
+  async remove(ownerId: string, id: string): Promise<void> {
+    const shop = await this.findOne(ownerId, id);
     await this.shops.remove(shop);
     this.logger.log(`Shop ${shop.host} removed.`);
   }

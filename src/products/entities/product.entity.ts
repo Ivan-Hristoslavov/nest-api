@@ -28,6 +28,7 @@ import { PriceHistory } from './price-history.entity';
 @Index('idx_products_competitor_url', ['competitorUrl'])
 // The dashboard groups and filters by brand and by category; without these two
 // every such view is a sequential scan over the whole catalogue.
+@Index('idx_products_owner', ['ownerId'])
 @Index('idx_products_brand', ['brand'])
 @Index('idx_products_category', ['category'])
 export class Product {
@@ -38,6 +39,18 @@ export class Product {
   })
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /**
+   * The account this product belongs to.
+   *
+   * Every query is filtered by it. What this protects is not merely privacy:
+   * the comparison ranks by each customer's *negotiated discount*, and a
+   * supplier discount is a commercial secret. Two customers sharing a table
+   * would be reading each other's terms.
+   */
+  @ApiProperty({ description: 'Owning account.', format: 'uuid' })
+  @Column({ name: 'owner_id', type: 'uuid' })
+  ownerId!: string;
 
   @ApiProperty({
     description: 'Human readable product name.',

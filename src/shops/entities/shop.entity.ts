@@ -28,11 +28,24 @@ import { numericTransformer } from '../../common/transformers/numeric-column.tra
  * is by what *this customer* pays, and a higher shelf price can win.
  */
 @Entity('shops')
-@Index('idx_shops_host', ['host'], { unique: true })
+// Unique per owner, not globally: two customers may both buy from the same
+// wholesaler, on entirely different terms.
+@Index('idx_shops_owner_host', ['ownerId', 'host'], { unique: true })
 export class Shop {
   @ApiProperty({ format: 'uuid' })
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /**
+   * The account this supplier belongs to.
+   *
+   * The discount on this row is the customer's negotiated rate — a commercial
+   * secret, and the number the whole comparison turns on. Sharing shop rows
+   * between accounts would publish it.
+   */
+  @ApiProperty({ format: 'uuid', description: 'Owning account.' })
+  @Column({ name: 'owner_id', type: 'uuid' })
+  ownerId!: string;
 
   @ApiProperty({ description: 'Hostname, without `www.`', example: 'tmt-elkom.com' })
   @Column({ type: 'varchar', length: 255 })

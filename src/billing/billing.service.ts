@@ -4,6 +4,7 @@ import { QueryFailedError, Repository } from 'typeorm';
 
 import { BillingEvent } from './entities/billing-event.entity';
 import { UserPlan } from './entities/user.entity';
+import { MailService } from './mail.service';
 import { UsersService } from './users.service';
 
 /** Normalised view of a provider payload, so the handlers stay provider-agnostic. */
@@ -71,6 +72,7 @@ export class BillingService {
     @InjectRepository(BillingEvent)
     private readonly eventsRepository: Repository<BillingEvent>,
     private readonly usersService: UsersService,
+    private readonly mail: MailService,
   ) {}
 
   /**
@@ -151,25 +153,40 @@ export class BillingService {
     });
 
     let apiKey: string | undefined;
+    let delivered = false;
 
     if (!user.apiKeyPrefix) {
       const issued = await this.usersService.issueApiKey(user.id, 'live');
       apiKey = issued.apiKey;
 
-      // The plaintext exists only here. In production this is where the
-      // welcome email goes out; it can never be recovered afterwards.
-      this.logger.log(
-        `Issued first API key for ${user.email}. Deliver it now — it cannot be retrieved later.`,
-      );
+      // The plaintext exists only here — the column holds a hash — so this is
+      // the one moment it can be delivered. A failure to send is logged and
+      // reported, never thrown: the charge succeeded and the account is live,
+      // and a webhook that answers non-2xx makes the provider retry a payment
+      // that already worked.
+      delivered = await this.mail.sendApiKey(issued.user, issued.apiKey);
+
+      if (!delivered) {
+        this.logger.warn(
+          `Issued the first API key for ${user.email} but could NOT email it. ` +
+            'Deliver it from the operator screen — it cannot be retrieved later.',
+        );
+      }
     }
 
-    await this.finish(record, true, apiKey ? 'Activated and issued API key' : 'Activated', user.id);
+    const note = apiKey
+      ? delivered
+        ? 'Account activated, API key issued and emailed'
+        : 'Account activated, API key issued but NOT delivered — send it manually'
+      : 'Account activated';
+
+    await this.finish(record, true, note, user.id);
 
     return {
       received: true,
       processed: true,
       duplicate: false,
-      note: apiKey ? 'Account activated, API key issued' : 'Account activated',
+      note,
       userId: user.id,
       apiKey,
     };
