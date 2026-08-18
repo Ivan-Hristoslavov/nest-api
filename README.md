@@ -1,16 +1,19 @@
 # nest-api — Price Intelligence API
 
-Competitor price tracking as a paid API. NestJS + TypeORM on Supabase PostgreSQL, real web scraping, alerting, analytics, and self-service accounts provisioned by payment webhooks.
+Supplier price comparison for buyers, sold as a paid API with a web front end. NestJS + TypeORM on Supabase PostgreSQL, real web scraping, alerting, analytics, self-service free accounts and paid ones provisioned by Stripe webhooks.
 
 ---
 
 ## 1. What it does
 
-1. You register products and the competitor listings you want watched.
-2. A scheduled sweep fetches each listing, extracts the price and stores it.
-3. Movements beyond a threshold, undercuts and all-time lows raise alerts and go out to Slack or a webhook.
-4. Analytics endpoints answer "who sets the market price, which way is it moving, where are we losing".
-5. Customers pay through Paddle or Lemon Squeezy; the webhook activates their account and issues their API key.
+A buyer — an electrician, a shop, a distributor — has five wholesale suppliers and no way to tell which is cheapest this morning.
+
+1. They register their suppliers. Each is probed for a working search, and `robots.txt` is checked before anything else happens. A supplier with no website at all is added by uploading its price list.
+2. They ask for one article, or price a whole order at once. Every supplier is asked in parallel and the offers are grouped by size, so 3x1.5 is never compared against a drum of 5x4.
+3. What they buy regularly goes under watch. A scheduled sweep re-checks each listing, stores movements and raises alerts past a threshold, below a target price, or when a listing starts failing.
+4. Alerts go to the customer's own email, to Slack, or to their webhook.
+5. Analytics answer "which way is this moving and where am I losing".
+6. Accounts: free ones self-serve at `POST /billing/signup`, paid ones are created by the Stripe webhook. Either way the key is issued once and emailed.
 
 ---
 
@@ -23,7 +26,7 @@ Competitor price tracking as a paid API. NestJS + TypeORM on Supabase PostgreSQL
 | ORM | TypeORM 0.3, migrations, repository pattern |
 | Scraping | axios + cheerio, robots.txt aware, per-host rate limiting |
 | Scheduling | `@nestjs/schedule` dynamic cron |
-| Payments | Paddle / Lemon Squeezy webhooks (merchant of record) |
+| Payments | Stripe Checkout + webhooks (no card data touches this app) |
 | Auth | `X-API-KEY`, hashed in the database, constant-time operator keys |
 | Docs | OpenAPI 3 at `/api/docs` |
 | Hardening | helmet, CORS allowlist, `@nestjs/throttler`, HMAC webhook signatures |
@@ -120,8 +123,20 @@ Everything except `/health` and the billing webhook needs `X-API-KEY`.
 | GET | `/api/v1/analytics/overview` | Portfolio position and biggest movers |
 | GET | `/api/v1/alerts` | Price alerts, newest first |
 | PATCH | `/api/v1/alerts/:id/acknowledge` | Mark handled |
-| POST | `/api/v1/billing/webhook` | Paddle / Lemon Squeezy events |
+| GET/POST | `/api/v1/shops` | Suppliers to compare, including ones with no website |
+| POST | `…/shops/:id/probe` | Re-check whether a supplier is searchable |
+| GET/POST | `…/shops/:id/prices` | Prices you typed in yourself, for a supplier with no site |
+| GET | `/api/v1/discovery/search` | Live search across your suppliers |
+| **POST** | **`/api/v1/discovery/basket`** | **Price a whole order at every supplier** |
+| GET | `/api/v1/discovery/compare` | Offers for one article, grouped |
+| POST | `/api/v1/discovery/detect` | Probe a domain before adding it |
+| **POST** | **`/api/v1/billing/signup`** | **Public. Free account + key, no card** |
+| POST | `/api/v1/billing/checkout` | Public. Starts a Stripe Checkout Session |
+| GET | `/api/v1/billing/plans` | Public. Which plans have a Stripe price configured |
+| POST | `/api/v1/billing/webhook` | Stripe events |
 | GET | `/api/v1/billing/events` | Recent webhooks, for support |
+| GET | `/api/v1/billing/me` | The calling account: plan, limit, key prefix |
+| GET | `/api/v1/stats` | Public. Aggregate counters the landing page prints |
 | GET | `/health` | Public liveness + database probe |
 
 ---
@@ -173,24 +188,33 @@ Adding a retailer means one entry in that file. A `priceSelector` stored on a li
 
 Alerts are **persisted before delivery**, so a Slack outage cannot lose one, and a failed alert can be inspected and retried. Channels are independent — Slack failing does not stop the webhook. A cooldown (`ALERT_COOLDOWN_MINUTES`) stops a listing oscillating around the threshold from paging someone hourly.
 
+Three channels:
+
 ```
 ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ALERT_WEBHOOK_URL=https://your-app.example.com/hooks/price
-ALERT_WEBHOOK_SECRET=...   # payloads signed HMAC-SHA256 in X-Signature
+ALERT_WEBHOOK_SECRET=...          # payloads signed HMAC-SHA256 in X-Signature
+ALERT_EMAIL_FALLBACK_TO=ops@...   # only for alerts whose product has no owner
 ```
 
-With neither set, alerts are still stored, with `deliveryStatus: "skipped"`.
+Slack and the webhook are one endpoint for the whole deployment — an operator's channels. **Email is the customer's**: the recipient is resolved per alert from the account that owns the product, and it is on whenever SMTP is configured. An owner that cannot be resolved sends nothing rather than falling back, because the fallback is an operator inbox and these are somebody's negotiated prices.
+
+With no channel configured, alerts are still stored, with `deliveryStatus: "skipped"`.
 
 ---
 
 ## 8. Billing and API keys
 
-### Flow
+### Two ways in
+
+**Free, self-served.** `POST /billing/signup` with an email creates an active account on the free plan (10 tracked articles), issues a key, emails it *and* returns it in the response — an onboarding that depends on an inbox loses everyone whose mail is slow or mistyped. Throttled to 5 per hour per IP. An address that already has an account is refused with 409 rather than re-keyed: issuing is destructive, so re-keying would let a stranger lock a customer out.
+
+**Paid.**
 
 ```
-customer pays on your frontend
+visitor clicks a plan → POST /api/v1/billing/checkout → Stripe Checkout
         ↓
-Paddle / Lemon Squeezy → POST /api/v1/billing/webhook
+Stripe → POST /api/v1/billing/webhook
         ↓
 signature verified over the RAW body (HMAC-SHA256, constant time, freshness window)
         ↓
@@ -209,7 +233,7 @@ The `users` table holds a SHA-256 hash plus a display prefix. A database leak do
 
 ### Two kinds of key
 
-- **Customer keys** — issued by billing, looked up in the database, must belong to an `active` account whose access window has not lapsed. A genuine key on a lapsed account gets **403 with a "renew your subscription" message**, not 401 — so a client can tell "pay us" from "check your credentials".
+- **Customer keys** — issued by signup or by billing, looked up in the database, must belong to an `active` account whose access window has not lapsed. A genuine key on a lapsed account gets **403 with a "renew your subscription" message**, not 401 — so a client can tell "pay us" from "check your credentials".
 - **Operator keys** — `API_KEY` / `API_KEYS` from the environment. They exist because the system must be administrable before the first customer exists. Compared in constant time, never hit the database.
 
 Lookups are cached for `API_KEY_CACHE_TTL_MS` (default 30s), including misses, so an invalid-key flood cannot become a database flood.
@@ -254,11 +278,27 @@ npm run migration:run    # apply pending migrations
 
 ---
 
-## 11. Before this earns money
+## 11. Launch checklist
 
-- **Rotate the credentials.** The database password and Supabase keys were shared in plain text during setup, and `API_KEY` is a sample.
-- **Set a real `PADDLE_WEBHOOK_SECRET`.** Without it the webhook rejects everything — which is the correct failure mode, but it means no customer is ever provisioned.
-- **Send the key to the customer.** `BillingService` issues it and logs that it must be delivered; wiring the actual email is the one deliberate gap, because it needs an email provider you choose.
-- **Set `CORS_ORIGINS`** to your frontend instead of `*`.
-- **Check each retailer's terms** before adding it.
-- **Enforce `productLimit`.** The plan limits are stored on the user; the check at product-creation time is not wired up yet.
+Ordered so nothing on the list depends on something below it.
+
+**Blocking — a customer hits these on day one**
+
+- [ ] **Fill in `COMPANY`** near the bottom of [public/index.html](public/index.html): company name, EIK, address, contact email, mail provider, effective date. Until then the terms, the privacy policy, the GDPR appendix, the footer and every "write to us" button show `[ФИРМА]` and the contact link is disabled — visibly, on purpose.
+- [ ] **Have a lawyer read the three legal pages.** They are written against what the code actually does, which is the hard half, but they are not legal advice.
+- [ ] **Rotate the credentials.** The database password and Supabase keys were shared in plain text during setup, and `API_KEY` is a sample.
+- [ ] **Set `CORS_ORIGINS`** to your domain instead of `*`.
+- [ ] **Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and a price id per plan** (`STRIPE_STARTER_PRICE_ID`, `STRIPE_PRO_PRICE_ID`, `STRIPE_BUSINESS_PRICE_ID`). Without them the pricing buttons degrade to "write to us" — correct, but nobody can buy. `GET /billing/plans` tells you what is live.
+- [ ] **Check SMTP** with `GET /billing/mail/health` (operator key). Email carries both the API keys and the alerts; without it a paid account is a support ticket.
+- [ ] **Point `APP_URL`** at the real domain — Stripe redirects back to it after checkout.
+
+**Worth doing before you advertise**
+
+- [ ] Add your own suppliers and run one real order through `POST /discovery/basket`. The first search per supplier takes 6–20 seconds; after that it is cached.
+- [ ] Decide what `ALERT_EMAIL_FALLBACK_TO` should be, or leave it unset.
+- [ ] **Check each supplier's terms** before adding it. `robots.txt` is honoured automatically; terms of service are not machine-readable and remain a human decision.
+- [ ] Watch `GET /stats` — it is what the landing page prints, so it is also the fastest way to see whether sweeps are working.
+
+**Already done, listed so it is not redone**
+
+- Free self-serve signup, product limits enforced per plan at creation time, API keys emailed on issue, alerts by email as well as Slack and webhook, real counters on the landing page, terms/privacy/GDPR pages, Stripe Checkout wired end to end.
