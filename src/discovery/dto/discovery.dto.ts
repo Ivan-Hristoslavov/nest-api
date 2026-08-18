@@ -45,6 +45,13 @@ export class DiscoveredProductDto {
     nullable: true,
   })
   recordedAt?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Where the figure came from: read now, reused from a recent read, or entered by you.',
+    enum: ['live', 'cached', 'manual'],
+  })
+  priceSource?: 'live' | 'cached' | 'manual';
 }
 
 export class ShopSearchResultDto {
@@ -259,6 +266,14 @@ export class RankedHitDto {
     nullable: true,
   })
   recordedAt!: string | null;
+
+  @ApiProperty({
+    description:
+      'Where this figure came from. `live` was read from the shop moments ago, `cached` within the last few hours, `manual` is what you entered for a supplier that publishes nothing. They carry different weight and the interface says which is which.',
+    enum: ['live', 'cached', 'manual'],
+    example: 'live',
+  })
+  priceSource!: 'live' | 'cached' | 'manual';
 }
 
 export class ShopOutcomeDto {

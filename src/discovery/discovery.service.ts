@@ -492,9 +492,11 @@ export class DiscoveryService {
         durationMs: 0,
         products: cached.products.map((product) => ({
           ...product,
-          // Stamped so the ranking can say how old this is, exactly as it does
-          // for a hand-entered price.
+          // Stamped so the ranking can say how old this is — and marked as a
+          // reused answer rather than one the buyer supplied, which are not
+          // the same claim and were briefly labelled as though they were.
           recordedAt: cached.fetchedAt.toISOString(),
+          priceSource: 'cached' as const,
         })),
       };
     }
@@ -634,6 +636,7 @@ export class DiscoveryService {
           shopId: shop.id,
           discountPercent: shop.percent,
           recordedAt: product.recordedAt ?? null,
+          priceSource: product.priceSource ?? 'live',
         });
       }
     }
@@ -786,6 +789,7 @@ export class DiscoveryService {
         shopName: shop.name,
         // Carried through so the ranking can say how old the figure is.
         recordedAt: row.updatedAt.toISOString(),
+        priceSource: 'manual' as const,
       })),
     };
   }

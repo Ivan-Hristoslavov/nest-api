@@ -91,12 +91,35 @@ describe('ranking', () => {
         'EUR',
       );
 
+      // Cable before drums, and the two gauges apart: a 1x1.5 is not bought
+      // instead of a 1x2.5, so a price difference between them is not a
+      // finding.
       expect(hits.map((hit) => hit.groupLabel)).toEqual([
-        'КАБЕЛ H05V-K',
-        'КАБЕЛ H05V-K',
+        'КАБЕЛ H05V-K 1X1.5',
+        'КАБЕЛ H05V-K 1X2.5',
         'МАКАРА',
         'МАКАРА',
       ]);
+    });
+
+    it('groups the same article from different suppliers together', () => {
+      // The comparison the buyer came for. Splitting by size is only worth
+      // doing if it still brings one article's offers together across shops.
+      const hits = rank(
+        [
+          offer({ title: 'КАБЕЛ СВТ 3x2.5', price: 0.9, shopName: 'А' }),
+          offer({ title: 'КАБЕЛ СВТ 3x2.5', price: 0.62, shopName: 'Б', shopId: 'shop-2' }),
+          offer({ title: 'КАБЕЛ СВТ 5x4', price: 1.85, shopName: 'А' }),
+        ],
+        'EUR',
+      );
+
+      const groups = new Set(
+        hits.filter((hit) => hit.name.includes('3x2.5')).map((hit) => hit.groupKey),
+      );
+
+      expect(groups.size).toBe(1);
+      expect(hits[0].shopName).toBe('Б');
     });
 
     it('leaves unpriced results at the end, not at the top', () => {
@@ -161,16 +184,21 @@ describe('ranking', () => {
   });
 
   describe('groupOf', () => {
-    it('groups by model code when the name carries one', () => {
-      expect(groupOf('КАБЕЛ H05V-K 1x1.5 ЧЕРЕН').label).toBe('КАБЕЛ H05V-K');
+    it('groups by model code and size, which together identify the article', () => {
+      expect(groupOf('КАБЕЛ H05V-K 1x1.5 ЧЕРЕН').label).toBe('КАБЕЛ H05V-K 1X1.5');
     });
 
     it('falls back to the leading noun', () => {
       expect(groupOf('МАКАРА КАБЕЛНА 25м').label).toBe('МАКАРА');
     });
 
-    it('does not mistake a dimension for a model code', () => {
-      expect(groupOf('КАБЕЛ 3x2.5MM2').label).toBe('КАБЕЛ');
+    it('does not mistake a dimension for a model code, but keeps it in the label', () => {
+      // Not a code — every shop selling that gauge writes it — yet it is what
+      // separates one cable from another, so it belongs in the group.
+      const group = groupOf('КАБЕЛ 3x2.5MM2');
+
+      expect(group.label).toBe('КАБЕЛ 3X2.5MM2');
+      expect(group.label.startsWith('КАБЕЛ ')).toBe(true);
     });
 
     it('does not mistake a bracketed equivalent wattage for a model code', () => {

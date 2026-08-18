@@ -5071,13 +5071,16 @@
 
         closeModal('shop-modal');
 
-        const pending = toast(
-          'Проверявам ' + host + ' — как може да се търси в него…',
-          'info',
-        );
-
+        // Two steps, deliberately, because they take very different times.
+        //
+        // Registering the shop is instant; working out how to search it means
+        // reading a robots.txt and possibly a megabyte of sitemap, which took
+        // twenty seconds on a real supplier. Done as one call the screen sat
+        // there showing a single toast and nothing else, and the shop only
+        // appeared after a manual refresh — the user could not tell whether
+        // anything had happened.
         try {
-          const response = await fetch(ENDPOINTS.shops, {
+          const response = await fetch(ENDPOINTS.shops + '?probe=false', {
             method: 'POST',
             headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
@@ -5091,20 +5094,58 @@
           }
 
           const shop = await response.json();
+
+          // On screen immediately, so the answer to "did that work" is yes.
           await loadShops();
 
-          // Straight into the one step that actually makes the shop useful —
-          // but only where that step can succeed. A shop whose robots.txt
-          // forbids its search is told so now, not after the user has hunted
-          // down a search URL for a dialog that was always going to refuse it.
-          // The server has already worked out how this shop can be searched
-          // and said so in its own words. Repeating the decision here in
-          // different words is how the two drift apart.
-          toast(shop.searchSummary || 'Добавен.', shop.searchMethod === 'none' ? 'info' : 'success');
+          if (shop.hasWebsite === false) {
+            toast(shop.searchSummary || 'Добавен. Качете ценоразписа му.', 'success');
+            return;
+          }
+
+          await probeNewShop(shop);
         } catch (error) {
           toast('Неуспешно: ' + error.message, 'error');
         }
       });
+
+      /**
+       * Works out how a freshly added shop can be searched, in view.
+       *
+       * The row is already on screen; this marks it as being checked and
+       * replaces that with the verdict. Reading a supplier's sitemap is tens
+       * of seconds, and silence for that long reads as a broken screen.
+       */
+      async function probeNewShop(shop) {
+        const row = document.querySelector('[data-shop="' + shop.id + '"]');
+        const button = row ? row.querySelector('[data-reprobe]') : null;
+
+        if (button) {
+          button.disabled = true;
+          button.innerHTML =
+            '<i class="fa-solid fa-circle-notch fa-spin text-[11px]"></i>Проверявам…';
+        }
+
+        toast('Добавен. Проверявам как може да се търси в него…', 'info');
+
+        try {
+          const response = await fetch(ENDPOINTS.shops + '/' + shop.id + '/probe', {
+            method: 'POST',
+            headers: authHeaders(),
+          });
+
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          const probed = await response.json();
+          toast(probed.searchSummary || 'Готово.', probed.searchMethod === 'none' ? 'info' : 'success');
+        } catch (error) {
+          // The shop is added either way; only the verdict is missing, and the
+          // row's own button can be used to try again.
+          toast('Добавен, но проверката не мина: ' + error.message, 'info');
+        } finally {
+          await loadShops();
+        }
+      }
 
       /* --- The comparison ------------------------------------------------- */
 
@@ -5192,18 +5233,6 @@
         return chips.join('');
       }
 
-      /** Where this price sits between the cheapest and the dearest hit. */
-      function priceTone(hit, cheapest, dearest) {
-        if (hit.effectivePrice === null) return { text: 'text-slate-500', bar: 'bg-slate-600', at: 0 };
-
-        const span = dearest - cheapest;
-        const at = span > 0 ? (hit.effectivePrice - cheapest) / span : 0;
-
-        if (at <= 0.001) return { text: 'text-emerald-400', bar: 'bg-emerald-500', at: at };
-        if (at < 0.35) return { text: 'text-emerald-400/90', bar: 'bg-emerald-500/70', at: at };
-        if (at < 0.7) return { text: 'text-amber-400', bar: 'bg-amber-500/70', at: at };
-        return { text: 'text-red-400', bar: 'bg-red-500/70', at: at };
-      }
 
       /** The full record behind one row, for the hover card. */
       let catalogueHits = [];
@@ -5411,17 +5440,26 @@
             const stat = groupStats.get(hit.groupKey) || { min: cheapest, max: dearest, count: 1 };
             let header = '';
 
-            const groupHeader = (label, note) =>
+            const groupHeader = (label, note, spread, currency) =>
               '<tr><td colspan="' +
               columnCount +
               '" class="border-y border-white/8 bg-ink-950/60 px-5 py-2">' +
+              '<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1">' +
               '<span class="text-[11px] font-semibold uppercase tracking-wide text-accent-500">' +
               escapeHtml(label) +
               '</span>' +
-              (note
-                ? '<span class="ml-2 text-[11px] text-slate-500">' + escapeHtml(note) + '</span>'
+              (note ? '<span class="text-[11px] text-slate-500">' + escapeHtml(note) + '</span>' : '') +
+              // The reason to read the group at all: what choosing well is worth
+              // here. Under a cent it is noise and saying it would be padding.
+              (spread && spread >= 0.01
+                ? '<span class="ml-auto rounded-md bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">' +
+                  'разлика до ' +
+                  spread.toFixed(2) +
+                  ' ' +
+                  escapeHtml(currency || '') +
+                  '</span>'
                 : '') +
-              '</td></tr>';
+              '</span></td></tr>';
 
             if (comparable.has(hit.groupKey)) {
               if (hit.groupKey !== lastGroup) {
@@ -5429,12 +5467,16 @@
                 header = groupHeader(
                   hit.groupLabel,
                   stat.count +
-                    ' оферти · ' +
+                    ' ' +
+                    plural(stat.count, 'оферта', 'оферти') +
+                    ' · ' +
                     stat.min.toFixed(2) +
                     ' – ' +
                     stat.max.toFixed(2) +
                     ' ' +
                     hit.effectiveCurrency,
+                  stat.max - stat.min,
+                  hit.effectiveCurrency,
                 );
               }
             } else if (!singlesHeaderDone && comparable.size > 0) {
@@ -5442,15 +5484,34 @@
               header = groupHeader(
                 'Единични резултати',
                 'по една оферта — няма с какво да се сравнят',
+                0,
+                '',
               );
             }
 
-            const tone = priceTone(hit, stat.min, stat.max);
             const specs = specChipsHtml(parseSpecs(hit.name));
-            const over =
-              hit.effectivePrice !== null && stat.min > 0
-                ? ((hit.effectivePrice - stat.min) / stat.min) * 100
-                : null;
+
+            // Measured against the cheapest *of this kind of article*, which is
+            // the only comparison that means anything: a cable drum being
+            // dearer than a metre of cable is not a finding.
+            const delta =
+              hit.effectivePrice !== null && stat.min > 0 ? hit.effectivePrice - stat.min : null;
+            const over = delta !== null && stat.min > 0 ? (delta / stat.min) * 100 : null;
+            // A group of one has no winner: nothing was beaten. Calling the
+            // only offer "най-евтин" is a badge every row earns, which is the
+            // same as no badge at all.
+            const isBest = delta !== null && delta < 0.005 && stat.count > 1;
+
+            // Severity by how much is actually being left on the table. A
+            // uniform colour told the reader nothing they could act on.
+            const deltaTone =
+              over === null
+                ? 'text-slate-500'
+                : over < 10
+                  ? 'text-slate-400'
+                  : over < 30
+                    ? 'text-amber-400'
+                    : 'text-red-400';
 
             return (
               header +
@@ -5489,13 +5550,19 @@
                   // A price typed in three weeks ago and one read three seconds
                   // ago rank together, which is right — but they are not the
                   // same claim, and only this says so.
-                  (hit.recordedAt
+                  (hit.priceSource === 'manual'
                     ? '<span class="rounded-md bg-violet-500/12 px-1.5 py-0.5 text-[10.5px] text-violet-300" ' +
                       'title="Цена, която вие сте въвели. Нищо не я презарежда — проверете я, ако е стара.">' +
                       'ваша цена · ' +
                       escapeHtml(formatRelative(hit.recordedAt)) +
                       '</span>'
-                    : '') +
+                    : hit.recordedAt
+                      ? '<span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10.5px] text-slate-400" ' +
+                        'title="Прочетено от магазина по-рано и запазено. Отметнете „Питай наново“ за цена към момента.">' +
+                        'прочетено ' +
+                        escapeHtml(formatRelative(hit.recordedAt)) +
+                        '</span>'
+                      : '') +
                   specs +
                   '</span>'
                 : '') +
@@ -5527,26 +5594,38 @@
                   '</td>'
                 : '') +
               '<td class="px-3 py-3">' +
-              '<span class="flex items-baseline justify-end gap-2">' +
-              '<span class="num text-[15px] font-semibold ' +
-              tone.text +
+              '<span class="flex items-baseline justify-end gap-1.5">' +
+              '<span class="num text-[16px] font-semibold ' +
+              (isBest ? 'text-emerald-400' : 'text-slate-200') +
               '">' +
               (hit.effectivePrice === null ? '—' : hit.effectivePrice.toFixed(2)) +
               '</span>' +
               '<span class="text-[10.5px] text-slate-600">' +
               escapeHtml(hit.effectiveCurrency) +
               '</span></span>' +
-              '<span class="mt-1.5 block h-1 rounded-full bg-white/[0.06]">' +
-              '<span class="block h-1 rounded-full ' +
-              tone.bar +
-              '" style="width:' +
-              Math.max(4, Math.round((1 - tone.at) * 100)) +
-              '%"></span></span>' +
+              (hit.discountPercent > 0 && hit.listedPrice !== null
+                ? '<span class="mt-0.5 block text-right text-[10.5px] text-accent-300/80">след −' +
+                  hit.discountPercent +
+                  '%</span>'
+                : '') +
               '</td>' +
-              '<td class="num px-3 py-3 text-right text-[11.5px] ' +
-              (over === null || over < 0.05 ? 'text-slate-600' : 'text-slate-500') +
-              '">' +
-              (over === null || over < 0.05 ? '—' : '+' + over.toFixed(0) + '%') +
+              /* The decision column. Percentage alone is thin when the order is
+                 a hundred metres: what is spent is the per-unit difference
+                 times the quantity, so both are shown. */
+              '<td class="px-3 py-3 text-right">' +
+              (isBest
+                ? '<span class="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">' +
+                  '<i class="fa-solid fa-check text-[8px]"></i>най-евтин</span>'
+                : delta === null || stat.count < 2
+                  ? '<span class="text-[11px] text-slate-600">—</span>'
+                  : '<span class="num block text-[12.5px] font-semibold ' +
+                    deltaTone +
+                    '">+' +
+                    delta.toFixed(2) +
+                    '</span>' +
+                    '<span class="num block text-[10.5px] text-slate-500">+' +
+                    over.toFixed(0) +
+                    '%</span>') +
               '</td>' +
               '<td class="py-3 pl-3 pr-5">' +
               (hit.inStock === false
@@ -5636,7 +5715,7 @@
           '<th class="px-3 py-2.5 font-semibold">Магазин</th>' +
           (anyDiscount ? '<th class="px-3 py-2.5 text-right font-semibold">Етикет</th>' : '') +
           '<th class="px-3 py-2.5 text-right font-semibold">Вие плащате</th>' +
-          '<th class="px-3 py-2.5 text-right font-semibold">Спрямо №1</th>' +
+          '<th class="px-3 py-2.5 text-right font-semibold">Надплащате</th>' +
           '<th class="py-2.5 pl-3 pr-5 font-semibold">Наличност</th>' +
           '</tr></thead><tbody>' +
           rows +

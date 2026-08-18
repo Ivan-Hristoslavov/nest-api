@@ -20,8 +20,10 @@ export interface RankableOffer {
   shopId: string | null;
   discountPercent: number;
   inStock?: boolean | null;
-  /** Set only for a price the buyer entered by hand; see {@link RankedHit}. */
+  /** When the figure was obtained, for anything not read just now. */
   recordedAt?: string | null;
+  /** Where the figure came from. See {@link RankedHit.priceSource}. */
+  priceSource?: 'live' | 'cached' | 'manual';
 }
 
 export interface RankedHit {
@@ -57,6 +59,16 @@ export interface RankedHit {
    * identically would not be.
    */
   recordedAt: string | null;
+  /**
+   * Where this figure came from.
+   *
+   * Three origins that a buyer must be able to tell apart, because they carry
+   * different weight: `live` was read from the shop moments ago, `cached` was
+   * read within the last few hours, `manual` is what the buyer typed for a
+   * supplier that publishes nothing. Collapsing the last two — as this did at
+   * first — labelled a cached scrape "ваша цена", which is simply untrue.
+   */
+  priceSource: 'live' | 'cached' | 'manual';
 }
 
 /**
@@ -98,7 +110,21 @@ export function groupOf(name: string): { key: string; label: string } {
         !token.startsWith(head),
     );
 
-  const label = code ? `${head} ${code}` : head;
+  // The size is part of the identity, not a detail of it.
+  //
+  // Grouped on the noun alone, "КАБЕЛ" held 3x1.5 at 0.42/m beside a 34 € drum
+  // and reported the difference as +8000 % — a true number about two things
+  // nobody would buy in place of each other, which makes the whole column
+  // untrustworthy. Including the gauge splits those apart and, more usefully,
+  // groups the *same* article across suppliers, which is the comparison the
+  // buyer came for.
+  const size = cleaned
+    .toUpperCase()
+    .split(/[\s,/]+/)
+    .map((token) => token.replace(/^[([{"'«]+|[)\]}"'».,;:]+$/g, ''))
+    .find((token) => /^\d+(?:[.,]\d+)?(?:[XХ]\d+(?:[.,]\d+)?)+/.test(token));
+
+  const label = [head, code, size].filter(Boolean).join(' ');
   return { key: label.toLowerCase(), label };
 }
 
@@ -185,6 +211,7 @@ export function toHit(offer: RankableOffer, target: string, words: string[] = []
     effectiveCurrency: convertible ? target : currency,
     inStock: offer.inStock ?? null,
     recordedAt: offer.recordedAt ?? null,
+    priceSource: offer.priceSource ?? 'live',
   };
 }
 
