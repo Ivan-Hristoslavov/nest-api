@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
@@ -7,6 +7,7 @@ import { Configuration, ScraperConfig } from '../config/configuration';
 import { HostRateLimiterService } from '../scraper/http/host-rate-limiter.service';
 import { decodeHtml } from '../scraper/http/html-decoder';
 import { RobotsService } from '../scraper/http/robots.service';
+import { PRICE_SOURCE, PriceSource } from '../scraper/fetchers/price-source.interface';
 import { PriceParserService } from '../scraper/parsers/price-parser.service';
 import { DiscoveredProductDto, ShopSearchResultDto } from './dto/discovery.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,6 +15,7 @@ import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
 import { rank, RankableOffer, RankedHit } from './ranking';
+import { nameFromUrl, SitemapLookupService } from './sitemap-lookup.service';
 import {
   SEARCH_PROVIDERS,
   SearchProvider,
@@ -23,6 +25,16 @@ import {
 
 /** Results beyond this per shop are noise for a price-comparison workflow. */
 const MAX_RESULTS_PER_SHOP = 8;
+
+/**
+ * Pages read per question when answering from a sitemap.
+ *
+ * The hard limit that keeps this from becoming the catalogue crawl again. A
+ * shop with 7553 pages and one with 80 both cost at most this many requests
+ * per search, so the bill follows the questions asked rather than the size of
+ * anybody's catalogue.
+ */
+const SITEMAP_PAGE_BUDGET = 8;
 
 /**
  * Addresses that are never a product, however product-shaped they look.
@@ -49,6 +61,8 @@ export class DiscoveryService {
     private readonly parser: PriceParserService,
     private readonly robots: RobotsService,
     private readonly rateLimiter: HostRateLimiterService,
+    private readonly sitemap: SitemapLookupService,
+    @Inject(PRICE_SOURCE) private readonly priceSource: PriceSource,
     configService: ConfigService<Configuration, true>,
   ) {
     this.config = configService.get('scraper', { infer: true });
@@ -252,12 +266,37 @@ export class DiscoveryService {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
-    const available = await this.allProviders();
-    const providers = hosts?.length
-      ? available.filter((provider) => hosts.includes(provider.host))
-      : available;
+    const shops = await this.shops.find({ where: { isActive: true }, order: { name: 'ASC' } });
+    const wanted = hosts?.length
+      ? shops.filter((shop) => hosts.includes(shop.host.replace(/^www\./, '')))
+      : shops;
 
-    return Promise.all(providers.map((provider) => this.searchOne(provider, trimmed)));
+    return Promise.all(wanted.map((shop) => this.searchShop(shop, trimmed)));
+  }
+
+  /**
+   * One shop, by whichever route it permits.
+   *
+   * Its own search first — it is faster, it is what the shop built for this,
+   * and it knows about synonyms no URL ever will. Where that is refused, the
+   * sitemap answers instead: tmt-elkom.com publishes `Disallow: /search?` but
+   * advertises a sitemap naming all 7553 of its pages, and "СВТ" appears in
+   * 135 of those addresses. Reading eight of them beats telling the customer
+   * their supplier stocks nothing.
+   */
+  private async searchShop(shop: Shop, query: string): Promise<ShopSearchResultDto> {
+    const provider = this.providerFor(shop);
+
+    if (provider) {
+      const viaSearch = await this.searchOne(provider, query);
+
+      // Only when the shop's own search was refused outright. A search that
+      // ran and found nothing is an answer — falling back then would spend
+      // eight requests to contradict the shop about its own stock.
+      if (viaSearch.ok || !/robots/i.test(viaSearch.error ?? '')) return viaSearch;
+    }
+
+    return this.searchViaSitemap(shop, query);
   }
 
   /**
@@ -369,6 +408,93 @@ export class DiscoveryService {
       })),
       hits,
     };
+  }
+
+  /**
+   * Finds products by their address, then reads only those pages.
+   *
+   * Bounded on purpose and bounded hard. The sitemap read is one request an
+   * hour; the page reads are capped at {@link SITEMAP_PAGE_BUDGET} per
+   * question, whatever the shop's size. Asking this shop three different
+   * things costs twenty-five requests, not seven thousand — the cost follows
+   * the question, which is the whole reason the old catalogue crawl had to go.
+   */
+  private async searchViaSitemap(shop: Shop, query: string): Promise<ShopSearchResultDto> {
+    const host = shop.host.replace(/^www\./, '');
+    const startedAt = Date.now();
+
+    try {
+      const urls = await this.sitemap.find(host, query, SITEMAP_PAGE_BUDGET);
+
+      if (urls.length === 0) {
+        return {
+          host,
+          name: shop.name,
+          searchUrl: '',
+          ok: true,
+          error: null,
+          durationMs: Date.now() - startedAt,
+          products: [],
+        };
+      }
+
+      // Sequential, not parallel: these all go to one host, and the rate
+      // limiter would serialise them anyway. Failures are per page — one dead
+      // link must not lose the seven that answered.
+      const products: DiscoveredProductDto[] = [];
+
+      for (const url of urls) {
+        try {
+          const observation = await this.priceSource.fetch({
+            url,
+            host,
+            selector: null,
+            attribute: null,
+            lastPrice: null,
+            currency: shop.currency,
+          });
+
+          products.push({
+            title: this.clean(observation.title ?? nameFromUrl(url)),
+            url,
+            price: observation.price,
+            currency: observation.currency ?? shop.currency,
+            host,
+            shopName: shop.name,
+          });
+        } catch {
+          // A page with no price is not a product page. Nothing to report per
+          // page; the count that reaches the user is what was found.
+        }
+      }
+
+      this.logger.log(
+        `${host}: "${query}" via sitemap — ${products.length} of ${urls.length} pages priced ` +
+          `in ${Date.now() - startedAt}ms`,
+      );
+
+      return {
+        host,
+        name: shop.name,
+        searchUrl: '',
+        ok: true,
+        error: null,
+        durationMs: Date.now() - startedAt,
+        products,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'непозната грешка';
+
+      return {
+        host,
+        name: shop.name,
+        searchUrl: '',
+        ok: false,
+        error: reason,
+        durationMs: Date.now() - startedAt,
+        products: [],
+      };
+    }
   }
 
   private async searchOne(provider: SearchProvider, query: string): Promise<ShopSearchResultDto> {

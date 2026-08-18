@@ -64,6 +64,22 @@ export class Shop {
   @Column({ name: 'search_price_selector', type: 'varchar', length: 255, nullable: true })
   searchPriceSelector!: string | null;
 
+  @ApiProperty({
+    description:
+      'How this shop gets searched. `live` asks its own search engine — one request per question, current stock. `sitemap` matches the query against its published addresses and reads only the pages that matched, for a shop that forbids its search but lists its pages. `none` means neither is available; its products are still tracked by link.',
+    enum: ['live', 'sitemap', 'none'],
+    example: 'live',
+  })
+  @Column({ name: 'search_method', type: 'varchar', length: 16, default: 'none' })
+  searchMethod!: 'live' | 'sitemap' | 'none';
+
+  @ApiPropertyOptional({
+    description: 'What the probe found when the shop was added, in words the operator can act on.',
+    nullable: true,
+  })
+  @Column({ name: 'search_summary', type: 'text', nullable: true })
+  searchSummary!: string | null;
+
   @ApiPropertyOptional({
     description:
       'CSS selector for one result tile — the box holding a product’s name, price and link. Without it the title and price selectors are searched in whatever element happens to surround the link, which is how a real price goes missing.',

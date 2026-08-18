@@ -5206,27 +5206,61 @@
         const live = liveStatusFor(shop);
         const off = shop.isActive === false;
 
+        // What route this shop's products are found by, as the probe decided.
+        // Three states, not two: a shop searched through its sitemap is not
+        // "без търсене" — it works, it is merely slower, and calling it broken
+        // sends the user hunting for a fault that is not there.
+        const METHOD_CHIP = {
+          live: {
+            cls: 'bg-emerald-500/12 text-emerald-400',
+            icon: 'fa-bolt',
+            label: 'търсачка на магазина',
+          },
+          sitemap: {
+            cls: 'bg-sky-500/12 text-sky-400',
+            icon: 'fa-sitemap',
+            label: 'по картата на сайта',
+          },
+          none: {
+            cls: 'bg-white/[0.06] text-slate-400',
+            icon: 'fa-link',
+            label: 'само по линк',
+          },
+        };
+
+        const method = METHOD_CHIP[shop.searchMethod] || METHOD_CHIP.none;
+
         const liveChip = off
           ? '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-500">' +
             '<i class="fa-solid fa-pause text-[9px]"></i>спрян</span>'
-          : live.searchable
-            ? '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium text-emerald-400">' +
-              '<i class="fa-solid fa-bolt text-[9px]"></i>търси се на живо</span>'
-            : '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-400">' +
-              '<i class="fa-solid fa-bolt-lightning text-[9px] opacity-40"></i>без живо търсене</span>';
+          : '<span class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ' +
+            method.cls +
+            '" title="' +
+            escapeHtml(shop.searchSummary || '') +
+            '"><i class="fa-solid ' +
+            method.icon +
+            ' text-[9px]"></i>' +
+            method.label +
+            '</span>';
 
         // Only the reason that still applies. A shop that is switched off is
         // not searched for that reason, and repeating why it also lacks a
         // configuration is noise the user cannot act on until it is back on.
         const note = off
           ? ''
-          : !live.searchable
+          : shop.searchSummary
             ? '<span class="mt-1 block truncate text-[11.5px] text-slate-500" title="' +
-              escapeHtml(live.reason) +
+              escapeHtml(shop.searchSummary) +
               '">' +
-              escapeHtml(live.reason) +
+              escapeHtml(shop.searchSummary) +
               '</span>'
-            : '';
+            : !live.searchable
+              ? '<span class="mt-1 block truncate text-[11.5px] text-slate-500" title="' +
+                escapeHtml(live.reason) +
+                '">' +
+                escapeHtml(live.reason) +
+                '</span>'
+              : '';
 
         const error =
           !off && shop.lastError
@@ -5238,18 +5272,16 @@
               '</span></span>'
             : '';
 
+        // One action, and it is the same one whatever state the row is in:
+        // work out again how this shop can be searched. A storefront that has
+        // moved platform may have gained a usable search, or lost one.
         const action = off
           ? '<span class="text-[12px] text-slate-600">—</span>'
-          : isHardBlocked(live)
-            ? '<span class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/8 bg-ink-850/60 px-3 py-2 text-[12.5px] text-slate-500" ' +
-              'title="Магазинът забранява търсене. Артикулите му се следят нормално — намерете продукта в сайта им и добавете линка от „Следени цени&quot;.">' +
-              '<i class="fa-solid fa-link text-[11px]"></i>следи се по линк</span>'
-            : '<button type="button" data-detect="' +
-              escapeHtml(shop.id) +
-              '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
-              '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>' +
-              (live.searchable ? 'Пренастрой' : 'Настрой търсене') +
-              '</button>';
+          : '<button type="button" data-reprobe="' +
+            escapeHtml(shop.id) +
+            '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300" ' +
+            'title="Проверява наново дали търсачката на магазина работи, и ако не — дали има карта на сайта.">' +
+            '<i class="fa-solid fa-arrows-rotate text-[11px]"></i>Провери наново</button>';
 
         return (
           '<div class="grid grid-cols-[minmax(0,1fr)_7.5rem_11.5rem_5.5rem] items-center gap-4 px-5 py-4' +
@@ -5306,6 +5338,10 @@
       function bindShopRows() {
         $$('[data-detect]').forEach(function (button) {
           button.addEventListener('click', () => openDetectModal(button.dataset.detect));
+        });
+
+        $$('[data-reprobe]').forEach(function (button) {
+          button.addEventListener('click', () => reprobeShop(button.dataset.reprobe, button));
         });
 
         // Switching a shop off keeps its discount and its selectors. It is the
@@ -5388,6 +5424,35 @@
             }
           });
         });
+      }
+
+      /**
+       * Works out again how a shop can be searched.
+       *
+       * Takes real seconds — it reads the shop's sitemap and may try several
+       * search paths — so the button says so rather than appearing to hang.
+       */
+      async function reprobeShop(shopId, button) {
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML =
+          '<i class="fa-solid fa-circle-notch fa-spin text-[11px]"></i>Проверявам…';
+
+        try {
+          const response = await fetch(ENDPOINTS.shops + '/' + shopId + '/probe', {
+            method: 'POST',
+            headers: authHeaders(),
+          });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          const shop = await response.json();
+          toast(shop.searchSummary || 'Готово.', shop.searchMethod === 'none' ? 'info' : 'success');
+          await loadShops();
+        } catch (error) {
+          button.disabled = false;
+          button.innerHTML = original;
+          toast('Проверката не успя: ' + error.message, 'error');
+        }
       }
 
       /* --- Teaching the system to search a new shop ---------------------- */
@@ -5587,6 +5652,11 @@
 
         closeModal('shop-modal');
 
+        const pending = toast(
+          'Проверявам ' + host + ' — как може да се търси в него…',
+          'info',
+        );
+
         try {
           const response = await fetch(ENDPOINTS.shops, {
             method: 'POST',
@@ -5605,21 +5675,10 @@
           // but only where that step can succeed. A shop whose robots.txt
           // forbids its search is told so now, not after the user has hunted
           // down a search URL for a dialog that was always going to refuse it.
-          const live = liveStatusFor(shops.find((item) => item.id === shop.id) || shop);
-
-          if (live.searchable) {
-            toast('Добавен — търси се на живо.', 'success');
-          } else if (isHardBlocked(live)) {
-            toast(
-              'Добавен, но не може да се търси: ' +
-                live.reason +
-                '. Артикулите му се следят по линк.',
-              'info',
-            );
-          } else {
-            openDetectModal(shop.id);
-            toast('Добавен. Сега да го научим да търси.', 'info');
-          }
+          // The server has already worked out how this shop can be searched
+          // and said so in its own words. Repeating the decision here in
+          // different words is how the two drift apart.
+          toast(shop.searchSummary || 'Добавен.', shop.searchMethod === 'none' ? 'info' : 'success');
         } catch (error) {
           toast('Неуспешно: ' + error.message, 'error');
         }

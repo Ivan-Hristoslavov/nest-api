@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { ProbeResult } from '../discovery/shop-probe.service';
 import { Shop } from './entities/shop.entity';
 
 /**
@@ -75,6 +76,34 @@ export class ShopsService {
       `Shop ${saved.host} ready (live search: ${saved.searchUrlTemplate ? 'configured' : 'not configured'})`,
     );
     return saved;
+  }
+
+  /**
+   * Records how the probe decided this shop will be searched.
+   *
+   * The detected configuration is saved along with the verdict, so a shop that
+   * probed as live-searchable is searchable from that moment without a second
+   * round trip to work out its selectors again.
+   */
+  async applyProbe(id: string, result: ProbeResult): Promise<Shop> {
+    const shop = await this.findOne(id);
+
+    shop.searchMethod = result.method;
+    shop.searchSummary = result.summary;
+    shop.searchBlockedReason = result.reason;
+
+    if (result.detected) {
+      shop.searchUrlTemplate = result.detected.urlTemplate;
+      shop.searchResultSelector = result.detected.linkSelector;
+      shop.searchTileSelector = result.detected.tileSelector;
+      shop.searchTitleSelector = result.detected.titleSelector;
+      shop.searchPriceSelector = result.detected.priceSelector;
+      shop.searchConfidence = result.detected.confidence;
+    }
+
+    this.logger.log(`${shop.host}: search method is "${result.method}" — ${result.summary}`);
+
+    return this.shops.save(shop);
   }
 
   async update(id: string, changes: Partial<Shop>): Promise<Shop> {
