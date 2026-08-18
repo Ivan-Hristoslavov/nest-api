@@ -27,7 +27,58 @@ export interface SearchProvider {
   tileSelector?: string;
 }
 
+/**
+ * Shops known NOT to be live-searchable, with the reason.
+ *
+ * Recorded rather than silently omitted: without this the same shop gets
+ * "added to live search" again in six months, and the only way to find out it
+ * never worked is a user reporting nonsense results.
+ */
+export const UNSEARCHABLE_SHOPS: Array<{ host: string; name: string; reason: string }> = [
+  {
+    host: 'elmarkstore.eu',
+    name: 'Elmark Store',
+    // Verified 2026-08: /search returns the same 20 tiles for "кабел", "лампа",
+    // "ножовка" and "ключ". The query is not honoured over GET at all, so any
+    // selector work here would only make wrong results look convincing.
+    reason: 'търсачката не приема заявка през GET — връща едни и същи резултати',
+  },
+  {
+    host: 'technopolis.bg',
+    name: 'Technopolis',
+    reason: 'търсенето се изгражда с JavaScript, няма сървърна страница',
+  },
+  {
+    host: 'technomarket.bg',
+    name: 'Технómarket',
+    reason: 'търсенето се изгражда с JavaScript, няма сървърна страница',
+  },
+];
+
 export const SEARCH_PROVIDERS: SearchProvider[] = [
+  {
+    host: 'tmt-elkom.com',
+    name: 'ТМТ ЕЛКОМ',
+    // Verified 2026-08: /search?q= is server-rendered and returns real matches.
+    // The shop's robots.txt disallows /search, so DiscoveryService refuses it at
+    // run time; the entry stays because its product pages *are* allowed, which
+    // is what the sitemap crawl uses.
+    searchUrl: (query) => `https://www.tmt-elkom.com/search?q=${query}`,
+    resultLinkSelector: 'a[href*="/"]',
+    productUrlPattern: /^https?:\/\/(www\.)?tmt-elkom\.com\/[a-z0-9%\-]{8,}$/i,
+    tileSelector: '.product, li, article',
+    priceSelector: '[itemprop="price"], .price',
+  },
+  {
+    host: 'homefinishing.bg',
+    name: 'Home Finishing',
+    // Magento: /catalogsearch/result/?q= — 251 matches for "кабел".
+    searchUrl: (query) => `https://homefinishing.bg/catalogsearch/result/?q=${query}`,
+    resultLinkSelector: 'a.product-item-link, a[href*="homefinishing.bg/"]',
+    productUrlPattern: /^https?:\/\/(www\.)?homefinishing\.bg\/[a-z0-9%\-]{6,}$/i,
+    tileSelector: '.product-item, li.item',
+    priceSelector: '.price',
+  },
   {
     host: 'emag.bg',
     name: 'eMAG',

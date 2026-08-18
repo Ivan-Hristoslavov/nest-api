@@ -14,6 +14,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  Matches,
 } from 'class-validator';
 
 import {
@@ -70,6 +71,38 @@ export class CreateShopDto {
   @Transform(trimUpperCase)
   @IsOptional()
   currency?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Search URL with `{q}` where the query goes. Setting this makes the shop live-searchable immediately — no code change, no deploy.',
+    example: 'https://ardes.bg/search?q={q}',
+  })
+  @IsString()
+  @MaxLength(2048)
+  @Matches(/\{q\}/, { message: 'searchUrlTemplate must contain {q}' })
+  @IsOptional()
+  @Transform(trimString)
+  searchUrlTemplate?: string;
+
+  @ApiPropertyOptional({
+    description: 'CSS selector for result links. Leave empty to use the generic one.',
+    example: '.products.list li a.image',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  @Transform(trimString)
+  searchResultSelector?: string;
+
+  @ApiPropertyOptional({
+    description: 'CSS selector for the price inside a result tile.',
+    example: '.product-price',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  @Transform(trimString)
+  searchPriceSelector?: string;
 }
 
 export class UpdateShopDto {
@@ -107,6 +140,38 @@ export class UpdateShopDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Search URL with `{q}` where the query goes. Setting this makes the shop live-searchable immediately — no code change, no deploy.',
+    example: 'https://ardes.bg/search?q={q}',
+  })
+  @IsString()
+  @MaxLength(2048)
+  @Matches(/\{q\}/, { message: 'searchUrlTemplate must contain {q}' })
+  @IsOptional()
+  @Transform(trimString)
+  searchUrlTemplate?: string;
+
+  @ApiPropertyOptional({
+    description: 'CSS selector for result links. Leave empty to use the generic one.',
+    example: '.products.list li a.image',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  @Transform(trimString)
+  searchResultSelector?: string;
+
+  @ApiPropertyOptional({
+    description: 'CSS selector for the price inside a result tile.',
+    example: '.product-price',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  @Transform(trimString)
+  searchPriceSelector?: string;
 }
 
 export class SearchOffersDto {

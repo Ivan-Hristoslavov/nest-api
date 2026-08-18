@@ -9,7 +9,11 @@ import { decodeHtml } from '../scraper/http/html-decoder';
 import { RobotsService } from '../scraper/http/robots.service';
 import { PriceParserService } from '../scraper/parsers/price-parser.service';
 import { DiscoveredProductDto, ShopSearchResultDto } from './dto/discovery.dto';
-import { SEARCH_PROVIDERS, SearchProvider } from './search-providers';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { Shop } from '../catalogue/entities/shop.entity';
+import { SEARCH_PROVIDERS, SearchProvider, UNSEARCHABLE_SHOPS } from './search-providers';
 
 /** Results beyond this per shop are noise for a price-comparison workflow. */
 const MAX_RESULTS_PER_SHOP = 8;
@@ -21,6 +25,8 @@ export class DiscoveryService {
   private readonly client: AxiosInstance;
 
   constructor(
+    @InjectRepository(Shop)
+    private readonly shops: Repository<Shop>,
     private readonly parser: PriceParserService,
     private readonly robots: RobotsService,
     private readonly rateLimiter: HostRateLimiterService,
@@ -45,6 +51,47 @@ export class DiscoveryService {
   }
 
   /**
+   * Every shop that can be searched: the ones compiled in, plus any the
+   * operator has configured through the API.
+   *
+   * A supplier list only a developer can extend is a supplier list that stays
+   * at three. Any shop row carrying a `searchUrlTemplate` joins the search with
+   * no deployment.
+   */
+  private async allProviders(): Promise<SearchProvider[]> {
+    const configured = await this.shops.find({
+      where: { isActive: true },
+      order: { name: 'ASC' },
+    });
+
+    const custom = configured
+      .filter((shop) => Boolean(shop.searchUrlTemplate))
+      .map<SearchProvider>((shop) => {
+        const host = shop.host.replace(/^www\./, '');
+
+        return {
+          host,
+          name: shop.name,
+          searchUrl: (query: string) => shop.searchUrlTemplate!.replace('{q}', query),
+          // Unset, the generic pattern accepts any same-host link with a path —
+          // enough for most storefronts and refinable per shop afterwards.
+          resultLinkSelector: shop.searchResultSelector ?? 'a[href]',
+          productUrlPattern: new RegExp(
+            `^https?://([a-z0-9-]+\\.)*${host.replace(/\./g, '\\.')}/[^?#]{6,}$`,
+            'i',
+          ),
+          tileSelector: 'li, article, .product, .product-item',
+          priceSelector: shop.searchPriceSelector ?? '.price, [itemprop="price"]',
+        };
+      });
+
+    // A database row wins over a compiled-in entry for the same host: the
+    // operator's tuning is newer than the shipped default.
+    const overridden = new Set(custom.map((provider) => provider.host));
+
+    return [...custom, ...SEARCH_PROVIDERS.filter((entry) => !overridden.has(entry.host))];
+  }
+  /**
    * Shops this instance knows how to search, and whether each one currently
    * permits it.
    *
@@ -59,8 +106,10 @@ export class DiscoveryService {
   async listProviders(): Promise<
     Array<{ host: string; name: string; searchable: boolean; reason: string | null }>
   > {
-    return Promise.all(
-      SEARCH_PROVIDERS.map(async (provider) => {
+    const providers = await this.allProviders();
+
+    const listed = await Promise.all(
+      providers.map(async (provider) => {
         const base = { host: provider.host, name: provider.name };
 
         if (!this.config.respectRobots) {
@@ -85,6 +134,21 @@ export class DiscoveryService {
         }
       }),
     );
+
+    // Shops we have already established cannot be searched are listed too, with
+    // the reason. Omitting them silently is how the same dead end gets
+    // rediscovered every few months.
+    const listedHosts = new Set(listed.map((entry) => entry.host));
+
+    return [
+      ...listed,
+      ...UNSEARCHABLE_SHOPS.filter((shop) => !listedHosts.has(shop.host)).map((shop) => ({
+        host: shop.host,
+        name: shop.name,
+        searchable: false,
+        reason: shop.reason,
+      })),
+    ].sort((a, b) => Number(b.searchable) - Number(a.searchable) || a.name.localeCompare(b.name));
   }
 
   /**
@@ -98,9 +162,10 @@ export class DiscoveryService {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
+    const available = await this.allProviders();
     const providers = hosts?.length
-      ? SEARCH_PROVIDERS.filter((provider) => hosts.includes(provider.host))
-      : SEARCH_PROVIDERS;
+      ? available.filter((provider) => hosts.includes(provider.host))
+      : available;
 
     return Promise.all(providers.map((provider) => this.searchOne(provider, trimmed)));
   }

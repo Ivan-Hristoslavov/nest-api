@@ -32,6 +32,41 @@ export class Shop {
   @Column({ type: 'varchar', length: 255 })
   host!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Search URL with `{q}` where the query goes, e.g. `https://shop.bg/search?q={q}`. Set this and the shop becomes live-searchable without a code change — which is the point: a supplier list that only a developer can extend is a supplier list that stays at three.',
+    example: 'https://www.tmt-elkom.com/search?q={q}',
+    nullable: true,
+  })
+  @Column({ name: 'search_url_template', type: 'text', nullable: true })
+  searchUrlTemplate!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'CSS selector for the links in the search results. Left empty, the generic one is tried: any anchor whose href looks like a product page.',
+    example: '.products.list li a.image',
+    nullable: true,
+  })
+  @Column({ name: 'search_result_selector', type: 'varchar', length: 255, nullable: true })
+  searchResultSelector!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'CSS selector for the price inside a result tile.',
+    example: '.price',
+    nullable: true,
+  })
+  @Column({ name: 'search_price_selector', type: 'varchar', length: 255, nullable: true })
+  searchPriceSelector!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Why this shop cannot be searched live, when it cannot. Filled in by the check so the reason survives instead of being rediscovered.',
+    nullable: true,
+    example: 'търсачката не приема заявка през GET',
+  })
+  @Column({ name: 'search_blocked_reason', type: 'varchar', length: 255, nullable: true })
+  searchBlockedReason!: string | null;
+
   @ApiProperty({ description: 'Readable name for the dashboard.', example: 'ТМТ ЕЛКОМ' })
   @Column({ type: 'varchar', length: 160 })
   name!: string;

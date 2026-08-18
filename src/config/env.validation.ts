@@ -224,7 +224,7 @@ export class EnvironmentVariables {
   @Transform(toBoolean)
   @IsBoolean()
   @IsOptional()
-  CATALOGUE_CRAWL_ENABLED = true;
+  CATALOGUE_CRAWL_ENABLED = false;
 
   @IsString()
   @IsOptional()

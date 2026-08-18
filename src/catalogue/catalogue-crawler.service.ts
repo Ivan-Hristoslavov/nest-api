@@ -44,7 +44,17 @@ export class CatalogueCrawlerService implements OnModuleInit {
 
   onModuleInit(): void {
     if (!this.config.crawlEnabled) {
-      this.logger.warn('Background catalogue crawl is disabled (CATALOGUE_CRAWL_ENABLED=false).');
+      // The default, and the right one. Live search asks the shop's own search
+      // engine and answers in a second with current data; a full crawl fetches
+      // tens of thousands of pages to learn the same thing, and on
+      // bg.elmarkstore.eu spent 121 requests to store nothing at all.
+      // Crawling earns its place only for a shop whose search cannot be
+      // queried, and then only for that shop, on demand.
+      this.logger.log(
+        'Background catalogue crawl is off (CATALOGUE_CRAWL_ENABLED=false). ' +
+          'Live search covers shops with a usable search; crawl a specific shop with ' +
+          'POST /api/v1/catalogue/shops/:id/crawl when it does not.',
+      );
       return;
     }
 
