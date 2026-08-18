@@ -200,7 +200,8 @@ export class Product {
   previousPrice!: number | null;
 
   @ApiPropertyOptional({
-    description: 'Price floor we want to stay above. Used to flag undercutting.',
+    description:
+      'The most you are willing to pay for this. An article found below it is worth reordering now; one found above it is worth a phone call.',
     type: Number,
     example: 279.0,
     nullable: true,
@@ -331,10 +332,11 @@ export class Product {
   competitorCount!: number;
 
   @ApiPropertyOptional({
-    description: 'Our own price, for margin and undercut reporting.',
+    description:
+      'What you pay for this today — your current supplier’s price, after your discount.\n\nThe column is named `our_price` because it once meant "our selling price", back when this watched competitors on behalf of a seller. For a buyer it means the other side of the same comparison, and it is the more useful one: set against the best price found, it says plainly which articles are costing you money on every reorder.',
     type: Number,
     nullable: true,
-    example: 299.0,
+    example: 0.7,
   })
   @Column({
     name: 'our_price',

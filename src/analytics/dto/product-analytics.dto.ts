@@ -210,16 +210,25 @@ export class MarketOverviewDto {
   @ApiProperty({ description: 'Distinct retailer hostnames tracked.', example: 8 })
   retailers!: number;
 
-  @ApiProperty({ description: 'Products where the market is below our target.', example: 11 })
+  @ApiProperty({
+    description:
+      'Articles now available below the ceiling you set — the ones worth reordering while the price is where it is.',
+    example: 11,
+  })
   undercutProducts!: number;
 
   @ApiProperty({
-    description: 'Products where our price is at or below the cheapest competitor.',
+    description:
+      'Articles where what you already pay is at or below the best price found. Nothing to do on these.',
     example: 84,
   })
   productsWeWin!: number;
 
-  @ApiProperty({ description: 'Products where a competitor is cheaper than us.', example: 46 })
+  @ApiProperty({
+    description:
+      'Articles where somebody sells it cheaper than you currently pay — the ones costing you money every time you reorder. The single number this whole system exists to produce.',
+    example: 46,
+  })
   productsWeLose!: number;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 241.37 })

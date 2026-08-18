@@ -187,7 +187,7 @@ export class CreateProductDto {
   priceSelector?: string;
 
   @ApiPropertyOptional({
-    description: 'Our own selling price, used for margin and undercut reporting.',
+    description: 'What you pay for this today, after your discount.',
     type: Number,
     minimum: 0,
     example: 299.0,

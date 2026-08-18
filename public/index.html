@@ -456,13 +456,6 @@
           >
             <i class="fa-solid fa-chart-line mr-1.5 text-[11px]"></i>Следени цени
           </button>
-          <button
-            type="button"
-            data-view="credentials"
-            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
-          >
-            <i class="fa-solid fa-lock mr-1.5 text-[11px]"></i>Достъпи
-          </button>
           <!-- Revealed only when the key in use turns out to be an operator
                key. Offering it to a customer and then answering 403 reads as a
                fault in us rather than a boundary. -->
@@ -525,13 +518,6 @@
         </button>
         <button
           type="button"
-          data-view="credentials"
-          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
-        >
-          Достъпи
-        </button>
-        <button
-          type="button"
           data-view="dashboard"
           class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
         >
@@ -576,8 +562,8 @@
               <p class="mx-auto mt-7 max-w-2xl text-[17px] leading-relaxed text-slate-400">
                 Влизате в пет портала на едро, сравнявате ръчно, записвате в Excel — и до обяд
                 цените вече са други. PriceGuard прави тази обиколка вместо вас
-                <span class="font-semibold text-slate-200">на всеки час</span>, включително зад
-                логин стените, и ви казва само едно:
+                <span class="font-semibold text-slate-200">на всеки час</span> — включително при
+                доставчика без сайт, чийто ценоразпис качвате веднъж — и ви казва само едно:
                 <span class="font-semibold text-slate-200">къде да купите днес и колко
                   спестявате</span>.
               </p>
@@ -588,23 +574,23 @@
                   data-view="dashboard"
                   class="nav-link group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-6 py-3.5 text-[15px] font-semibold text-white shadow-glow transition hover:bg-accent-600 sm:w-auto"
                 >
-                  Стартирай безплатен тест
+                  Пробвай безплатно
                   <i
                     class="fa-solid fa-arrow-right text-[13px] transition group-hover:translate-x-0.5"
                   ></i>
                 </button>
                 <button
                   type="button"
-                  data-view="credentials"
+                  data-view="catalogue"
                   class="nav-link inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/40 bg-ink-900 px-6 py-3.5 text-[15px] font-semibold text-slate-300 transition hover:border-accent-500/40 hover:text-slate-200 sm:w-auto"
                 >
-                  <i class="fa-solid fa-lock text-[13px] text-accent-500"></i>
-                  Как пазим достъпите
+                  <i class="fa-solid fa-magnifying-glass-dollar text-[13px] text-accent-500"></i>
+                  Виж търсенето
                 </button>
               </div>
 
               <p class="mt-5 text-[13px] text-slate-500">
-                14 дни безплатно · Без карта · Отказ по всяко време
+                Безплатен план за 10 артикула · Без карта · Отказ по всяко време
               </p>
             </div>
 
@@ -669,12 +655,13 @@
               <span
                 class="grid h-10 w-10 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25"
               >
-                <i class="fa-solid fa-eye text-accent-400"></i>
+                <i class="fa-solid fa-pen-to-square text-accent-400"></i>
               </span>
-              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">Зад логин стената</h3>
+              <h3 class="mt-4 text-[15px] font-semibold text-slate-200">И доставчикът без сайт</h3>
               <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
-                Публичните цени не са вашите цени. Следим B2B портала на доставчика с вашия
-                търговски акаунт и виждаме реалната цена на едро, отстъпката и наличността.
+                Местният склад, който праща ценоразпис по имейл, често е най-евтиният. Качвате
+                листата му веднъж и той влиза в същото сравнение — иначе сравнявате само тези,
+                които случайно са онлайн.
               </p>
             </article>
 
@@ -882,316 +869,6 @@
       <!-- ================================================================ -->
       <!-- SECTION 2 — VENDOR CREDENTIALS PORTAL                            -->
       <!-- ================================================================ -->
-      <section id="view-credentials" class="view" role="region" aria-label="Достъпи до доставчици" hidden>
-        <div class="mx-auto max-w-6xl px-5 py-12 sm:px-8 sm:py-16">
-          <div class="max-w-2xl">
-            <h2 class="text-3xl font-bold text-slate-200 sm:text-[2.1rem]">Достъпи до доставчици</h2>
-            <p class="mt-3 text-[15px] leading-relaxed text-slate-400">
-              Добавете търговския си акаунт към портала на доставчика. Скрейпърът влиза с него,
-              прочита цената на едро и излиза — точно както бихте направили ръчно, само че на всеки
-              няколко часа.
-            </p>
-          </div>
-
-          <div class="mt-10 grid gap-6 lg:grid-cols-5">
-            <!-- Form -->
-            <div class="lg:col-span-3">
-              <form
-                id="vendor-form"
-                class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel sm:p-7"
-                novalidate
-              >
-                <h3 class="flex items-center gap-2.5 text-[15px] font-semibold text-slate-200">
-                  <i class="fa-solid fa-plug-circle-bolt text-accent-400"></i>
-                  Нов доставчик
-                </h3>
-
-                <div class="mt-6 space-y-5">
-                  <!-- Vendor -->
-                  <div>
-                    <label for="vendor-domain" class="mb-2 block text-[13px] font-medium text-slate-300">
-                      Доставчик / Домейн
-                      <span class="text-accent-400">*</span>
-                    </label>
-                    <div class="relative">
-                      <i
-                        class="fa-solid fa-warehouse pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
-                      ></i>
-                      <select
-                        id="vendor-domain"
-                        name="vendorDomain"
-                        required
-                        class="w-full appearance-none rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-10 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                      >
-                        <option value="">— Изберете портал —</option>
-                        <option value="b2b.blackairsoft.eu">b2b.blackairsoft.eu</option>
-                        <option value="wholesale.tacticalgear.bg">wholesale.tacticalgear.bg</option>
-                        <option value="partner.airsoftpro.cz">partner.airsoftpro.cz</option>
-                        <option value="b2b.taginn.eu">b2b.taginn.eu</option>
-                        <option value="dealer.smith-wesson-eu.com">dealer.smith-wesson-eu.com</option>
-                        <option value="__custom__">Друг домейн…</option>
-                      </select>
-                      <i
-                        class="fa-solid fa-chevron-down pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-slate-500"
-                      ></i>
-                    </div>
-                    <input
-                      type="url"
-                      id="vendor-custom"
-                      name="vendorCustom"
-                      placeholder="https://b2b.moqt-dostavchik.bg/login"
-                      class="mt-2.5 hidden w-full rounded-xl border border-white/10 bg-ink-850 px-4 py-3 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                    />
-                  </div>
-
-                  <!-- Label -->
-                  <div>
-                    <label for="vendor-label" class="mb-2 block text-[13px] font-medium text-slate-300">
-                      Име на връзката
-                    </label>
-                    <div class="relative">
-                      <i
-                        class="fa-solid fa-tag pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
-                      ></i>
-                      <input
-                        type="text"
-                        id="vendor-label"
-                        name="label"
-                        maxlength="80"
-                        placeholder="BlackAirsoft — основен акаунт"
-                        class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-4 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                      />
-                    </div>
-                  </div>
-
-                  <!-- Auth method -->
-                  <div>
-                    <span class="mb-2 block text-[13px] font-medium text-slate-300">Метод на достъп</span>
-                    <div class="grid grid-cols-2 gap-2" role="tablist">
-                      <button
-                        type="button"
-                        data-auth="password"
-                        class="auth-tab rounded-xl border border-accent-500/50 bg-accent-500/10 px-4 py-2.5 text-[13px] font-medium text-slate-200 transition"
-                      >
-                        <i class="fa-solid fa-key mr-1.5 text-[11px]"></i>Потребител и парола
-                      </button>
-                      <button
-                        type="button"
-                        data-auth="cookies"
-                        class="auth-tab rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
-                      >
-                        <i class="fa-solid fa-cookie-bite mr-1.5 text-[11px]"></i>Сесийни бисквитки
-                      </button>
-                    </div>
-                    <p class="mt-2 text-[12px] leading-relaxed text-slate-500">
-                      Бисквитките са по-безопасният вариант: изтичат сами и не дават достъп до
-                      смяна на паролата ви.
-                    </p>
-                  </div>
-
-                  <!-- Password pane -->
-                  <div id="pane-password" class="space-y-5">
-                    <div>
-                      <label for="vendor-username" class="mb-2 block text-[13px] font-medium text-slate-300">
-                        Потребител / E-mail
-                      </label>
-                      <div class="relative">
-                        <i
-                          class="fa-solid fa-user pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
-                        ></i>
-                        <input
-                          type="text"
-                          id="vendor-username"
-                          name="username"
-                          autocomplete="off"
-                          spellcheck="false"
-                          placeholder="dealer@moqtmagazin.bg"
-                          class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-4 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label for="vendor-password" class="mb-2 block text-[13px] font-medium text-slate-300">
-                        Парола
-                      </label>
-                      <div class="relative">
-                        <i
-                          class="fa-solid fa-lock pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
-                        ></i>
-                        <input
-                          type="password"
-                          id="vendor-password"
-                          name="password"
-                          autocomplete="off"
-                          placeholder="••••••••••••"
-                          class="w-full rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-12 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                        />
-                        <button
-                          type="button"
-                          id="toggle-password"
-                          aria-label="Покажи паролата"
-                          class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-500 transition hover:text-slate-200"
-                        >
-                          <i class="fa-solid fa-eye text-[13px]"></i>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Cookies pane -->
-                  <div id="pane-cookies" class="hidden">
-                    <label for="vendor-cookies" class="mb-2 block text-[13px] font-medium text-slate-300">
-                      Сесийни бисквитки
-                    </label>
-                    <textarea
-                      id="vendor-cookies"
-                      name="cookies"
-                      rows="7"
-                      spellcheck="false"
-                      placeholder="PHPSESSID=8f2b9c...; wholesale_auth=eyJhbGciOi...; cart_token=a91f..."
-                      class="w-full resize-y rounded-xl border border-white/10 bg-ink-850 px-4 py-3 font-mono text-[13px] leading-relaxed text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                    ></textarea>
-                    <p class="mt-2 text-[12px] leading-relaxed text-slate-500">
-                      Копирайте от DevTools → Application → Cookies, или през разширението ни за
-                      Chrome. Поддържа се и суров <code class="text-slate-400">Cookie:</code> хедър.
-                    </p>
-                  </div>
-
-                  <!-- Check interval -->
-                  <div>
-                    <label for="vendor-interval" class="mb-2 block text-[13px] font-medium text-slate-300">
-                      Честота на проверка
-                    </label>
-                    <div class="relative">
-                      <i
-                        class="fa-solid fa-clock-rotate-left pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
-                      ></i>
-                      <select
-                        id="vendor-interval"
-                        name="checkIntervalMinutes"
-                        class="w-full appearance-none rounded-xl border border-white/10 bg-ink-850 py-3 pl-10 pr-10 text-[14px] text-slate-200 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-                      >
-                        <option value="1440">Веднъж дневно (Бизнес)</option>
-                        <option value="720" selected>Два пъти дневно (ПРО)</option>
-                        <option value="60">На всеки час (Корпоративен)</option>
-                        <option value="15">На 15 минути (Корпоративен)</option>
-                      </select>
-                      <i
-                        class="fa-solid fa-chevron-down pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-slate-500"
-                      ></i>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <button
-                    type="submit"
-                    id="save-vendor"
-                    class="inline-flex items-center justify-center gap-2.5 rounded-xl bg-accent-500 px-6 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <i id="save-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
-                    <i id="save-icon" class="fa-solid fa-shield-halved text-[13px]"></i>
-                    <span id="save-label">Запази доставчик</span>
-                  </button>
-                  <button
-                    type="button"
-                    id="test-connection"
-                    class="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/20 hover:text-slate-200"
-                  >
-                    <i class="fa-solid fa-vial text-[13px]"></i>
-                    Тествай връзката
-                  </button>
-                </div>
-
-                <p id="vendor-status" class="mt-4 hidden text-[13px]"></p>
-              </form>
-            </div>
-
-            <!-- Security column -->
-            <aside class="space-y-5 lg:col-span-2">
-              <!-- SECURITY BANNER -->
-              <div
-                class="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] p-6"
-              >
-                <div
-                  class="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-emerald-500/10 blur-2xl"
-                ></div>
-                <div class="flex items-start gap-4">
-                  <span
-                    class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-400/40"
-                  >
-                    <i class="fa-solid fa-shield-halved text-[17px] text-emerald-400"></i>
-                  </span>
-                  <div>
-                    <h3 class="text-[15px] font-semibold text-emerald-500">
-                      🔒 Сигурността е наш приоритет
-                    </h3>
-                    <p class="mt-2.5 text-[13.5px] leading-relaxed text-slate-300">
-                      Данните ви се криптират
-                      <strong class="font-semibold text-slate-200">локално във вашия браузър</strong>
-                      с <strong class="font-semibold text-slate-200">AES-256-GCM</strong>, преди изобщо
-                      да напуснат устройството ви. До Supabase пътува само шифрован пакет.
-                    </p>
-                    <p class="mt-3 text-[13.5px] leading-relaxed text-slate-300">
-                      Ключът се разпечатва единствено вътре в скрейпъра, в момента на влизане в
-                      портала на доставчика. Паролата
-                      <strong class="font-semibold text-slate-200">никога не се логва</strong>, не се
-                      показва в базата и не е достъпна през API-то.
-                    </p>
-                  </div>
-                </div>
-
-                <ul class="mt-5 space-y-2 border-t border-emerald-400/15 pt-4 text-[12.5px] text-slate-400">
-                  <li class="flex items-center gap-2.5">
-                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
-                    AES-256-GCM в браузъра (WebCrypto), ключ увит с RSA-OAEP
-                  </li>
-                  <li class="flex items-center gap-2.5">
-                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
-                    TLS 1.3 при пренос, криптиране на диска в Supabase
-                  </li>
-                  <li class="flex items-center gap-2.5">
-                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
-                    Пълен одит log на всяко декриптиране
-                  </li>
-                  <li class="flex items-center gap-2.5">
-                    <i class="fa-solid fa-check text-[11px] text-emerald-400"></i>
-                    Изтриване по всяко време, необратимо
-                  </li>
-                </ul>
-              </div>
-
-              <!-- Honest note -->
-              <div class="rounded-2xl border border-white/8 bg-ink-900 p-5">
-                <h4 class="flex items-center gap-2 text-[13px] font-semibold text-slate-200">
-                  <i class="fa-solid fa-circle-info text-[12px] text-slate-500"></i>
-                  Какво трябва да знаете
-                </h4>
-                <p class="mt-2.5 text-[13px] leading-relaxed text-slate-400">
-                  За да чете цените вместо вас, скрейпърът трябва да може да се логне — тоест
-                  системата по необходимост може да разпечата достъпа в момента на използване.
-                  Затова препоръчваме
-                  <strong class="text-slate-200">отделен търговски акаунт</strong> само за
-                  PriceGuard и, където доставчикът позволява,
-                  <strong class="text-slate-200">сесийни бисквитки вместо парола</strong>.
-                </p>
-                <p class="mt-2.5 text-[13px] leading-relaxed text-slate-400">
-                  Проверете и договора с доставчика си — някои B2B условия забраняват автоматизиран
-                  достъп дори с валиден акаунт.
-                </p>
-              </div>
-
-              <!-- Saved vendors -->
-              <div class="rounded-2xl border border-white/8 bg-ink-900 p-5">
-                <h4 class="text-[13px] font-semibold text-slate-200">Свързани портали</h4>
-                <ul id="vendor-list" class="mt-3.5 space-y-2.5"></ul>
-              </div>
-            </aside>
-          </div>
-        </div>
-      </section>
-
       <!-- ================================================================ -->
       <!-- SECTION — OPERATOR PANEL                                         -->
       <!--                                                                  -->
@@ -2028,14 +1705,14 @@
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <label for="product-our-price" class="mb-1.5 block text-[13px] font-medium text-slate-300">
-                Вашата продажна цена (EUR)
+                Колко плащате сега (EUR)
               </label>
               <input
                 type="number"
                 id="product-our-price"
                 step="0.01"
                 min="0"
-                placeholder="399.00"
+                placeholder="0.70"
                 class="num w-full rounded-xl border border-white/10 bg-ink-900 px-4 py-2.5 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
               />
             </div>
@@ -2368,7 +2045,7 @@
                 for="edit-product-our-price"
                 class="mb-2 block text-[13px] font-medium text-slate-300"
               >
-                Вашата цена
+                Колко плащате сега
               </label>
               <input
                 type="number"
@@ -2697,9 +2374,6 @@
       const ENDPOINTS = {
         products: API_BASE + '/products',
         analyticsOverview: API_BASE + '/analytics/overview',
-        credentials: API_BASE + '/scraper/credentials',
-        credentialsPublicKey: API_BASE + '/scraper/credentials/public-key',
-        credentialsTest: API_BASE + '/scraper/credentials/test',
         scraperTrigger: API_BASE + '/scraper/trigger',
         scraperRun: API_BASE + '/scraper/run',
         scraperRefresh: API_BASE + '/scraper/competitors',
@@ -2842,7 +2516,7 @@
        * View switching
        * ------------------------------------------------------------------ */
 
-      const VIEWS = ['landing', 'credentials', 'catalogue', 'dashboard', 'operator'];
+      const VIEWS = ['landing', 'catalogue', 'dashboard', 'operator'];
       let currentView = '';
 
       function switchView(name, options) {
@@ -2916,329 +2590,6 @@
         }
       }
 
-      /* ------------------------------------------------------------------ *
-       * SECTION 2 — credentials form
-       * ------------------------------------------------------------------ */
-
-      const vendorForm = $('#vendor-form');
-      const vendorSelect = $('#vendor-domain');
-      const vendorCustom = $('#vendor-custom');
-
-      vendorSelect.addEventListener('change', function () {
-        const custom = vendorSelect.value === '__custom__';
-        vendorCustom.classList.toggle('hidden', !custom);
-        if (custom) vendorCustom.focus();
-      });
-
-      let authMode = 'password';
-
-      $$('.auth-tab').forEach(function (tab) {
-        tab.addEventListener('click', function () {
-          authMode = tab.dataset.auth;
-
-          $$('.auth-tab').forEach(function (other) {
-            const active = other === tab;
-            other.classList.toggle('border-accent-500/50', active);
-            other.classList.toggle('bg-accent-500/10', active);
-            other.classList.toggle('text-slate-200', active);
-            other.classList.toggle('border-white/10', !active);
-            other.classList.toggle('bg-ink-850', !active);
-            other.classList.toggle('text-slate-400', !active);
-          });
-
-          $('#pane-password').classList.toggle('hidden', authMode !== 'password');
-          $('#pane-cookies').classList.toggle('hidden', authMode !== 'cookies');
-        });
-      });
-
-      $('#toggle-password').addEventListener('click', function () {
-        const field = $('#vendor-password');
-        const icon = this.querySelector('i');
-        const hidden = field.type === 'password';
-
-        field.type = hidden ? 'text' : 'password';
-        icon.className = hidden ? 'fa-solid fa-eye-slash text-[13px]' : 'fa-solid fa-eye text-[13px]';
-      });
-
-      /* --- Client-side encryption --------------------------------------- *
-       *
-       * The credential payload is sealed in the browser before it is sent:
-       *
-       *   1. a fresh AES-256-GCM key encrypts the JSON;
-       *   2. that key is wrapped with the server's RSA-OAEP public key;
-       *   3. only ciphertext, IV and the wrapped key leave the machine.
-       *
-       * The server can unwrap the key — it must, because the scraper has to log
-       * in on the customer's behalf. What this buys is real all the same: the
-       * plaintext never exists in a request body, a proxy log, an error report
-       * or a database column.
-       *
-       * If the public key cannot be fetched, submission is refused. Falling back
-       * to sending a plaintext password would defeat the entire point.
-       * ------------------------------------------------------------------ */
-
-      let cachedPublicKey = null;
-
-      function base64FromBuffer(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i += 1) binary += String.fromCharCode(bytes[i]);
-        return window.btoa(binary);
-      }
-
-      function bufferFromBase64(value) {
-        const binary = window.atob(value);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        return bytes.buffer;
-      }
-
-      async function getServerPublicKey() {
-        if (cachedPublicKey) return cachedPublicKey;
-
-        const response = await fetch(ENDPOINTS.credentialsPublicKey, { headers: authHeaders() });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-
-        const payload = await response.json();
-
-        cachedPublicKey = {
-          keyId: payload.keyId,
-          key: await window.crypto.subtle.importKey(
-            'spki',
-            bufferFromBase64(payload.publicKey),
-            { name: 'RSA-OAEP', hash: 'SHA-256' },
-            false,
-            ['encrypt'],
-          ),
-        };
-
-        return cachedPublicKey;
-      }
-
-      async function sealCredentials(secretPayload) {
-        if (!window.crypto || !window.crypto.subtle) {
-          throw new Error(
-            'Браузърът не поддържа WebCrypto. Отворете страницата през HTTPS или localhost.',
-          );
-        }
-
-        const server = await getServerPublicKey();
-
-        const dataKey = await window.crypto.subtle.generateKey(
-          { name: 'AES-GCM', length: 256 },
-          true,
-          ['encrypt'],
-        );
-
-        // 96-bit IV, the size AES-GCM is specified for. Fresh for every payload:
-        // reusing an IV with the same key breaks GCM catastrophically.
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-
-        const ciphertext = await window.crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv: iv, tagLength: 128 },
-          dataKey,
-          new TextEncoder().encode(JSON.stringify(secretPayload)),
-        );
-
-        const rawDataKey = await window.crypto.subtle.exportKey('raw', dataKey);
-        const wrappedKey = await window.crypto.subtle.encrypt(
-          { name: 'RSA-OAEP' },
-          server.key,
-          rawDataKey,
-        );
-
-        return {
-          algorithm: 'AES-256-GCM',
-          keyId: server.keyId,
-          iv: base64FromBuffer(iv),
-          ciphertext: base64FromBuffer(ciphertext),
-          encryptedKey: base64FromBuffer(wrappedKey),
-        };
-      }
-
-      function setSaving(saving) {
-        $('#save-vendor').disabled = saving;
-        $('#save-spinner').classList.toggle('hidden', !saving);
-        $('#save-icon').classList.toggle('hidden', saving);
-        $('#save-label').textContent = saving ? 'Криптиране и запис…' : 'Запази доставчик';
-      }
-
-      function showVendorStatus(message, tone) {
-        const element = $('#vendor-status');
-        const palette = {
-          success: 'text-emerald-400',
-          error: 'text-red-400',
-          info: 'text-slate-400',
-        };
-
-        element.className = 'mt-4 text-[13px] ' + (palette[tone] || palette.info);
-        element.textContent = message;
-        element.classList.remove('hidden');
-      }
-
-      function readVendorForm() {
-        const domain =
-          vendorSelect.value === '__custom__' ? vendorCustom.value.trim() : vendorSelect.value;
-
-        return {
-          domain: domain,
-          label: $('#vendor-label').value.trim() || domain,
-          authMode: authMode,
-          username: $('#vendor-username').value.trim(),
-          password: $('#vendor-password').value,
-          cookies: $('#vendor-cookies').value.trim(),
-          checkIntervalMinutes: Number($('#vendor-interval').value),
-        };
-      }
-
-      function validateVendorForm(form) {
-        if (!form.domain) return 'Изберете доставчик или въведете домейн.';
-        if (form.authMode === 'password' && (!form.username || !form.password)) {
-          return 'Въведете потребител и парола.';
-        }
-        if (form.authMode === 'cookies' && !form.cookies) {
-          return 'Поставете сесийните бисквитки.';
-        }
-        return null;
-      }
-
-      vendorForm.addEventListener('submit', async function (event) {
-        event.preventDefault();
-
-        const form = readVendorForm();
-        const problem = validateVendorForm(form);
-
-        if (problem) {
-          showVendorStatus(problem, 'error');
-          return;
-        }
-
-        setSaving(true);
-        showVendorStatus('Криптиране във вашия браузър…', 'info');
-
-        try {
-          const sealed = await sealCredentials(
-            form.authMode === 'password'
-              ? { username: form.username, password: form.password }
-              : { cookies: form.cookies },
-          );
-
-          const response = await fetch(ENDPOINTS.credentials, {
-            method: 'POST',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-              domain: form.domain,
-              label: form.label,
-              authMode: form.authMode,
-              checkIntervalMinutes: form.checkIntervalMinutes,
-              // Only the sealed envelope crosses the network.
-              secret: sealed,
-            }),
-          });
-
-          if (!response.ok) {
-            const detail = await response.text();
-            throw new Error('HTTP ' + response.status + ' ' + detail.slice(0, 160));
-          }
-
-          const saved = await response.json();
-
-          addVendorToList({
-            domain: form.domain,
-            label: form.label,
-            authMode: form.authMode,
-            id: saved.id,
-          });
-
-          vendorForm.reset();
-          vendorCustom.classList.add('hidden');
-          showVendorStatus('Доставчикът е запазен шифрован.', 'success');
-          toast('Достъпът е криптиран и запазен.', 'success');
-        } catch (error) {
-          // The most common cause during development is that the backend
-          // endpoint does not exist yet, which must not look like success.
-          showVendorStatus(
-            'Записът не бе извършен: ' +
-              error.message +
-              ' — нищо не е изпратено в явен вид.',
-            'error',
-          );
-          toast('Записът се провали. Паролата не е напускала браузъра.', 'error');
-        } finally {
-          setSaving(false);
-        }
-      });
-
-      $('#test-connection').addEventListener('click', async function () {
-        const form = readVendorForm();
-        const problem = validateVendorForm(form);
-
-        if (problem) {
-          showVendorStatus(problem, 'error');
-          return;
-        }
-
-        showVendorStatus('Проверка на връзката към ' + form.domain + '…', 'info');
-
-        try {
-          const sealed = await sealCredentials(
-            form.authMode === 'password'
-              ? { username: form.username, password: form.password }
-              : { cookies: form.cookies },
-          );
-
-          const response = await fetch(ENDPOINTS.credentialsTest, {
-            method: 'POST',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ domain: form.domain, secret: sealed }),
-          });
-
-          if (!response.ok) throw new Error('HTTP ' + response.status);
-
-          const result = await response.json();
-          showVendorStatus(
-            result.success
-              ? 'Успешно влизане в ' + form.domain + '.'
-              : 'Порталът отказа достъпа: ' + (result.message || 'непозната причина'),
-            result.success ? 'success' : 'error',
-          );
-        } catch (error) {
-          showVendorStatus('Тестът не успя: ' + error.message, 'error');
-        }
-      });
-
-      const vendorList = $('#vendor-list');
-
-      function addVendorToList(vendor) {
-        const empty = vendorList.querySelector('[data-empty]');
-        if (empty) empty.remove();
-
-        const item = document.createElement('li');
-        item.className =
-          'flex items-center gap-3 rounded-xl border border-white/8 bg-ink-850 px-3.5 py-2.5';
-        item.innerHTML =
-          '<span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-500/12">' +
-          '<i class="fa-solid ' +
-          (vendor.authMode === 'cookies' ? 'fa-cookie-bite' : 'fa-key') +
-          ' text-[11px] text-emerald-400"></i></span>' +
-          '<span class="min-w-0 flex-1"><span class="block truncate text-[13px] font-medium text-slate-200">' +
-          escapeHtml(vendor.label) +
-          '</span><span class="block truncate text-[11.5px] text-slate-500">' +
-          escapeHtml(vendor.domain) +
-          '</span></span>' +
-          '<span class="shrink-0 rounded-md bg-emerald-500/12 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-400">' +
-          'шифрован</span>';
-
-        vendorList.prepend(item);
-      }
-
-      function renderEmptyVendorList() {
-        vendorList.innerHTML =
-          '<li data-empty class="rounded-xl border border-dashed border-white/10 px-3.5 py-4 text-center text-[12.5px] text-slate-600">' +
-          'Още няма свързани портали.</li>';
-      }
-
-      renderEmptyVendorList();
 
       /* ------------------------------------------------------------------ *
        * Theme
@@ -4923,6 +4274,8 @@
                 imageUrl: product.imageUrl,
                 attributes: product.attributes,
                 notes: product.notes,
+                // What the buyer pays today — set against the best price found,
+                // this is what says an article is costing money on every reorder.
                 marketPrice: product.ourPrice == null ? null : Number(product.ourPrice),
                 targetPrice: product.targetPrice == null ? null : Number(product.targetPrice),
                 checkIntervalMinutes: product.checkIntervalMinutes,
