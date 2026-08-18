@@ -6284,9 +6284,42 @@
         }
       }
 
-      $$('[data-checkout]').forEach(function (button) {
-        button.addEventListener('click', () => startCheckout(button.dataset.checkout, button));
-      });
+      /**
+       * Wires the pricing buttons to whichever of the two is true.
+       *
+       * Checkout is optional — this deployment may take payment by invoice, or
+       * simply not be selling yet. Asking the server rather than assuming means
+       * a button never opens a checkout that cannot complete, and never sits
+       * there looking clickable while the answer is "write to us".
+       */
+      (async function wirePricingButtons() {
+        const buttons = $$('[data-checkout]');
+        if (!buttons.length) return;
+
+        let available = { enabled: false, plans: [] };
+        try {
+          const response = await fetch(ENDPOINTS.billingPlans, { headers: { Accept: 'application/json' } });
+          if (response.ok) available = await response.json();
+        } catch (error) {
+          // Unreachable server: treat as not selling rather than as an error
+          // on a page somebody is only reading.
+        }
+
+        buttons.forEach(function (button) {
+          const plan = button.dataset.checkout;
+          const buyable = available.enabled && available.plans.indexOf(plan) !== -1;
+
+          if (buyable) {
+            button.addEventListener('click', () => startCheckout(plan, button));
+            return;
+          }
+
+          button.textContent = 'Свържете се с нас';
+          button.addEventListener('click', function () {
+            toast('Пишете ни и ще ви активираме акаунт.', 'info');
+          });
+        });
+      })();
 
       $$('[data-contact]').forEach(function (button) {
         button.addEventListener('click', function () {
