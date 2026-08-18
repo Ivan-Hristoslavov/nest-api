@@ -65,7 +65,7 @@ export const SEARCH_PROVIDERS: SearchProvider[] = [
     // is what the sitemap crawl uses.
     searchUrl: (query) => `https://www.tmt-elkom.com/search?q=${query}`,
     resultLinkSelector: 'a[href*="/"]',
-    productUrlPattern: /^https?:\/\/(www\.)?tmt-elkom\.com\/[a-z0-9%\-]{8,}$/i,
+    productUrlPattern: /^https?:\/\/(www\.)?tmt-elkom\.com\/[a-z0-9%-]{8,}$/i,
     tileSelector: '.product, li, article',
     priceSelector: '[itemprop="price"], .price',
   },
@@ -75,7 +75,7 @@ export const SEARCH_PROVIDERS: SearchProvider[] = [
     // Magento: /catalogsearch/result/?q= — 251 matches for "кабел".
     searchUrl: (query) => `https://homefinishing.bg/catalogsearch/result/?q=${query}`,
     resultLinkSelector: 'a.product-item-link, a[href*="homefinishing.bg/"]',
-    productUrlPattern: /^https?:\/\/(www\.)?homefinishing\.bg\/[a-z0-9%\-]{6,}$/i,
+    productUrlPattern: /^https?:\/\/(www\.)?homefinishing\.bg\/[a-z0-9%-]{6,}$/i,
     tileSelector: '.product-item, li.item',
     priceSelector: '.price',
   },
