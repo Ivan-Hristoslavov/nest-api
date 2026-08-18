@@ -5419,10 +5419,6 @@
         // further down with the header, which put it in the temporal dead zone
         // and threw "Cannot access 'singleGroup' before initialization" —
         // taking the whole search down with it.
-        const groupCount = new Set(hits.map((hit) => hit.groupKey)).size;
-        const singleGroup = groupCount <= 1;
-        const anyDiscount = hits.some((hit) => hit.discountPercent > 0);
-
         // Per-group extremes: the cheapest cable is not comparable with the
         // cheapest reel, so each group is coloured against its own range.
         const groupStats = new Map();
@@ -5438,31 +5434,66 @@
           stat.count += 1;
         });
 
-        const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
+        
+        const groupCount = new Set(hits.map((hit) => hit.groupKey)).size;
+        const singleGroup = groupCount <= 1;
+        const anyDiscount = hits.some((hit) => hit.discountPercent > 0);
+
+const columnCount = 4 + (showSupplier ? 1 : 0) + (anyDiscount ? 1 : 0) + 2;
         let lastGroup = null;
 
-        const rows = hits
+        // A group of one is not a group. Nine offers under nine headings, each
+        // heading repeating the row beneath it, is more text and less meaning
+        // than no grouping at all. A heading is earned only where there are two
+        // or more offers to compare; everything else is listed plainly.
+        const comparable = new Set(
+          [...groupStats.entries()].filter(([, stat]) => stat.count > 1).map(([key]) => key),
+        );
+
+        // Real comparisons first — that is what somebody opened the page for —
+        // then the singles, cheapest first.
+        const ordered = [
+          ...hits.filter((hit) => comparable.has(hit.groupKey)),
+          ...hits.filter((hit) => !comparable.has(hit.groupKey)),
+        ];
+
+        let singlesHeaderDone = false;
+
+        const rows = ordered
           .map(function (hit, index) {
             const stat = groupStats.get(hit.groupKey) || { min: cheapest, max: dearest, count: 1 };
             let header = '';
 
-            if (!singleGroup && hit.groupKey !== lastGroup) {
-              lastGroup = hit.groupKey;
-              header =
-                '<tr class="bg-ink-950/50"><td colspan="' +
-                columnCount +
-                '" class="border-y border-white/8 px-5 py-2.5">' +
-                '<span class="text-[11.5px] font-semibold uppercase tracking-wide text-accent-500">' +
-                escapeHtml(hit.groupLabel) +
-                '</span>' +
-                '<span class="ml-2.5 text-[11.5px] text-slate-500">' +
-                stat.count +
-                (stat.count === 1 ? ' оферта' : ' оферти') +
-                (stat.count > 1
-                  ? ' · от ' + stat.min.toFixed(2) + ' до ' + stat.max.toFixed(2) + ' ' +
-                    escapeHtml(hit.effectiveCurrency)
-                  : '') +
-                '</span></td></tr>';
+            const groupHeader = (label, note) =>
+              '<tr><td colspan="' +
+              columnCount +
+              '" class="border-y border-white/8 bg-ink-950/60 px-5 py-2">' +
+              '<span class="text-[11px] font-semibold uppercase tracking-wide text-accent-500">' +
+              escapeHtml(label) +
+              '</span>' +
+              (note
+                ? '<span class="ml-2 text-[11px] text-slate-500">' + escapeHtml(note) + '</span>'
+                : '') +
+              '</td></tr>';
+
+            if (comparable.has(hit.groupKey)) {
+              if (hit.groupKey !== lastGroup) {
+                lastGroup = hit.groupKey;
+                header = groupHeader(
+                  hit.groupLabel,
+                  stat.count +
+                    ' оферти · ' +
+                    stat.min.toFixed(2) +
+                    ' – ' +
+                    stat.max.toFixed(2) +
+                    ' ' +
+                    hit.effectiveCurrency,
+                );
+              }
+            } else if (!singlesHeaderDone && comparable.size > 0) {
+              // One heading for the whole tail, not one per row.
+              singlesHeaderDone = true;
+              header = groupHeader('Единични резултати', 'по една оферта — няма с какво да се сравнят');
             }
 
             const tone = priceTone(hit, stat.min, stat.max);
@@ -5583,6 +5614,8 @@
         // printing "от 0.14 до 19.10" across the two invites precisely the
         // wrong conclusion. With several kinds on screen the header counts them
         // instead, and each group carries its own range.
+        // Only state a range when the offers on screen are actually comparable.
+        // "9 оферти в 9 вида артикул" tells the reader nothing they can use.
         const range =
           singleGroup && priced.length > 1
             ? ' · от <strong class="num text-emerald-400">' +
@@ -5592,9 +5625,14 @@
               ' ' +
               escapeHtml(priced[0].effectiveCurrency) +
               '</strong>'
-            : groupCount > 1
-              ? ' в <strong class="text-slate-300">' + groupCount + '</strong> вида артикул'
-              : '';
+            : '';
+
+        // The badge earns its place only when there is a saving to point at.
+        const comparableGroups = [...groupStats.values()].filter((stat) => stat.count > 1);
+        const bestSaving = comparableGroups.reduce(
+          (most, stat) => Math.max(most, stat.max - stat.min),
+          0,
+        );
 
         const spread =
           singleGroup && priced.length > 1 && cheapest > 0
@@ -5604,9 +5642,13 @@
               ' ' +
               escapeHtml(priced[0].effectiveCurrency) +
               ' на бройка</span>'
-            : groupCount > 1
-              ? '<span class="rounded-md bg-white/5 px-2 py-1 text-[11.5px] font-medium text-slate-400">' +
-                'цените се сравняват в рамките на всеки вид</span>'
+            : bestSaving > 0
+              ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-semibold text-emerald-400">' +
+                'спестявате до ' +
+                bestSaving.toFixed(2) +
+                ' ' +
+                escapeHtml(priced[0].effectiveCurrency) +
+                '</span>'
               : '';
 
         results.innerHTML =
