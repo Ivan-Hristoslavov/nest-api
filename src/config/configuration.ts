@@ -88,6 +88,11 @@ export interface AlertsConfig {
  * to notice and hand a key over by chat.
  */
 /** Stripe Checkout, when Stripe is the merchant of record. */
+export interface CheckoutConfig {
+  /** Hosted payment page per plan, from whichever provider issues invoices. */
+  links: Partial<Record<'starter' | 'pro' | 'business', string>>;
+}
+
 export interface StripeConfig {
   secretKey?: string;
   webhookSecret?: string;
@@ -130,6 +135,7 @@ export interface ThrottleConfig {
 
 export interface Configuration {
   app: AppConfig;
+  checkout: CheckoutConfig;
   matching: MatchingConfig;
   currency: CurrencyConfig;
   auth: AuthConfig;
@@ -263,6 +269,13 @@ export const configuration = (): Configuration => {
       emailFallbackTo: env.ALERT_EMAIL_FALLBACK_TO,
       deliveryTimeoutMs: env.ALERT_DELIVERY_TIMEOUT_MS,
       cooldownMinutes: env.ALERT_COOLDOWN_MINUTES,
+    },
+    checkout: {
+      links: {
+        starter: env.CHECKOUT_LINK_STARTER,
+        pro: env.CHECKOUT_LINK_PRO,
+        business: env.CHECKOUT_LINK_BUSINESS,
+      },
     },
     matching: {
       // Enabled *and* keyed. A deployment with the flag on and no key would

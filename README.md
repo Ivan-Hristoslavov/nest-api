@@ -321,7 +321,19 @@ With no channel configured, alerts are still stored, with `deliveryStatus: "skip
 
 **Free, self-served.** `POST /billing/signup` with an email creates an active account on the free plan (10 tracked articles), issues a key, emails it *and* returns it in the response — an onboarding that depends on an inbox loses everyone whose mail is slow or mistyped. Throttled to 5 per hour per IP. An address that already has an account is refused with 409 rather than re-keyed: issuing is destructive, so re-keying would let a stranger lock a customer out.
 
-**Paid.**
+**Paid.** Two ways, and the choice is a tax decision rather than a technical one.
+
+| | Stripe | Paddle / Lemon Squeezy |
+| --- | --- | --- |
+| Who sells to the customer | you | them |
+| Who owes EU VAT and files OSS | **you** | them |
+| Who issues the invoice | you | them |
+| Fees | lower | higher |
+| Configuration here | `STRIPE_SECRET_KEY` + a price id per plan | `CHECKOUT_LINK_*` per plan |
+
+`BILLING_PROVIDER` selects which webhook signature is verified — the event handling already understands Paddle, Lemon Squeezy and Stripe names. `CheckoutService` prefers a hosted link where one is set, because the merchant-of-record platforms hand out a URL per price rather than an API to create a session; Stripe's session API is used otherwise. A plan with neither is not offered for sale at all.
+
+
 
 ```
 visitor clicks a plan → POST /api/v1/billing/checkout → Stripe Checkout

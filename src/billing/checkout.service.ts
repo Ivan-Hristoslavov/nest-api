@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
-import { Configuration, MailConfig, StripeConfig } from '../config/configuration';
+import { CheckoutConfig, Configuration, MailConfig, StripeConfig } from '../config/configuration';
 import { UserPlan } from './entities/user.entity';
 
 /** Plans a visitor can buy. `free` is not one of them. */
@@ -26,11 +26,13 @@ export type PurchasablePlan = Extract<
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
   private readonly config: StripeConfig;
+  private readonly checkout: CheckoutConfig;
   private readonly mail: MailConfig;
   private readonly stripe: Stripe | null;
 
   constructor(configService: ConfigService<Configuration, true>) {
     this.config = configService.get('stripe', { infer: true });
+    this.checkout = configService.get('checkout', { infer: true });
     this.mail = configService.get('mail', { infer: true });
 
     // No explicit apiVersion: the pinned one belongs to the installed SDK, and
@@ -40,18 +42,22 @@ export class CheckoutService {
   }
 
   get enabled(): boolean {
-    return this.stripe !== null;
+    return this.stripe !== null || Object.values(this.checkout.links).some(Boolean);
   }
 
-  /** Which plans have a price configured, so the UI offers only real ones. */
-  availablePlans(): Array<{ plan: PurchasablePlan; priceId: string }> {
+  /**
+   * Which plans can actually be bought right now.
+   *
+   * A plan counts as buyable if it has a hosted link or a Stripe price — the
+   * pricing page asks this rather than assuming, so a button never opens a
+   * checkout that cannot complete.
+   */
+  availablePlans(): Array<{ plan: PurchasablePlan }> {
     const plans: PurchasablePlan[] = [UserPlan.Starter, UserPlan.Pro, UserPlan.Business];
 
     return plans
-      .map((plan) => ({ plan, priceId: this.config.prices[plan] }))
-      .filter((entry): entry is { plan: PurchasablePlan; priceId: string } =>
-        Boolean(entry.priceId),
-      );
+      .filter((plan) => Boolean(this.checkout.links[plan] ?? this.config.prices[plan]))
+      .map((plan) => ({ plan }));
   }
 
   /**
@@ -62,9 +68,27 @@ export class CheckoutService {
    * somebody to a broken checkout page.
    */
   async createSession(plan: PurchasablePlan, email?: string): Promise<{ url: string; id: string }> {
+    // A hosted link wins where one exists. Paddle and Lemon Squeezy — the
+    // platforms that act as merchant of record, charge the customer in their
+    // own name and handle EU VAT — give you a URL per price rather than an API
+    // to create a session, and that is the arrangement most small sellers want.
+    const link = this.checkout.links[plan];
+
+    if (link) {
+      // The email is passed along where the provider accepts it, so the
+      // account the webhook creates belongs to the person who paid rather than
+      // to whatever address they type at the till.
+      const url = new URL(link);
+      if (email) url.searchParams.set('checkout[email]', email);
+
+      this.logger.log(`Hosted checkout link handed out for plan ${plan}`);
+      return { url: url.toString(), id: `link_${plan}` };
+    }
+
     if (!this.stripe) {
       throw new BadRequestException(
-        'Плащането не е настроено (липсва STRIPE_SECRET_KEY). Свържете се с нас, за да ви активираме акаунт.',
+        'Плащането не е настроено (няма нито CHECKOUT_LINK_*, нито STRIPE_SECRET_KEY). ' +
+          'Свържете се с нас, за да ви активираме акаунт.',
       );
     }
 

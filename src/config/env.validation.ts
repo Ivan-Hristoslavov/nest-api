@@ -433,6 +433,27 @@ export class EnvironmentVariables {
   @IsOptional()
   AI_MATCH_TIMEOUT_MS = 9000;
 
+  /**
+   * Hosted checkout links, one per plan.
+   *
+   * Paddle and Lemon Squeezy — the platforms that act as merchant of record
+   * and issue the invoice — hand you a URL per price rather than an API to
+   * create a session. Set these and the pricing buttons work regardless of
+   * which provider is behind them; leave them unset and the Stripe session
+   * API is used instead.
+   */
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  CHECKOUT_LINK_STARTER?: string;
+
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  CHECKOUT_LINK_PRO?: string;
+
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  CHECKOUT_LINK_BUSINESS?: string;
+
   // --- Currency ------------------------------------------------------------
   /**
    * Rates against the euro for currencies outside the pegged BGN pair, as
