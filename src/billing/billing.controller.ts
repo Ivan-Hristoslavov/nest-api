@@ -43,6 +43,7 @@ import { BillingService } from './billing.service';
 import { CheckoutService, PurchasablePlan } from './checkout.service';
 import { MailService } from './mail.service';
 import {
+  ActivateAccountDto,
   EraseAccountDto,
   IssuedApiKeyDto,
   MyAccountDto,
@@ -51,7 +52,7 @@ import {
 } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
-import { User, effectiveAiUsage } from './entities/user.entity';
+import { User, UserPlan, effectiveAiUsage } from './entities/user.entity';
 import { UsersService } from './users.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
@@ -308,6 +309,52 @@ export class BillingController {
     );
 
     return this.issue(user.id, dto.environment ?? 'live', Boolean(user.apiKeyPrefix));
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Post('users/activate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Open an account by hand (operator only)',
+    description:
+      'For the customer who paid by bank transfer, or whose plan is agreed rather than bought — the case the pricing page promises when it says "write to us and we will activate you". Activates a pending registration and places it on a plan; issues a first key if the account has none, and never rotates one it already has.',
+  })
+  @ApiOkResponse({ type: IssuedApiKeyDto })
+  @ApiNotFoundResponse({ description: 'No account with that email.', type: ErrorResponseDto })
+  async activateAccount(@Body() dto: ActivateAccountDto): Promise<IssuedApiKeyDto> {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    if (!user) {
+      throw new NotFoundException(`Няма акаунт с имейл "${dto.email}".`);
+    }
+
+    const activated = await this.usersService.activate(user.id, {
+      plan: (dto.plan as UserPlan | undefined) ?? undefined,
+    });
+
+    const { user: withKey, apiKey } = await this.usersService.activateFreeAccount(activated.id);
+
+    // Only a first key is issued here. Rotating one the customer already uses
+    // would break their integration as a side effect of a plan change.
+    const issuedNow = apiKey !== '';
+
+    if (issuedNow) await this.mail.sendApiKey(withKey, apiKey);
+
+    this.logger.warn(
+      `Operator activated ${withKey.email} on plan ${withKey.plan}` +
+        (issuedNow ? ' and issued a first key.' : ' (existing key kept).'),
+    );
+
+    return {
+      userId: withKey.id,
+      email: withKey.email,
+      apiKey,
+      prefix: withKey.apiKeyPrefix ?? '',
+      issuedAt: (withKey.apiKeyIssuedAt ?? new Date()).toISOString(),
+      replacedPreviousKey: false,
+      emailed: issuedNow,
+    };
   }
 
   @ApiKeyAuth()

@@ -3413,6 +3413,7 @@
         discoveryAvailable: API_BASE + '/discovery/available',
         discoveryBasket: API_BASE + '/discovery/basket',
         discoveryCompare: API_BASE + '/discovery/compare',
+        discoveryCompareStream: API_BASE + '/discovery/compare/stream',
         shops: API_BASE + '/shops',
         billingUsers: API_BASE + '/billing/users',
         billingCheckout: API_BASE + '/billing/checkout',
@@ -7036,6 +7037,72 @@
         $('#catalogue-results').prepend(box);
       }
 
+      /**
+       * The search, narrated.
+       *
+       * The old version showed one spinner for up to eight seconds, which is
+       * indistinguishable from a hang and hides the most persuasive thing this
+       * product does. The work is genuinely staged — the query is understood
+       * instantly, suppliers answer one at a time, matching runs last — so the
+       * stages are shown as they land, with real numbers rather than a
+       * pretence of progress.
+       */
+      function renderUnderstood(understood, shops) {
+        const chips = [];
+
+        if (understood.brand) chips.push(['Марка', understood.brand]);
+        if (understood.category) chips.push(['Вид', CATEGORY_LABELS[understood.category] || understood.category]);
+        (understood.measurements || []).forEach(function (m) {
+          chips.push([UNIT_LABELS[m.unit] || m.unit, m.value + m.unit]);
+        });
+        Object.keys(understood.specs || {}).forEach(function (key) {
+          chips.push([SPEC_LABELS[key] || key, understood.specs[key]]);
+        });
+
+        return (
+          '<div class="rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-4">' +
+          '<div class="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">' +
+          '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i> Разчетох заявката' +
+          '</div>' +
+          (chips.length
+            ? '<div class="mt-2.5 flex flex-wrap gap-1.5">' +
+              chips
+                .map(
+                  ([label, value]) =>
+                    '<span class="rounded-md bg-ink-900 px-2 py-1 text-[11.5px] text-slate-300 ring-1 ring-white/8">' +
+                    '<span class="text-slate-500">' + escapeHtml(label) + ':</span> ' +
+                    escapeHtml(String(value)) +
+                    '</span>',
+                )
+                .join('') +
+              '</div>'
+            : '<p class="mt-2 text-[12.5px] text-slate-400">Търся по описание — добавете мощност, размер или модел за по-точно сравнение.</p>') +
+          '<p class="mt-3 text-[12.5px] text-slate-500">Питам ' + shops + ' ' + plural(shops, 'доставчик', 'доставчици') + '…</p>' +
+          '<div id="stream-shops" class="mt-2 space-y-1"></div>' +
+          '<div id="stream-stage" class="mt-2 text-[12.5px] text-slate-400"></div>' +
+          '</div>'
+        );
+      }
+
+      const CATEGORY_LABELS = {
+        'led-bulb': 'крушка',
+        cable: 'кабел',
+        laptop: 'лаптоп',
+        phone: 'телефон',
+        monitor: 'монитор',
+        tv: 'телевизор',
+        tool: 'инструмент',
+        breaker: 'прекъсвач',
+      };
+      const UNIT_LABELS = {
+        W: 'Мощност', K: 'Цвят', V: 'Напрежение', A: 'Ток', GB: 'Памет', TB: 'Памет',
+        IN: 'Размер', M: 'Дължина', MM2: 'Сечение', HZ: 'Честота', LM: 'Поток',
+      };
+      const SPEC_LABELS = {
+        socket: 'Фасунга', cross_section: 'Сечение', resolution: 'Резолюция',
+        connector: 'Конектор', protection: 'Защита', curve: 'Характеристика',
+      };
+
       async function searchCatalogue() {
         const query = $('#catalogue-query').value.trim();
         const results = $('#catalogue-results');
@@ -7048,50 +7115,123 @@
 
         $('#catalogue-spinner').classList.remove('hidden');
         results.innerHTML = '';
-
-        // Three states, because the wait has three parts and a single spinner
-        // for eight seconds reads as a hang. The first two are honest labels
-        // for work that is genuinely happening.
-        const stage = (text) => {
-          live.innerHTML =
-            '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
-            '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>' +
-            escapeHtml(text) +
-            '</div>';
-        };
-
-        stage('Разчитам заявката…');
-        const stages = [
-          window.setTimeout(() => stage('Питам магазините…'), 350),
-          window.setTimeout(() => stage('Сравнявам артикулите…'), 3500),
-        ];
+        live.innerHTML =
+          '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
+          '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>Разчитам заявката…</div>';
 
         try {
           const url =
-            ENDPOINTS.discoveryCompare +
-            '?q=' +
-            encodeURIComponent(query) +
+            ENDPOINTS.discoveryCompareStream +
+            '?q=' + encodeURIComponent(query) +
             ($('#catalogue-instock').checked ? '&inStockOnly=true' : '');
 
-          const response = await fetch(url, { headers: authHeaders() });
-          if (!response.ok) throw new Error('HTTP ' + response.status);
+          // fetch, not EventSource: the latter cannot send the auth header, and
+          // this endpoint is scoped to an account like every other.
+          const response = await fetch(url, {
+            headers: authHeaders({ Accept: 'text/event-stream' }),
+          });
 
-          const result = await response.json();
+          if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
 
-          stages.forEach(window.clearTimeout);
-          renderShopOutcomes(result);
-          renderCatalogueResults(result.hits, query, result.matching);
-          renderDidYouMean(result.matching, query);
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let finished = false;
+
+          while (!finished) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+
+            buffer += decoder.decode(chunk.value, { stream: true });
+
+            // Server-sent events are separated by a blank line; anything after
+            // the last one is a partial event and stays in the buffer.
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || '';
+
+            for (const part of parts) {
+              const line = part.split('\n').find((l) => l.startsWith('data:'));
+              if (!line) continue;
+
+              let event;
+              try {
+                event = JSON.parse(line.slice(5).trim());
+              } catch (error) {
+                continue;
+              }
+
+              if (handleSearchEvent(event, query)) finished = true;
+            }
+          }
         } catch (error) {
-          stages.forEach(window.clearTimeout);
           live.innerHTML = '';
           results.innerHTML =
-            '<p class="text-[13px] text-red-400">Търсенето не успя: ' +
-            escapeHtml(error.message) +
-            '</p>';
+            '<p class="text-[13px] text-red-400">Търсенето не успя: ' + escapeHtml(error.message) + '</p>';
         } finally {
           $('#catalogue-spinner').classList.add('hidden');
         }
+      }
+
+      /** @returns true when the stream is finished. */
+      function handleSearchEvent(event, query) {
+        const live = $('#live-results');
+
+        if (event.type === 'understood') {
+          live.innerHTML = renderUnderstood(event.understood, event.shops);
+          renderDidYouMean({ understood: event.understood }, query);
+          return false;
+        }
+
+        if (event.type === 'shop') {
+          const row = document.createElement('div');
+          row.className = 'flex items-center gap-2 text-[12.5px]';
+          row.innerHTML = event.ok
+            ? '<i class="fa-solid fa-check text-[10px] text-emerald-400"></i>' +
+              '<span class="text-slate-300">' + escapeHtml(event.name) + '</span>' +
+              '<span class="text-slate-500">' + event.count + ' ' + plural(event.count, 'оферта', 'оферти') + '</span>' +
+              '<span class="ml-auto num text-slate-600">' + (event.durationMs / 1000).toFixed(1) + ' сек</span>'
+            : '<i class="fa-solid fa-xmark text-[10px] text-red-400"></i>' +
+              '<span class="text-slate-400">' + escapeHtml(event.name) + '</span>' +
+              '<span class="text-slate-600">не отговори</span>';
+
+          const box = document.getElementById('stream-shops');
+          if (box) box.appendChild(row);
+          return false;
+        }
+
+        if (event.type === 'matching') {
+          const stage = document.getElementById('stream-stage');
+          if (stage) {
+            stage.textContent =
+              'Сравнявам ' + event.candidates + ' ' + plural(event.candidates, 'оферта', 'оферти') + ' по спецификация…';
+          }
+          return false;
+        }
+
+        if (event.type === 'ai') {
+          const stage = document.getElementById('stream-stage');
+          if (stage) {
+            stage.innerHTML =
+              '<i class="fa-solid fa-wand-magic-sparkles mr-1 text-[10px] text-accent-500"></i>' +
+              event.comparisons + ' ' + plural(event.comparisons, 'оферта', 'оферти') +
+              ' не се решават от спецификациите — питам ' + escapeHtml(event.model || 'модела') + '…';
+          }
+          return false;
+        }
+
+        if (event.type === 'result') {
+          renderShopOutcomes(event);
+          renderCatalogueResults(event.hits, query, event.matching);
+          return false;
+        }
+
+        if (event.type === 'error') {
+          $('#catalogue-results').innerHTML =
+            '<p class="text-[13px] text-red-400">' + escapeHtml(event.message) + '</p>';
+          return true;
+        }
+
+        return event.type === 'done';
       }
 
       /* --- Pricing a whole order ---------------------------------------- */

@@ -151,3 +151,37 @@ describe('registration', () => {
     expect(classifyEmail('a@something.invalid')).toBe('unroutable');
   });
 });
+
+/**
+ * Activation must never cost somebody their working key.
+ *
+ * `apiKeyHash` carries `select: false`, so it is absent from an ordinary
+ * lookup — testing it for "does this account have a key" answered no for every
+ * account, and rotated a credential that was in daily use.
+ */
+describe('activating an account that already has a key', () => {
+  it('keeps the existing key rather than rotating it', async () => {
+    const repository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'u1',
+        email: 'kupuvach@example.com',
+        status: UserStatus.Active,
+        // What a real lookup returns: a prefix, and no hash.
+        apiKeyPrefix: 'pk_live_QB-SxMCX',
+        apiKeyHash: undefined,
+      }),
+      save: jest.fn((input: User) => Promise.resolve(input)),
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [UsersService, { provide: getRepositoryToken(User), useValue: repository }],
+    }).compile();
+
+    const service = moduleRef.get(UsersService);
+    const result = await service.activateFreeAccount('u1');
+
+    expect(result.apiKey).toBe('');
+    // Nothing was written: no rotation, and no needless status update.
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+});

@@ -154,9 +154,11 @@ export class UsersService {
       this.logger.log(`Verified and activated ${user.email}`);
     }
 
-    if (user.apiKeyHash) {
-      // Already has a key that cannot be read back. Rotating here would break
-      // whatever is using it just because somebody clicked an old link.
+    // Tested on the prefix, not the hash: `apiKeyHash` carries `select: false`
+    // and is therefore undefined on a plain `findOne`, which made this look
+    // like an account with no key and rotated one that was in daily use — an
+    // operator activating a plan would silently break the customer's scripts.
+    if (user.apiKeyPrefix) {
       return { user, apiKey: '' };
     }
 

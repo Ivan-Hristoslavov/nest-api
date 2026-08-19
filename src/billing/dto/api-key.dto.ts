@@ -205,3 +205,21 @@ export class EraseAccountDto {
   @Transform(trimString)
   confirmEmail!: string;
 }
+
+/** What an operator supplies to open an account by hand. */
+export class ActivateAccountDto {
+  @ApiProperty({ format: 'email', example: 'kupuvach@moiat-magazin.bg' })
+  @IsEmail()
+  @MaxLength(255)
+  @Transform(trimString)
+  email!: string;
+
+  @ApiPropertyOptional({
+    description: 'Plan to place them on. Defaults to the free plan.',
+    enum: ['free', 'starter', 'pro', 'business'],
+    example: 'pro',
+  })
+  @IsIn(['free', 'starter', 'pro', 'business'])
+  @IsOptional()
+  plan?: string;
+}
