@@ -739,6 +739,7 @@ export class DiscoveryService {
       aiCacheHits: run.aiCacheHits,
       aiModel: run.aiModel,
       aiSkippedReason: run.aiSkippedReason,
+      aiQuota: run.aiQuota,
       durationMs: run.durationMs,
     };
 

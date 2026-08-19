@@ -55,7 +55,7 @@ import {
 } from './dto/api-key.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
-import { User } from './entities/user.entity';
+import { User, effectiveAiUsage } from './entities/user.entity';
 import { UsersService } from './users.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
@@ -276,6 +276,10 @@ export class BillingController {
       );
     }
 
+    // The stored counter is only reset lazily; the shared helper applies the
+    // rollover so this endpoint never shows last month's spend as this month's.
+    const aiUsage = effectiveAiUsage(user);
+
     return {
       id: user.id,
       email: user.email,
@@ -283,6 +287,8 @@ export class BillingController {
       status: user.status,
       plan: user.plan,
       productLimit: user.productLimit,
+      aiMatchesUsed: aiUsage.used,
+      aiMatchesLimit: aiUsage.limit,
       apiKeyPrefix: user.apiKeyPrefix,
       apiKeyIssuedAt: user.apiKeyIssuedAt ? user.apiKeyIssuedAt.toISOString() : null,
       accessExpiresAt: user.accessExpiresAt ? user.accessExpiresAt.toISOString() : null,

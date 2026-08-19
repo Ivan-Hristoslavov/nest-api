@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
 
 import { Configuration, MailConfig } from '../config/configuration';
+import { codeBlock, dataRows, escapeHtml, noticeBox, paragraph, renderEmail } from './email-layout';
 import { User } from './entities/user.entity';
 
 /** Plan names as a customer would recognise them. */
@@ -86,48 +87,42 @@ export class MailService implements OnModuleInit {
    */
   async sendApiKey(user: User, apiKey: string, replaced = false): Promise<boolean> {
     const plan = PLAN_LABELS[user.plan] ?? user.plan;
-    const subject = replaced ? 'Новият ви ключ за PriceGuard' : 'Достъпът ви до PriceGuard';
+    const subject = replaced
+      ? 'Новият ви ключ за PriceGuard'
+      : 'Готово — ето ключа ви за PriceGuard';
 
-    const intro = replaced
-      ? 'Ето новия ви ключ. Предишният вече не работи.'
-      : `Благодарим ви. Акаунтът ви е активен на план <strong>${escapeHtml(plan)}</strong>.`;
-
-    const html = `
-      <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;color:#1f2937;line-height:1.6">
-        <h2 style="margin:0 0 16px;font-size:20px">${escapeHtml(subject)}</h2>
-        <p style="margin:0 0 16px">${intro}</p>
-        <p style="margin:0 0 8px">Вашият ключ:</p>
-        <p style="margin:0 0 16px;padding:14px 16px;background:#0f172a;color:#34d399;border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:14px;word-break:break-all">${escapeHtml(apiKey)}</p>
-        <p style="margin:0 0 16px">
-          Отворете <a href="${escapeHtml(this.config.appUrl)}" style="color:#2563eb">${escapeHtml(this.config.appUrl)}</a>
-          и го поставете в полето за достъп.
-        </p>
-        <p style="margin:0 0 16px;padding:12px 14px;background:#fef3c7;border-radius:8px;font-size:14px">
-          <strong>Пазете това писмо.</strong> Ключът не се съхранява в четим вид никъде — ако го загубите,
-          може само да бъде заменен с нов.
-        </p>
-        <p style="margin:0 0 4px;font-size:14px;color:#6b7280">Планът ви позволява ${user.productLimit} следени продукта.</p>
-        ${
-          this.config.supportEmail
-            ? `<p style="margin:0;font-size:14px;color:#6b7280">Въпроси: <a href="mailto:${escapeHtml(this.config.supportEmail)}" style="color:#2563eb">${escapeHtml(this.config.supportEmail)}</a></p>`
-            : ''
-        }
-      </div>`;
-
-    const text = [
-      subject,
-      '',
-      replaced
-        ? 'Ето новия ви ключ. Предишният вече не работи.'
-        : `Акаунтът ви е активен на план ${plan}.`,
-      '',
-      `Ключ: ${apiKey}`,
-      '',
-      `Отворете ${this.config.appUrl} и го поставете в полето за достъп.`,
-      '',
-      'Пазете това писмо — ключът не се съхранява в четим вид и може само да бъде заменен.',
-      `Планът ви позволява ${user.productLimit} следени продукта.`,
-    ].join('\n');
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: replaced
+        ? 'Предишният ключ вече не работи.'
+        : `Акаунтът ви е активен на план ${plan}. Ключът е вътре.`,
+      heading: replaced ? 'Ето новия ви ключ' : `Акаунтът ви е готов`,
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          replaced
+            ? 'Издадохме нов ключ по ваша заявка. <strong>Предишният спря да работи в същия момент</strong> — ако някъде е останал записан, заменете го.'
+            : `Благодарим ви. Планът ви е <strong>${escapeHtml(plan)}</strong> и достъпът е активен веднага.`,
+        ),
+        codeBlock(apiKey, 'Вашият ключ'),
+        noticeBox(
+          '<strong>Запазете това писмо.</strong> Ключът се пази само като хеш — никой, включително ние, не може да го прочете повторно. Загубен ключ не се възстановява, а се заменя с нов.',
+          'warn',
+        ),
+        dataRows([
+          ['План', plan],
+          ['Следени артикула', String(user.productLimit)],
+          ['AI сравнения', `${user.aiMatchesLimit} на месец`],
+          ['Доставчици', 'без ограничение'],
+        ]),
+      ],
+      cta: { label: 'Отвори таблото', url: this.config.appUrl },
+      footnotes: [
+        'Поставете ключа в полето за достъп горе вдясно — браузърът го помни, за да не го въвеждате всеки път.',
+        'Ключът е равнозначен на парола. Не го пращайте по чат и не го оставяйте в споделен документ.',
+      ],
+    });
 
     return this.send(user.email, subject, html, text);
   }
@@ -136,23 +131,25 @@ export class MailService implements OnModuleInit {
   async sendAccessExpired(user: User, reason: string): Promise<boolean> {
     const subject = 'Достъпът ви до PriceGuard е спрян';
 
-    const html = `
-      <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;color:#1f2937;line-height:1.6">
-        <h2 style="margin:0 0 16px;font-size:20px">${escapeHtml(subject)}</h2>
-        <p style="margin:0 0 16px">Ключът ви спря да работи: ${escapeHtml(reason)}.</p>
-        <p style="margin:0 0 16px">
-          Следените продукти и историята на цените се пазят. Подновете абонамента и достъпът се връща
-          със същия ключ.
-        </p>
-        <p style="margin:0"><a href="${escapeHtml(this.config.appUrl)}" style="color:#2563eb">${escapeHtml(this.config.appUrl)}</a></p>
-      </div>`;
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: 'Данните ви са запазени. Подновяването връща достъпа със същия ключ.',
+      heading: 'Достъпът ви е спрян',
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(`Ключът ви спря да работи: <strong>${escapeHtml(reason)}</strong>.`),
+        paragraph(
+          'Доставчиците, следените артикули и цялата история на цените остават непокътнати. Подновете абонамента и достъпът се връща <strong>със същия ключ</strong> — нищо не трябва да се настройва отново.',
+        ),
+        noticeBox(
+          'Ако смятате, че това е грешка — например плащане, което е минало — пишете ни и ще проверим преди да предприемете каквото и да е друго.',
+        ),
+      ],
+      cta: { label: 'Поднови достъпа', url: this.config.appUrl },
+    });
 
-    return this.send(
-      user.email,
-      subject,
-      html,
-      `${subject}\n\nКлючът ви спря да работи: ${reason}.\nСледените продукти се пазят. ${this.config.appUrl}`,
-    );
+    return this.send(user.email, subject, html, text);
   }
 
   /**
@@ -186,12 +183,4 @@ export class MailService implements OnModuleInit {
       return false;
     }
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

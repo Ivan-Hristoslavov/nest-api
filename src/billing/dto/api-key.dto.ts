@@ -88,6 +88,16 @@ export class MyAccountDto {
   @ApiProperty({ description: 'How many products this plan may track.', example: 50 })
   productLimit!: number;
 
+  @ApiProperty({
+    description:
+      'AI comparisons spent this month, after the monthly rollover. Spent only on offers the specifications cannot settle — most searches use none.',
+    example: 12,
+  })
+  aiMatchesUsed!: number;
+
+  @ApiProperty({ description: 'AI comparisons this plan allows per month.', example: 2000 })
+  aiMatchesLimit!: number;
+
   @ApiPropertyOptional({
     description: 'Identifying prefix of the key in use. The rest is never stored.',
     nullable: true,

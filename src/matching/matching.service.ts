@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
-import { User } from '../billing/entities/user.entity';
+import { User, effectiveAiUsage } from '../billing/entities/user.entity';
 import { ProductAttributes, extractAttributes, suggestCorrection } from './attributes';
 import { ClaudeService, PROMPT_VERSION } from './claude.service';
 import {
@@ -56,6 +56,14 @@ export interface MatchRunSummary {
   aiCacheHits: number;
   aiModel: string | null;
   aiSkippedReason: 'disabled' | 'quota' | 'unreachable' | null;
+  /**
+   * Where this account's monthly allowance stands, including this search.
+   *
+   * On the summary rather than behind a separate call, because the honest
+   * moment to say "this cost one of your comparisons" is the response that
+   * spent it — not a settings page someone reads at the end of the month.
+   */
+  aiQuota: { used: number; limit: number } | null;
   durationMs: number;
 }
 
@@ -147,6 +155,14 @@ export class MatchingService {
       skipped = 'disabled';
     }
 
+    // Read after the AI resolution, so the figure already includes whatever
+    // this very search just spent.
+    let aiQuota: MatchRunSummary['aiQuota'] = null;
+    if (ownerId) {
+      const owner = await this.users.findOne({ where: { id: ownerId } });
+      if (owner) aiQuota = effectiveAiUsage(owner);
+    }
+
     const summary: MatchRunSummary = {
       understood: this.understand(query),
       results: candidates.map((candidate) => this.present(candidate, verdicts.get(candidate.id)!)),
@@ -156,6 +172,7 @@ export class MatchingService {
       aiCacheHits,
       aiModel: this.claude.activeModel,
       aiSkippedReason: skipped,
+      aiQuota,
       durationMs: Date.now() - startedAt,
     };
 
@@ -336,12 +353,9 @@ export class MatchingService {
     if (!user) return wanted;
 
     const now = new Date();
-    const periodStarted = user.aiPeriodStartedAt;
-    const monthElapsed =
-      !periodStarted || now.getTime() - periodStarted.getTime() > 30 * 24 * 3600_000;
-
-    const used = monthElapsed ? 0 : user.aiMatchesUsed;
-    const remaining = Math.max(0, user.aiMatchesLimit - used);
+    const { used, limit } = effectiveAiUsage(user, now);
+    const monthElapsed = used === 0 && user.aiMatchesUsed > 0 ? true : !user.aiPeriodStartedAt;
+    const remaining = Math.max(0, limit - used);
     const granted = Math.min(wanted, remaining);
 
     if (granted === 0) {
@@ -356,7 +370,7 @@ export class MatchingService {
       { id: user.id },
       {
         aiMatchesUsed: used + granted,
-        aiPeriodStartedAt: monthElapsed ? now : (periodStarted ?? now),
+        aiPeriodStartedAt: monthElapsed ? now : (user.aiPeriodStartedAt ?? now),
       },
     );
 

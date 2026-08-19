@@ -6427,7 +6427,27 @@
         if (matching.aiCallsMade > 0 && matching.aiModel) {
           parts.push('AI: ' + escapeHtml(matching.aiModel));
         }
-        if (matching.aiSkippedReason === 'quota') parts.push('AI лимитът за месеца е изчерпан');
+        // The meter is shown exactly when it moved — the search that spent a
+        // comparison is the honest place to say so, not a settings page read
+        // at the end of the month.
+        if (matching.aiQuota && matching.aiCallsMade > 0) {
+          parts.push(
+            'изразходвани ' +
+              matching.aiQuota.used +
+              ' от ' +
+              matching.aiQuota.limit +
+              ' AI сравнения този месец',
+          );
+        }
+        if (matching.aiSkippedReason === 'quota' && matching.aiQuota) {
+          parts.push(
+            'AI лимитът за месеца е изчерпан (' +
+              matching.aiQuota.limit +
+              ') — сравнението продължава по спецификации',
+          );
+        } else if (matching.aiSkippedReason === 'quota') {
+          parts.push('AI лимитът за месеца е изчерпан');
+        }
 
         if (parts.length === 0) return '';
 

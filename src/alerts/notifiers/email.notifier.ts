@@ -6,6 +6,7 @@ import { UsersService } from '../../billing/users.service';
 import { AlertsConfig, Configuration } from '../../config/configuration';
 import { Alert } from '../entities/alert.entity';
 import { AlertSeverity, AlertType } from '../enums/alert.enums';
+import { dataRows, escapeHtml, paragraph, renderEmail } from '../../billing/email-layout';
 import { AlertContext, AlertNotifier } from './notifier.interface';
 
 const TYPE_LABEL: Record<AlertType, string> = {
@@ -43,6 +44,7 @@ export class EmailNotifier implements AlertNotifier {
 
   private readonly logger = new Logger(EmailNotifier.name);
   private readonly config: AlertsConfig;
+  private readonly appUrl: string;
 
   constructor(
     configService: ConfigService<Configuration, true>,
@@ -50,6 +52,7 @@ export class EmailNotifier implements AlertNotifier {
     private readonly users: UsersService,
   ) {
     this.config = configService.get('alerts', { infer: true });
+    this.appUrl = configService.get('mail', { infer: true })?.appUrl ?? '';
   }
 
   isConfigured(): boolean {
@@ -65,12 +68,16 @@ export class EmailNotifier implements AlertNotifier {
 
     const label = TYPE_LABEL[alert.type];
     const subject = `${label}: ${context.productName}`;
+
     const rows: Array<[string, string]> = [];
 
     if (alert.oldPrice !== null) rows.push(['Беше', `${alert.oldPrice} ${alert.currency}`]);
     if (alert.newPrice !== null) rows.push(['Сега', `${alert.newPrice} ${alert.currency}`]);
     if (alert.changePercent !== null) {
-      rows.push(['Промяна', `${alert.changePercent.toFixed(2)}%`]);
+      rows.push([
+        'Промяна',
+        `${alert.changePercent > 0 ? '+' : ''}${alert.changePercent.toFixed(2)}%`,
+      ]);
     }
     if (context.targetPrice !== null) {
       rows.push(['Вашата цел', `${context.targetPrice} ${alert.currency}`]);
@@ -78,36 +85,31 @@ export class EmailNotifier implements AlertNotifier {
     if (context.competitorName) rows.push(['Доставчик', context.competitorName]);
     if (context.productSku) rows.push(['Артикул №', context.productSku]);
 
-    const html = `
-      <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;color:#1f2937;line-height:1.6">
-        <p style="margin:0 0 4px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:${SEVERITY_COLOR[alert.severity]}">${escapeHtml(label)}</p>
-        <h2 style="margin:0 0 16px;font-size:20px">${escapeHtml(context.productName)}</h2>
-        <p style="margin:0 0 16px">${escapeHtml(alert.message)}</p>
-        <table style="border-collapse:collapse;margin:0 0 16px;font-size:14px">
-          ${rows
-            .map(
-              ([key, value]) =>
-                `<tr><td style="padding:4px 16px 4px 0;color:#6b7280">${escapeHtml(key)}</td><td style="padding:4px 0;font-weight:600">${escapeHtml(value)}</td></tr>`,
-            )
-            .join('')}
-        </table>
-        ${
-          context.competitorUrl
-            ? `<p style="margin:0 0 16px"><a href="${escapeHtml(context.competitorUrl)}" style="color:#0ea5e9">Отвори офертата</a></p>`
-            : ''
-        }
-        <p style="margin:0;font-size:12px;color:#9ca3af">Получавате това, защото следите този артикул в PriceGuard.</p>
-      </div>
-    `;
-
-    const text = [
-      `${label}: ${context.productName}`,
-      alert.message,
-      ...rows.map(([key, value]) => `${key}: ${value}`),
-      context.competitorUrl ?? '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const { html, text } = renderEmail({
+      title: subject,
+      // What the inbox shows next to the subject: the movement itself, so the
+      // mail can be triaged without opening it.
+      preheader:
+        alert.oldPrice !== null && alert.newPrice !== null
+          ? `${alert.oldPrice} → ${alert.newPrice} ${alert.currency} при ${context.competitorName ?? 'доставчик'}`
+          : alert.message,
+      heading: context.productName,
+      appUrl: this.appUrl,
+      body: [
+        {
+          html: `<p style="margin:0 0 14px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${SEVERITY_COLOR[alert.severity]}">${escapeHtml(label)}</p>`,
+          text: label,
+        },
+        paragraph(escapeHtml(alert.message)),
+        dataRows(rows),
+      ],
+      cta: context.competitorUrl
+        ? { label: 'Отвори офертата', url: context.competitorUrl }
+        : { label: 'Виж в таблото', url: this.appUrl },
+      footnotes: [
+        'Получавате това, защото следите този артикул. Прагът се настройва за всеки артикул поотделно.',
+      ],
+    });
 
     const sent = await this.mail.deliver(to, subject, html, text);
 
@@ -136,12 +138,4 @@ export class EmailNotifier implements AlertNotifier {
       return null;
     }
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

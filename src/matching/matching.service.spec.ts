@@ -250,4 +250,56 @@ describe('MatchingService', () => {
     expect(run.aiModel).toBeNull();
     expect(run.aiSkippedReason).toBe('disabled');
   });
+
+  describe('the meter the customer sees', () => {
+    it('reports the allowance including what this search just spent', async () => {
+      const { service, users } = await build({
+        user: { aiMatchesUsed: 0, aiMatchesLimit: 100, aiPeriodStartedAt: new Date() },
+        aiVerdicts: [
+          { id: 'a', same: true, confidence: 0.9, reason: 'проверено' },
+          { id: 'b', same: true, confidence: 0.9, reason: 'проверено' },
+        ],
+      });
+
+      // The post-run read sees the row as the claim left it.
+      users.findOne
+        .mockResolvedValueOnce({
+          id: 'acc-1',
+          aiMatchesUsed: 0,
+          aiMatchesLimit: 100,
+          aiPeriodStartedAt: new Date(),
+        })
+        .mockResolvedValueOnce({
+          id: 'acc-1',
+          aiMatchesUsed: 2,
+          aiMatchesLimit: 100,
+          aiPeriodStartedAt: new Date(),
+        });
+
+      const run = await service.match('acc-1', QUERY, ambiguous);
+
+      expect(run.aiQuota).toEqual({ used: 2, limit: 100 });
+    });
+
+    it('shows zero spent when the monthly period has rolled over', async () => {
+      const stale = new Date(Date.now() - 40 * 24 * 3600_000);
+      const { service } = await build({
+        user: { aiMatchesUsed: 87, aiMatchesLimit: 100, aiPeriodStartedAt: stale },
+        aiVerdicts: [],
+      });
+
+      const run = await service.match('acc-1', QUERY, []);
+
+      // Last month's 87 must not be presented as this month's spend.
+      expect(run.aiQuota).toEqual({ used: 0, limit: 100 });
+    });
+
+    it('has no meter for a caller with no account', async () => {
+      const { service } = await build({ aiEnabled: false });
+
+      const run = await service.match(null, QUERY, ambiguous);
+
+      expect(run.aiQuota).toBeNull();
+    });
+  });
 });

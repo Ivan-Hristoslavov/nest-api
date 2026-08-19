@@ -369,6 +369,14 @@ export class MatchingSummaryDto {
   })
   aiSkippedReason!: string | null;
 
+  @ApiPropertyOptional({
+    description:
+      'The monthly AI allowance of the calling account, including what this very search spent. Null for callers with no account to meter.',
+    nullable: true,
+    example: { used: 12, limit: 2000 },
+  })
+  aiQuota!: { used: number; limit: number } | null;
+
   @ApiProperty({ example: 180 }) durationMs!: number;
 }
 

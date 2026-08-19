@@ -59,7 +59,14 @@ describe('EmailNotifier', () => {
         { provide: UsersService, useValue: users },
         {
           provide: ConfigService,
-          useValue: { get: () => ({ emailFallbackTo: overrides.fallback }) },
+          useValue: {
+            // Two different sections are read: the alert channel's own config
+            // and the mail config the message links back with.
+            get: (section: string) =>
+              section === 'mail'
+                ? { appUrl: 'https://priceguard.example' }
+                : { emailFallbackTo: overrides.fallback },
+          },
         },
       ],
     }).compile();

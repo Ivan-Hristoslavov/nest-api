@@ -59,6 +59,25 @@ export const PLAN_PRODUCT_LIMIT: Record<UserPlan, number> = {
  * catalogues, and an account that hits the ceiling keeps searching with the
  * AI half switched off rather than being stopped.
  */
+/**
+ * The AI allowance as it stands right now.
+ *
+ * The counter on the row is only reset lazily, when something next spends
+ * from it — so a row can carry last month's number for weeks. Every reader
+ * must therefore apply the same rollover rule, and having each one reimplement
+ * "has a month passed" is how the meter and the invoice-facing display end up
+ * disagreeing. This is the one definition.
+ */
+export function effectiveAiUsage(
+  user: Pick<User, 'aiMatchesUsed' | 'aiMatchesLimit' | 'aiPeriodStartedAt'>,
+  now = new Date(),
+): { used: number; limit: number } {
+  const started = user.aiPeriodStartedAt;
+  const monthElapsed = !started || now.getTime() - started.getTime() > 30 * 24 * 3600_000;
+
+  return { used: monthElapsed ? 0 : user.aiMatchesUsed, limit: user.aiMatchesLimit };
+}
+
 export const PLAN_AI_MATCH_LIMIT: Record<UserPlan, number> = {
   [UserPlan.Free]: 200,
   [UserPlan.Starter]: 2_000,
