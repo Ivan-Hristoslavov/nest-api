@@ -7,8 +7,10 @@ import {
   HttpStatus,
   Post,
   Query,
+  Sse,
 } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Observable, Subject } from 'rxjs';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Owner } from '../common/decorators/owner.decorator';
@@ -129,6 +131,62 @@ export class DiscoveryController {
       limit: query.limit,
       useAi: query.ai,
     });
+  }
+
+  /**
+   * The same comparison, reported while it happens.
+   *
+   * Server-sent events rather than one response at the end, because the work
+   * takes seconds and is genuinely staged: the query is understood instantly,
+   * suppliers answer one at a time over several seconds, matching runs last.
+   * A spinner covering all of that is indistinguishable from a hang, and hides
+   * the most persuasive thing the product does — showing that it read "12W
+   * E27" as a specification before it went looking.
+   *
+   * Read it with `fetch`, not `EventSource`: the latter cannot send an
+   * Authorization header, and this endpoint is scoped to an account like every
+   * other.
+   */
+  @Sse('compare/stream')
+  @ApiOperation({
+    summary: 'Compare, streamed stage by stage',
+    description:
+      'Emits `understood` immediately, then one `shop` event per supplier as it answers, then `matching`, then `ai` when a model was consulted, and finally `result` with the same payload as GET /compare. Authenticate with the usual header — read the stream with fetch, since EventSource cannot send one.',
+  })
+  compareStream(
+    @Owner() ownerId: string,
+    @Query() query: CompareQueryDto,
+  ): Observable<{ data: string }> {
+    const events = new Subject<{ data: string }>();
+    const emit = (payload: unknown): void => {
+      events.next({ data: JSON.stringify(payload) });
+    };
+
+    void this.discoveryService
+      .compare(ownerId, query.q, {
+        hosts: query.hosts,
+        currency: query.currency,
+        inStockOnly: query.inStockOnly,
+        limit: query.limit,
+        useAi: query.ai,
+        onProgress: emit,
+      })
+      .then((result) => emit({ type: 'result', ...result }))
+      .catch((error: unknown) => {
+        // Errors travel as a final event rather than as a dead connection: a
+        // stream that simply stops leaves the interface unable to tell a
+        // failure from a slow supplier.
+        emit({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Търсенето не успя.',
+        });
+      })
+      .finally(() => {
+        emit({ type: 'done' });
+        events.complete();
+      });
+
+    return events.asObservable();
   }
 
   @Post('basket')

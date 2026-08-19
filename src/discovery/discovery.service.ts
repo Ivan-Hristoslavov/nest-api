@@ -39,6 +39,24 @@ const MAX_RESULTS_PER_SHOP = 8;
  * per search, so the bill follows the questions asked rather than the size of
  * anybody's catalogue.
  */
+/**
+ * What a search reports about itself while it runs.
+ *
+ * A comparison takes seconds — a shop's own search engine is slow, a sitemap
+ * read is slower — and a spinner for all of it looks identical to a hang. The
+ * work is genuinely staged, so the stages are worth showing: what the query
+ * was understood to mean (instant), which supplier answered and with how many
+ * offers (as each returns), and what matching decided (last).
+ *
+ * Emitted rather than returned, so the interface can render each as it lands.
+ */
+export type SearchProgress =
+  | { type: 'understood'; understood: MatchRunSummary['understood']; shops: number }
+  | { type: 'shop'; host: string; name: string; ok: boolean; count: number; durationMs: number }
+  | { type: 'matching'; candidates: number }
+  | { type: 'ai'; model: string | null; comparisons: number }
+  | { type: 'done' };
+
 /** Below this, an offer is not treated as a quote for the line. */
 const MATCH_FLOOR = DEFAULT_THRESHOLDS.floor;
 
@@ -293,6 +311,8 @@ export class DiscoveryService {
     query: string,
     hosts?: string[],
     useCache = true,
+    /** Called with each shop's answer as it lands, not after all of them. */
+    onShop?: (result: ShopSearchResultDto) => void,
   ): Promise<ShopSearchResultDto[]> {
     const trimmed = query.trim();
     if (trimmed.length < 2) return [];
@@ -305,7 +325,13 @@ export class DiscoveryService {
       ? shops.filter((shop) => hosts.includes(shop.host.replace(/^www\./, '')))
       : shops;
 
-    return Promise.all(wanted.map((shop) => this.searchShopCached(shop, trimmed, useCache)));
+    return Promise.all(
+      wanted.map(async (shop) => {
+        const result = await this.searchShopCached(shop, trimmed, useCache);
+        onShop?.(result);
+        return result;
+      }),
+    );
   }
 
   /**
@@ -630,6 +656,8 @@ export class DiscoveryService {
       useCache?: boolean;
       /** False compares on barcodes and specifications only, never a model. */
       useAi?: boolean;
+      /** Called as each stage completes, for a streaming caller. */
+      onProgress?: (event: SearchProgress) => void;
     } = {},
   ): Promise<{
     query: string;
@@ -653,7 +681,34 @@ export class DiscoveryService {
       return { query: trimmed, durationMs: 0, shops: [], hits: [] };
     }
 
-    const results = await this.search(ownerId, trimmed, options.hosts, options.useCache ?? true);
+    const progress = options.onProgress ?? (() => undefined);
+
+    // First and instantly: what the words were taken to mean. This is pure
+    // arithmetic over the query, so it costs nothing and it is the moment the
+    // reader learns the machine understood "12W E27" as a specification rather
+    // than as two more words to search for.
+    const shopsForQuery = await this.shops.count({ where: { ownerId, isActive: true } });
+    progress({
+      type: 'understood',
+      understood: this.matching.understand(trimmed),
+      shops: shopsForQuery,
+    });
+
+    const results = await this.search(
+      ownerId,
+      trimmed,
+      options.hosts,
+      options.useCache ?? true,
+      (result) =>
+        progress({
+          type: 'shop',
+          host: result.host,
+          name: result.name,
+          ok: result.ok,
+          count: result.products.length,
+          durationMs: result.durationMs,
+        }),
+    );
 
     // The discount lives on the shop row, and the search providers are keyed
     // by host — so the two are joined here rather than threaded through every
@@ -703,6 +758,8 @@ export class DiscoveryService {
     // Matching runs on what survived ranking, not on everything every shop
     // returned. Ranking has already thrown away the shop's wilder guesses, and
     // a model asked about those is a model paid to say "no".
+    progress({ type: 'matching', candidates: ranked.length });
+
     const run = await this.matching.match(
       ownerId,
       trimmed,
@@ -713,6 +770,14 @@ export class DiscoveryService {
       })),
       { useAi: options.useAi !== false },
     );
+
+    if (run.aiCallsMade > 0 || run.aiCacheHits > 0) {
+      progress({
+        type: 'ai',
+        model: run.aiModel,
+        comparisons: run.candidates - run.decidedDeterministically,
+      });
+    }
 
     const byId = new Map(run.results.map((result) => [result.id, result]));
 
