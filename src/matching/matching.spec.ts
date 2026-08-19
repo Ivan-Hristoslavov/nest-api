@@ -1,5 +1,5 @@
 import { confidenceBand, matchNames } from './deterministic-matcher';
-import { extractAttributes, suggestCorrection } from './attributes';
+import { detectCategory, extractAttributes, suggestCorrection } from './attributes';
 import { measurementsOf, normaliseProductName, similarity } from './normalisation';
 
 /**
@@ -181,6 +181,64 @@ describe('deterministic product matching', () => {
       // The same shop, the same chandelier, but now the buyer said 9W E27.
       const verdict = matchNames('лампа 9W E27', 'ПОЛИЛЕЙ КРИСТАЛЕН 8xE14');
       expect(verdict.confidence).toBeLessThan(0.7);
+    });
+  });
+
+  describe('what each number measures', () => {
+    it('reads memory and storage as two facts, not one pair of numbers', () => {
+      const verdict = matchNames(
+        'Лаптоп Lenovo ThinkPad 16GB 512GB',
+        'Lenovo ThinkPad laptop 16GB RAM 512GB SSD 14"',
+      );
+
+      // Both agree twice — once on memory, once on the disk. Compared as an
+      // unlabelled set of gigabytes that was a single agreement, and the pair
+      // fell short of a confident match.
+      expect(verdict.confidence).toBeGreaterThanOrEqual(0.9);
+      expect(verdict.reasons.map((reason) => reason.label)).toEqual(
+        expect.arrayContaining(['Памет (RAM)', 'Диск']),
+      );
+    });
+
+    it('separates two laptops that differ only in memory', () => {
+      expect(
+        matchNames('Лаптоп Lenovo ThinkPad 16GB 512GB', 'Lenovo ThinkPad laptop 8GB 512GB').blocked,
+      ).toBe(true);
+    });
+
+    it('separates 512GB from 1TB', () => {
+      // The trade quotes 1TB as 1000GB; matching the number on the box matters
+      // more than matching the one the operating system reports.
+      expect(
+        matchNames('Лаптоп Lenovo ThinkPad 16GB 512GB', 'Lenovo ThinkPad notebook 16GB 1TB')
+          .blocked,
+      ).toBe(true);
+    });
+
+    it('does not read a terser listing as a contradiction', () => {
+      // Stating only the disk is saying less, not saying something else.
+      const verdict = matchNames(
+        'Лаптоп Lenovo ThinkPad 16GB 512GB',
+        'Lenovo ThinkPad laptop 512GB SSD',
+      );
+
+      expect(verdict.blocked).toBe(false);
+    });
+
+    it('separates two refresh rates on the same monitor', () => {
+      expect(matchNames('монитор Dell 27" 144Hz', 'Dell monitor 27 inch 60 Hz').blocked).toBe(true);
+      expect(
+        matchNames('монитор Dell 27" 144Hz', 'Dell monitor 27 inch 144 Hz QHD').confidence,
+      ).toBeGreaterThanOrEqual(0.9);
+    });
+
+    it('recognises a category written in Bulgarian', () => {
+      // The category words are folded exactly as the text they match against.
+      // Unfolded, every Bulgarian one was dead: "монитор" arrives as "mohutop".
+      expect(detectCategory('монитор Dell 27"')).toBe('monitor');
+      expect(detectCategory('LED крушка 12W')).toBe('led-bulb');
+      expect(detectCategory('кабел СВТ 3x1.5')).toBe('cable');
+      expect(detectCategory('Лаптоп Lenovo')).toBe('laptop');
     });
   });
 

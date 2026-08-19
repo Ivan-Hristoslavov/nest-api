@@ -312,10 +312,164 @@ export function editDistance(left: string, right: string): number {
   return rows[left.length][right.length];
 }
 
+/**
+ * A measurement given the name of what it measures.
+ *
+ * Two numbers in gigabytes are not one fact. "16GB 512GB" is memory *and*
+ * storage, and reading them as an unlabelled pair costs twice: two listings
+ * that agree on both look like one agreement rather than two, and a listing
+ * that states only the disk looks like it disagrees about the memory it never
+ * mentioned.
+ *
+ * Which number is which cannot be read off the unit, so it is read off the
+ * category and the magnitudes — the same way a person does it.
+ */
+export interface AttributeRole {
+  key: string;
+  label: string;
+  value: number;
+  unit: string;
+  /** A difference here means a different article. */
+  identifying: boolean;
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  ram_gb: 'Памет (RAM)',
+  storage_gb: 'Диск',
+  screen_in: 'Екран',
+  refresh_hz: 'Опресняване',
+  cpu_ghz: 'Процесор',
+  power_w: 'Мощност',
+  colour_k: 'Цветна температура',
+  voltage_v: 'Напрежение',
+  current_a: 'Ток',
+  flux_lm: 'Светлинен поток',
+  cross_section_mm2: 'Сечение',
+  length_m: 'Дължина',
+};
+
+/** Roles whose disagreement is a different article rather than a detail. */
+const NON_IDENTIFYING_ROLES = new Set(['flux_lm']);
+
+/**
+ * Assigns roles to the measurements of a listing whose category is known.
+ *
+ * @returns the roles, and the units they consumed — those units must not then
+ * be compared a second time as anonymous buckets.
+ */
+export function rolesOf(attributes: ProductAttributes): {
+  roles: Map<string, AttributeRole>;
+  consumed: Set<string>;
+} {
+  const roles = new Map<string, AttributeRole>();
+  const consumed = new Set<string>();
+
+  const category = attributes.category;
+  if (!category) return { roles, consumed };
+
+  const valuesOf = (unit: string): number[] =>
+    attributes.measurements.filter((m) => m.unit === unit).map((m) => m.value);
+
+  const add = (key: string, value: number, unit: string): void => {
+    if (roles.has(key)) return;
+    roles.set(key, {
+      key,
+      label: ROLE_LABELS[key] ?? key,
+      value,
+      unit,
+      identifying: !NON_IDENTIFYING_ROLES.has(key),
+    });
+  };
+
+  if (category === 'laptop' || category === 'phone') {
+    // Terabytes are storage by definition, and the trade quotes 1TB as 1000GB
+    // rather than 1024 — matching the number printed on the box matters more
+    // here than matching the one the operating system reports.
+    const terabytes = valuesOf('TB');
+    const gigabytes = valuesOf('GB').sort((a, b) => a - b);
+
+    if (terabytes.length > 0) {
+      add('storage_gb', Math.max(...terabytes) * 1000, 'GB');
+      consumed.add('TB');
+    }
+
+    if (gigabytes.length >= 2) {
+      // The smaller is memory, the larger is the disk. No laptop ships with
+      // more RAM than storage, so the ordering is safe where both are stated.
+      add('ram_gb', gigabytes[0], 'GB');
+      add('storage_gb', gigabytes[gigabytes.length - 1], 'GB');
+      consumed.add('GB');
+    } else if (gigabytes.length === 1) {
+      // One number alone: 64GB or less is memory on a laptop and storage on a
+      // phone, which is how each is normally advertised.
+      const value = gigabytes[0];
+      const isMemory = category === 'laptop' && value <= 64;
+      add(isMemory ? 'ram_gb' : 'storage_gb', value, 'GB');
+      consumed.add('GB');
+    }
+
+    for (const inches of valuesOf('IN')) add('screen_in', inches, 'IN');
+    for (const ghz of valuesOf('GHZ')) add('cpu_ghz', ghz, 'GHZ');
+    if (valuesOf('IN').length > 0) consumed.add('IN');
+    if (valuesOf('GHZ').length > 0) consumed.add('GHZ');
+  }
+
+  if (category === 'monitor' || category === 'tv') {
+    for (const inches of valuesOf('IN')) add('screen_in', inches, 'IN');
+    for (const hz of valuesOf('HZ')) add('refresh_hz', hz, 'HZ');
+    if (valuesOf('IN').length > 0) consumed.add('IN');
+    if (valuesOf('HZ').length > 0) consumed.add('HZ');
+  }
+
+  if (category === 'led-bulb') {
+    for (const watts of valuesOf('W')) add('power_w', watts, 'W');
+    for (const kelvin of valuesOf('K')) add('colour_k', kelvin, 'K');
+    for (const lumens of valuesOf('LM')) add('flux_lm', lumens, 'LM');
+    for (const volts of valuesOf('V')) add('voltage_v', volts, 'V');
+    ['W', 'K', 'LM', 'V'].forEach((unit) => {
+      if (valuesOf(unit).length > 0) consumed.add(unit);
+    });
+  }
+
+  if (category === 'cable') {
+    for (const mm2 of valuesOf('MM2')) add('cross_section_mm2', mm2, 'MM2');
+    for (const metres of valuesOf('M')) add('length_m', metres, 'M');
+    for (const volts of valuesOf('V')) add('voltage_v', volts, 'V');
+    ['MM2', 'M', 'V'].forEach((unit) => {
+      if (valuesOf(unit).length > 0) consumed.add(unit);
+    });
+  }
+
+  if (category === 'breaker') {
+    for (const amps of valuesOf('A')) add('current_a', amps, 'A');
+    for (const volts of valuesOf('V')) add('voltage_v', volts, 'V');
+    ['A', 'V'].forEach((unit) => {
+      if (valuesOf(unit).length > 0) consumed.add(unit);
+    });
+  }
+
+  return { roles, consumed };
+}
+
+/**
+ * The category words, folded exactly as the text they are matched against.
+ *
+ * `normaliseText` folds Cyrillic letters onto their Latin twins, so "монитор"
+ * in a product name arrives as "mohutop". Comparing that against an unfolded
+ * "монитор" in this table never matched — every Bulgarian category word was
+ * dead on arrival, and only the English ones and the LED fallback ever fired.
+ */
+const FOLDED_CATEGORY_WORDS = new Map<CategoryId, string[]>(
+  (Object.entries(CATEGORY_WORDS) as Array<[CategoryId, string[]]>).map(([category, words]) => [
+    category,
+    words.map((word) => normaliseText(word)),
+  ]),
+);
+
 export function detectCategory(text: string): CategoryId | null {
   const normalised = ` ${normaliseText(text)} `;
 
-  for (const [category, words] of Object.entries(CATEGORY_WORDS) as Array<[CategoryId, string[]]>) {
+  for (const [category, words] of FOLDED_CATEGORY_WORDS) {
     if (words.some((word) => normalised.includes(` ${word} `) || normalised.includes(`${word} `))) {
       return category;
     }
@@ -420,22 +574,58 @@ export function compareAttributes(
     return map;
   };
 
+  // Named roles first, where the category says what each number measures.
+  // Compared this way, "16GB 512GB" against "16GB SSD 512GB" is two agreements
+  // rather than one, and against a listing quoting only the disk it is one
+  // agreement and one silence rather than a contradiction.
+  const leftRoles = rolesOf(left);
+  const rightRoles = rolesOf(right);
+
+  for (const key of new Set([...leftRoles.roles.keys(), ...rightRoles.roles.keys()])) {
+    const a = leftRoles.roles.get(key);
+    const b = rightRoles.roles.get(key);
+    if (!a || !b) continue;
+
+    comparisons.push({
+      key,
+      label: a.label,
+      left: `${a.value}${a.unit}`,
+      right: `${b.value}${b.unit}`,
+      agrees: a.value === b.value,
+      identifying: a.identifying,
+    });
+  }
+
   const leftUnits = unitsOf(left);
   const rightUnits = unitsOf(right);
+  // Only where *both* sides named the unit is the anonymous comparison
+  // redundant. One side naming it and the other not means the second still has
+  // an unlabelled number, and dropping it loses the comparison entirely — the
+  // exact case of a Bulgarian listing whose category word went unrecognised.
+  const consumed = new Set([...leftRoles.consumed].filter((unit) => rightRoles.consumed.has(unit)));
 
   for (const unit of new Set([...leftUnits.keys(), ...rightUnits.keys()])) {
+    // Already compared under a name that says what it measures.
+    if (consumed.has(unit)) continue;
+
     const a = leftUnits.get(unit);
     const b = rightUnits.get(unit);
     if (!a || !b) continue;
 
-    const same = a.size === b.size && [...a].every((value) => b.has(value));
+    // Not equality but overlap: one side stating fewer numbers in the same
+    // unit has said less, not something different. A supplier who lists only
+    // the disk was being terse, and reading that as a disagreement about the
+    // memory they never mentioned rejects a listing that matches.
+    const smaller = a.size <= b.size ? a : b;
+    const larger = a.size <= b.size ? b : a;
+    const contained = [...smaller].every((value) => larger.has(value));
 
     comparisons.push({
       key: unit,
       label: ATTRIBUTE_LABELS[unit] ?? unit,
       left: format(a, unit),
       right: format(b, unit),
-      agrees: same,
+      agrees: contained,
       identifying: IDENTIFYING_UNITS.has(unit),
     });
   }

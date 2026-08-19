@@ -144,11 +144,20 @@ export function matchDeterministically(
     (entry) => entry.identifying && entry.key !== 'brand' && entry.key !== 'category',
   );
   const brandAgrees = agreements.some((entry) => entry.key === 'brand');
+  const categoryAgrees = agreements.some((entry) => entry.key === 'category');
   const text = similarity(query.raw, candidate.raw);
 
-  if (identifyingAgreements.length >= 2 && brandAgrees) {
+  // A matching brand is the strongest supporting evidence, but demanding it
+  // rejects the ordinary case: buyers type "LED крушка 12W E27 4000K" without
+  // naming a manufacturer, and plenty of shops do not print one either. Where
+  // the brand is simply absent — as opposed to different, which is a conflict
+  // and was rejected above — an agreeing category carries the same weight.
+  if (identifyingAgreements.length >= 2 && (brandAgrees || categoryAgrees)) {
     return {
-      confidence: Math.min(0.94, 0.86 + 0.02 * identifyingAgreements.length),
+      // A named brand on both sides is worth more than a shared category:
+      // two 12W E27 bulbs from different makers are interchangeable, but two
+      // from the *same* maker are the same article.
+      confidence: Math.min(0.94, (brandAgrees ? 0.86 : 0.84) + 0.02 * identifyingAgreements.length),
       method: 'attributes',
       reasons: toReasons(comparisons),
       blocked: false,

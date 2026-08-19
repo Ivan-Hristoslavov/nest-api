@@ -16,13 +16,17 @@ describe('MatchingService', () => {
   const QUERY = 'Philips LED 12W E27 4000K';
 
   /**
-   * Listings that agree on the specification and share almost no vocabulary
-   * with the query — the case arithmetic cannot finish and a model can. The
-   * catalogue's own Bulgarian and German phrasings, in other words.
+   * Listings a model can settle and arithmetic cannot: the brand agrees and
+   * every specification is encoded rather than stated. "840" is 4000K and 80
+   * CRI, and nothing deterministic knows that.
+   *
+   * A cross-language listing that *states* its specifications — "LED Lampe
+   * 12W E27 neutralweiss" — is deliberately not used here: since categories
+   * and roles landed, those are settled for nothing, which is the point.
    */
   const ambiguous: MatchCandidate[] = [
-    { id: 'a', name: 'LED Lampe 12W E27 neutralweiss', supplier: 'Склад А' },
-    { id: 'b', name: 'ampoule LED 12W E27 blanc neutre', supplier: 'Склад Б' },
+    { id: 'a', name: 'Philips CorePro 840 неутрална светлина', supplier: 'Склад А' },
+    { id: 'b', name: 'Philips крушка CorePro 840', supplier: 'Склад Б' },
   ];
 
   async function build(options: {
@@ -150,7 +154,7 @@ describe('MatchingService', () => {
 
   it('lets a model raise confidence, but never into the checkable bands', async () => {
     const { service } = await build({
-      aiVerdicts: [{ id: 'a', same: true, confidence: 0.99, reason: 'neutralweiss = 4000K' }],
+      aiVerdicts: [{ id: 'a', same: true, confidence: 0.99, reason: '840 означава 4000K' }],
     });
 
     const run = await service.match('acc-1', QUERY, [ambiguous[0]]);

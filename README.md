@@ -221,6 +221,22 @@ A difference in a stated identifying attribute is not a matter of opinion, so it
 
 A specification stated by one side and missing on the other is **not** a conflict — that is exactly the `840` case — so silence lowers confidence and is what the model is asked about.
 
+### Category-specific attributes
+
+Two numbers in gigabytes are not one fact. `16GB 512GB` is memory *and* storage, and reading them as an unlabelled pair costs twice: two listings agreeing on both look like one agreement, and a listing quoting only the disk looks like it disagrees about memory it never mentioned.
+
+Which number is which cannot be read off the unit, so it is read off the category and the magnitudes — the way a person does it:
+
+| Category | Roles |
+| --- | --- |
+| laptop, phone | memory / storage (smaller is RAM where both are stated; TB is storage at 1000 GB), screen, CPU clock |
+| monitor, tv | screen size, refresh rate |
+| LED bulb | power, colour temperature, luminous flux (never identifying), voltage |
+| cable | cross-section, length, voltage |
+| breaker | current, voltage |
+
+Categories are recognised in Bulgarian, English, German and French. Where the category is unknown, measurements are compared by unit, and a side quoting fewer values in the same unit is treated as having said less rather than something different.
+
 ### Model routing
 
 Routine matching runs on **Claude Haiku**, chosen at runtime by asking the API which models the account has (`models.list()`) rather than hard-coding an id that will one day be retired. If Haiku is absent the cheapest available model is used, with a warning. Nothing calls Opus for a product search.
