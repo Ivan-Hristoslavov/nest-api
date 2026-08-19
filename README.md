@@ -182,6 +182,96 @@ Adding a retailer means one entry in that file. A `priceSelector` stored on a li
 
 ---
 
+## 6a. Product matching
+
+Three suppliers, one bulb, three names:
+
+```
+PHILIPS LED BULB 12W E27 4000K
+Philips CorePro LED 12W 840 E27
+LED E27 Philips 12W Neutral White
+```
+
+The buyer needs these treated as one article and priced against each other. Text matching cannot do it — the second says `840` where the first says `4000K` — and asking a model about every pair would cost more than the subscription.
+
+### The ladder
+
+Evidence strongest first. Each rung that answers ends the comparison.
+
+| # | Rung | Confidence | Costs |
+| --- | --- | --- | --- |
+| 1 | EAN/UPC/GTIN, checksum verified | 1.00 | nothing |
+| 2 | Supplier article number | 0.99 | nothing |
+| 3 | **Stated conflict** in something identifying | 0.00, blocked | nothing |
+| 4 | Shared model code (`H05V-K`, `ST9453B`) | 0.95 | nothing |
+| 5 | Brand + two agreeing specifications | 0.86–0.94 | nothing |
+| 6 | Partial evidence — some agreement, incomplete | 0.35–0.84 | **one model call, batched** |
+
+The three names above are settled at rung 5. What reaches a model is the rest: a German listing that shares no vocabulary with a Bulgarian query, or one that names the brand and nothing else.
+
+Rung 3 sits below the identifiers deliberately. A barcode is issued per variant, so a shared one cannot mean two capacities; a model code is shared across a family, so where the names state 128 GB against 256 GB, the names win.
+
+### What cannot match
+
+A difference in a stated identifying attribute is not a matter of opinion, so it never reaches a model and no model can overturn it:
+
+- `iPhone 15 128GB` vs `iPhone 15 256GB`
+- `Samsung TV 55"` vs `Samsung TV 65"`
+- `12W` vs `15W`, `3x1.5` vs `5x4`, Philips vs Osram
+
+A specification stated by one side and missing on the other is **not** a conflict — that is exactly the `840` case — so silence lowers confidence and is what the model is asked about.
+
+### Model routing
+
+Routine matching runs on **Claude Haiku**, chosen at runtime by asking the API which models the account has (`models.list()`) rather than hard-coding an id that will one day be retired. If Haiku is absent the cheapest available model is used, with a warning. Nothing calls Opus for a product search.
+
+With no `ANTHROPIC_API_KEY` the AI half is off and matching still works — rungs 1 to 5 answer most pairs. That is the normal state of a fresh deployment, not a degraded one.
+
+```
+ANTHROPIC_API_KEY=sk-ant-...        # absent = deterministic matching only
+AI_MATCHING_ENABLED=true
+AI_MATCH_MODEL=                     # pin one only to reproduce a disputed match
+AI_MATCH_MAX_CANDIDATES=12          # per search, after ranking
+AI_MATCH_TIMEOUT_MS=9000
+```
+
+### What keeps it cheap
+
+- **Deterministic first.** A catalogue with barcodes never pays.
+- **One call per search**, not one per candidate, and only for the shortlist that ranking already kept.
+- **Verdicts are cached** under `sha256(normalised query | normalised candidate | model | prompt version)`. "12 watt" and "12W" are one question; a new prompt or model asks again rather than inheriting an answer it never gave.
+- **Metered per account**, apart from price checks: a price check is one request to a shop, a comparison is tokens. Limits are 200 / 2 000 / 10 000 / 50 000 a month by plan. An account that runs out keeps searching with the AI half off.
+
+`GET /api/v1/discovery/compare` reports exactly what happened, so the cost is inspectable rather than assumed:
+
+```json
+"matching": {
+  "candidates": 24,
+  "decidedDeterministically": 21,
+  "aiCallsMade": 1,
+  "aiCacheHits": 2,
+  "aiModel": "claude-haiku-4-5",
+  "aiSkippedReason": null
+}
+```
+
+Pass `?ai=false` to compare on specifications alone.
+
+### Confidence, and what the interface does with it
+
+| Band | Meaning | In the table |
+| --- | --- | --- |
+| 0.95–1.00 | Something checkable proved it | `съвпада 96%` |
+| 0.85–0.94 | Specifications agree | `съвпада 88%` |
+| 0.70–0.84 | Probably, something unverified | `вероятно 78%` |
+| below 0.70 | Not convinced | listed under **Може да не е същият артикул** |
+
+Rows below 0.70 are shown but excluded from the price comparison — they cannot win "cheapest", and they do not set the range or the saving. A lower price on a different article is not a saving, and letting one head the table argues for buying the wrong thing.
+
+A model may raise confidence but never past 0.94: the bands above are reserved for evidence a customer can check themselves. Every row carries its reasoning — brand, wattage, socket, one line each — because a match nobody can check is a match nobody should trust with an order.
+
+---
+
 ## 7. Alerting
 
 `price_drop`, `price_rise`, `undercut`, `all_time_low`, `out_of_stock`, `scrape_failing`.
@@ -296,6 +386,8 @@ Ordered so nothing on the list depends on something below it.
 
 - [ ] Add your own suppliers and run one real order through `POST /discovery/basket`. The first search per supplier takes 6–20 seconds; after that it is cached.
 - [ ] Decide what `ALERT_EMAIL_FALLBACK_TO` should be, or leave it unset.
+- [ ] **Optional: set `ANTHROPIC_API_KEY`** to switch on the AI half of product matching. Without it matching runs on barcodes, article numbers and specifications, which answers most pairs; with it the awkward ones — a German listing against a Bulgarian query — are answered too. See section 6a for what it costs and how it is bounded.
+- [ ] Optional: set `FX_RATES_PER_EUR` (e.g. `USD:1.08,GBP:0.85`) if any supplier quotes outside BGN/EUR. Unset, those prices are reported as uncomparable rather than converted at a guess.
 - [ ] **Check each supplier's terms** before adding it. `robots.txt` is honoured automatically; terms of service are not machine-readable and remain a human decision.
 - [ ] Watch `GET /stats` — it is what the landing page prints, so it is also the fastest way to see whether sweeps are working.
 

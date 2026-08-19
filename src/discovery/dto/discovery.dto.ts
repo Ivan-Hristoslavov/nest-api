@@ -218,6 +218,42 @@ export class CompareQueryDto extends SearchQueryDto {
   ai?: boolean;
 }
 
+export class MatchReasonDto {
+  @ApiProperty({ example: 'Мощност' }) label!: string;
+  @ApiProperty({ example: '12W' }) left!: string;
+  @ApiProperty({ example: '12W' }) right!: string;
+  @ApiProperty({ example: true }) agrees!: boolean;
+}
+
+export class MatchDto {
+  @ApiProperty({
+    description:
+      'How sure we are that this offer is the article you searched for, 0–1. Above 0.95 something checkable proved it — a barcode, an article number, a model code. Between 0.85 and 0.94 the specifications agree. Below 0.7 do not treat it as the same product.',
+    example: 0.96,
+  })
+  confidence!: number;
+
+  @ApiProperty({ enum: ['certain', 'high', 'possible', 'weak'], example: 'certain' })
+  band!: string;
+
+  @ApiProperty({
+    description: 'What decided it. Everything except `ai` is arithmetic on the two names.',
+    enum: ['gtin', 'sku', 'model', 'attributes', 'text', 'ai', 'conflict', 'none'],
+    example: 'attributes',
+  })
+  method!: string;
+
+  @ApiProperty({ example: 'Съвпадат: марка, мощност, фасунга.' })
+  explanation!: string;
+
+  @ApiProperty({
+    type: MatchReasonDto,
+    isArray: true,
+    description: 'Attribute by attribute, so the decision can be checked rather than trusted.',
+  })
+  reasons!: MatchReasonDto[];
+}
+
 export class RankedHitDto {
   @ApiPropertyOptional({
     type: () => MatchDto,
@@ -303,42 +339,6 @@ export class ShopOutcomeDto {
   @ApiProperty({ example: 412 }) durationMs!: number;
   @ApiProperty({ description: 'Results this shop returned.', example: 6 }) count!: number;
   @ApiProperty({ description: 'The URL that was fetched.', format: 'uri' }) searchUrl!: string;
-}
-
-export class MatchReasonDto {
-  @ApiProperty({ example: 'Мощност' }) label!: string;
-  @ApiProperty({ example: '12W' }) left!: string;
-  @ApiProperty({ example: '12W' }) right!: string;
-  @ApiProperty({ example: true }) agrees!: boolean;
-}
-
-export class MatchDto {
-  @ApiProperty({
-    description:
-      'How sure we are that this offer is the article you searched for, 0–1. Above 0.95 something checkable proved it — a barcode, an article number, a model code. Between 0.85 and 0.94 the specifications agree. Below 0.7 do not treat it as the same product.',
-    example: 0.96,
-  })
-  confidence!: number;
-
-  @ApiProperty({ enum: ['certain', 'high', 'possible', 'weak'], example: 'certain' })
-  band!: string;
-
-  @ApiProperty({
-    description: 'What decided it. Everything except `ai` is arithmetic on the two names.',
-    enum: ['gtin', 'sku', 'model', 'attributes', 'text', 'ai', 'conflict', 'none'],
-    example: 'attributes',
-  })
-  method!: string;
-
-  @ApiProperty({ example: 'Съвпадат: марка, мощност, фасунга.' })
-  explanation!: string;
-
-  @ApiProperty({
-    type: MatchReasonDto,
-    isArray: true,
-    description: 'Attribute by attribute, so the decision can be checked rather than trusted.',
-  })
-  reasons!: MatchReasonDto[];
 }
 
 export class MatchingSummaryDto {

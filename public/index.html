@@ -6147,7 +6147,96 @@
           '</div>';
       }
 
-      function renderCatalogueResults(hits, query) {
+      /**
+       * How sure we are this row is the article that was searched for.
+       *
+       * The number is the point, but so is the sentence behind it: a buyer who
+       * cannot see *why* two names were called the same product has been asked
+       * to trust a black box with their order. The reason line is the machine
+       * showing its work — brand, wattage, socket, one line each.
+       */
+      const MATCH_BANDS = {
+        certain: { className: 'bg-emerald-500/12 text-emerald-400', label: 'съвпада' },
+        high: { className: 'bg-sky-500/12 text-sky-300', label: 'съвпада' },
+        possible: { className: 'bg-amber-500/12 text-amber-400', label: 'вероятно' },
+        weak: { className: 'bg-white/[0.06] text-slate-400', label: 'слабо' },
+      };
+
+      function matchBadgeHtml(hit) {
+        const match = hit.match;
+
+        if (!match) {
+          // Older payload, or matching switched off: fall back to what the
+          // shop's own search engine implied.
+          return hit.matched
+            ? ''
+            : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-400/90" ' +
+                'title="Търсачката на магазина върна това по подобие — името не съдържа търсеното.">по подобие</span>';
+        }
+
+        const band = MATCH_BANDS[match.band] || MATCH_BANDS.weak;
+        const percent = Math.round(match.confidence * 100);
+
+        const detail = (match.reasons || [])
+          .slice(0, 6)
+          .map((reason) =>
+            reason.right
+              ? (reason.agrees ? '✓ ' : '✕ ') + reason.label + ': ' + reason.left + ' / ' + reason.right
+              : (reason.agrees ? '✓ ' : '✕ ') + reason.left,
+          )
+          .join('\n');
+
+        const title = match.explanation + (detail ? '\n\n' + detail : '');
+
+        return (
+          '<span class="rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ' +
+          band.className +
+          '" title="' +
+          escapeHtml(title) +
+          '">' +
+          band.label +
+          ' ' +
+          percent +
+          '%' +
+          (match.method === 'ai' ? ' · AI' : '') +
+          '</span>'
+        );
+      }
+
+      /**
+       * What matching did, and what it cost.
+       *
+       * Shown because the honest version of "AI-powered" is a number: on a
+       * catalogue with specifications in the names, almost every row is
+       * settled by arithmetic and the model sees a handful.
+       */
+      function matchingSummaryHtml(matching) {
+        if (!matching) return '';
+
+        const parts = [];
+
+        if (matching.decidedDeterministically > 0) {
+          parts.push(
+            matching.decidedDeterministically + ' по спецификация',
+          );
+        }
+        if (matching.aiCacheHits > 0) parts.push(matching.aiCacheHits + ' от запомнени');
+        if (matching.aiCallsMade > 0 && matching.aiModel) {
+          parts.push('AI: ' + escapeHtml(matching.aiModel));
+        }
+        if (matching.aiSkippedReason === 'quota') parts.push('AI лимитът за месеца е изчерпан');
+
+        if (parts.length === 0) return '';
+
+        return (
+          '<span class="text-[11.5px] text-slate-500" title="Моделът се пита само за офертите, които спецификациите не решават.">' +
+          '<i class="fa-solid fa-wand-magic-sparkles mr-1 text-[10px] text-accent-500/70"></i>' +
+          parts.join(' · ') +
+          '</span>'
+        );
+      }
+
+      function renderCatalogueResults(hits, query, matching) {
         const results = $('#catalogue-results');
         catalogueHits = hits;
 
@@ -6161,9 +6250,25 @@
           return;
         }
 
-        const priced = hits.filter((hit) => hit.effectivePrice !== null);
-        const cheapest = priced.length ? priced[0].effectivePrice : 0;
-        const dearest = priced.length ? priced[priced.length - 1].effectivePrice : 0;
+        // Rows the matcher is not convinced by are listed but never counted.
+        // A cheaper price on a different article is not a saving, and letting
+        // one set the "from" figure — or wear the crown — turns the whole
+        // comparison into an argument for buying the wrong thing.
+        const MATCH_FLOOR = 0.7;
+        const isWeak = (hit) => Boolean(hit.match) && hit.match.confidence < MATCH_FLOOR;
+
+        const priced = hits.filter((hit) => hit.effectivePrice !== null && !isWeak(hit));
+        const cheapest = priced.length
+          ? Math.min(...priced.map((hit) => hit.effectivePrice))
+          : 0;
+        const dearest = priced.length ? Math.max(...priced.map((hit) => hit.effectivePrice)) : 0;
+
+        // The crown goes to the cheapest row we believe is the right article,
+        // wherever it now sits: the list is ordered by confidence first.
+        const best = priced.reduce(
+          (winner, hit) => (winner === null || hit.effectivePrice < winner.effectivePrice ? hit : winner),
+          null,
+        );
 
         const suppliers = new Set(hits.map((hit) => hit.host));
         const showSupplier = true;
@@ -6172,7 +6277,7 @@
         // cheapest reel, so each group is coloured against its own range.
         const groupStats = new Map();
         hits.forEach(function (hit) {
-          if (hit.effectivePrice === null) return;
+          if (hit.effectivePrice === null || isWeak(hit)) return;
           const stat = groupStats.get(hit.groupKey);
           if (!stat) {
             groupStats.set(hit.groupKey, {
@@ -6201,12 +6306,17 @@
           [...groupStats.entries()].filter(([, stat]) => stat.count > 1).map(([key]) => key),
         );
 
+        const strong = hits.filter((hit) => !isWeak(hit));
+        const weak = hits.filter(isWeak);
+
         const ordered = [
-          ...hits.filter((hit) => comparable.has(hit.groupKey)),
-          ...hits.filter((hit) => !comparable.has(hit.groupKey)),
+          ...strong.filter((hit) => comparable.has(hit.groupKey)),
+          ...strong.filter((hit) => !comparable.has(hit.groupKey)),
+          ...weak,
         ];
 
         let singlesHeaderDone = false;
+        let weakHeaderDone = false;
 
         const rows = ordered
           .map(function (hit, index) {
@@ -6234,7 +6344,20 @@
                 : '') +
               '</span></td></tr>';
 
-            if (comparable.has(hit.groupKey)) {
+            if (isWeak(hit)) {
+              // Checked first: a doubtful row often shares a group with the
+              // real ones, and falling into the group branch would file it
+              // under a heading that says these are comparable.
+              if (!weakHeaderDone) {
+                weakHeaderDone = true;
+                header = groupHeader(
+                  'Може да не е същият артикул',
+                  'показани, но извън сравнението на цените',
+                  0,
+                  '',
+                );
+              }
+            } else if (comparable.has(hit.groupKey)) {
               if (hit.groupKey !== lastGroup) {
                 lastGroup = hit.groupKey;
                 header = groupHeader(
@@ -6268,7 +6391,9 @@
             // the only comparison that means anything: a cable drum being
             // dearer than a metre of cable is not a finding.
             const delta =
-              hit.effectivePrice !== null && stat.min > 0 ? hit.effectivePrice - stat.min : null;
+              hit.effectivePrice !== null && stat.min > 0 && !isWeak(hit)
+                ? hit.effectivePrice - stat.min
+                : null;
             const over = delta !== null && stat.min > 0 ? (delta / stat.min) * 100 : null;
             // A group of one has no winner: nothing was beaten. Calling the
             // only offer "най-евтин" is a badge every row earns, which is the
@@ -6294,7 +6419,7 @@
               '" tabindex="0">' +
               '<td class="py-3 pl-5 pr-3">' +
               '<span class="flex items-start gap-3">' +
-              (index === 0
+              (hit === best
                 ? '<span class="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md bg-emerald-500/15 text-[10px] font-bold text-emerald-400" title="Най-евтиният за вас">' +
                   '<i class="fa-solid fa-crown text-[9px]"></i></span>'
                 : '<span class="num mt-0.5 w-5 shrink-0 text-center text-[11px] text-slate-600">' +
@@ -6314,12 +6439,9 @@
                   '">' +
                   escapeHtml(hit.name) +
                   '</span>') +
-              (specs || !hit.matched || hit.recordedAt
+              (specs || hit.match || !hit.matched || hit.recordedAt
                 ? '<span class="mt-1 flex flex-wrap items-center gap-1">' +
-                  (hit.matched
-                    ? ''
-                    : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-400/90" ' +
-                      'title="Търсачката на магазина върна това по подобие — името не съдържа търсеното.">по подобие</span>') +
+                  matchBadgeHtml(hit) +
                   // A price typed in three weeks ago and one read three seconds
                   // ago rank together, which is right — but they are not the
                   // same claim, and only this says so.
@@ -6478,6 +6600,7 @@
           (suppliers.size === 1 ? ' магазин' : ' магазина') +
           range +
           '</p>' +
+          matchingSummaryHtml(matching) +
           spread +
           '</div>' +
           '<table class="w-full table-fixed text-left"><colgroup>' +
@@ -6495,6 +6618,32 @@
           '</tbody></table></div>';
       }
 
+      /**
+       * "iphnoe 15" — offered, never applied.
+       *
+       * The search still runs on what was typed: a wholesale catalogue is full
+       * of strings that look like typos and are article codes, and silently
+       * correcting one hides the thing somebody was looking for.
+       */
+      function renderDidYouMean(matching, query) {
+        const suggestion = matching && matching.understood && matching.understood.didYouMean;
+        if (!suggestion || suggestion === query.toLowerCase()) return;
+
+        const box = document.createElement('div');
+        box.className = 'mt-3 text-[12.5px] text-slate-400';
+        box.innerHTML =
+          'Имахте предвид <button type="button" class="font-semibold text-accent-500 underline underline-offset-2">' +
+          escapeHtml(suggestion) +
+          '</button>?';
+
+        box.querySelector('button').addEventListener('click', function () {
+          $('#catalogue-query').value = suggestion;
+          void searchCatalogue();
+        });
+
+        $('#catalogue-results').prepend(box);
+      }
+
       async function searchCatalogue() {
         const query = $('#catalogue-query').value.trim();
         const results = $('#catalogue-results');
@@ -6506,11 +6655,24 @@
         }
 
         $('#catalogue-spinner').classList.remove('hidden');
-        live.innerHTML =
-          '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
-          '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>' +
-          'Питам магазините…</div>';
         results.innerHTML = '';
+
+        // Three states, because the wait has three parts and a single spinner
+        // for eight seconds reads as a hang. The first two are honest labels
+        // for work that is genuinely happening.
+        const stage = (text) => {
+          live.innerHTML =
+            '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
+            '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>' +
+            escapeHtml(text) +
+            '</div>';
+        };
+
+        stage('Разчитам заявката…');
+        const stages = [
+          window.setTimeout(() => stage('Питам магазините…'), 350),
+          window.setTimeout(() => stage('Сравнявам артикулите…'), 3500),
+        ];
 
         try {
           const url =
@@ -6524,9 +6686,12 @@
 
           const result = await response.json();
 
+          stages.forEach(window.clearTimeout);
           renderShopOutcomes(result);
-          renderCatalogueResults(result.hits, query);
+          renderCatalogueResults(result.hits, query, result.matching);
+          renderDidYouMean(result.matching, query);
         } catch (error) {
+          stages.forEach(window.clearTimeout);
           live.innerHTML = '';
           results.innerHTML =
             '<p class="text-[13px] text-red-400">Търсенето не успя: ' +
