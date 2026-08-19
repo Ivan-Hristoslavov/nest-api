@@ -4,6 +4,7 @@ import { Alert } from '../alerts/entities/alert.entity';
 import { BillingEvent } from '../billing/entities/billing-event.entity';
 import { User } from '../billing/entities/user.entity';
 import { SearchCache } from '../discovery/entities/search-cache.entity';
+import { MatchCache } from '../matching/entities/match-cache.entity';
 import { ManualPrice } from '../shops/entities/manual-price.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { DatabaseConfig } from '../config/configuration';
@@ -49,6 +50,7 @@ export function buildTypeOrmOptions(config: DatabaseConfig): TypeOrmModuleOption
       Shop,
       ManualPrice,
       SearchCache,
+      MatchCache,
     ],
     migrations: [`${__dirname}/migrations/*.{ts,js}`],
     migrationsTableName: 'typeorm_migrations',

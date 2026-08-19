@@ -40,7 +40,7 @@ const DISCOVERY_RETRY_MS = 5 * 60_000;
  * It is part of every cache key, so a change in how the question is asked
  * cannot be answered from a cache of the old question.
  */
-export const PROMPT_VERSION = 'match-v1';
+export const PROMPT_VERSION = 'match-v2';
 
 export interface AiMatchRequest {
   /** What the buyer is looking for, as they typed it. */
@@ -93,9 +93,14 @@ const SYSTEM_PROMPT = [
   '0.70-0.84 probably the same, something unverifiable; below 0.70 you are not convinced.',
   'Being unsure is a correct answer. A wrong "same" sends an order to the wrong supplier.',
   '',
+  'The reason is read by a Bulgarian buyer deciding where to place an order.',
+  'Write it in Bulgarian only — no English, no other script, no transliteration,',
+  'no parenthetical translations. Name the attribute that decided it: which',
+  'specification agreed, or which one is missing or different. One short clause.',
+  '',
   'Reply with JSON only, no prose, no code fences:',
   '{"matches":[{"id":"<candidate id>","same":true|false,"confidence":0.0-1.0,',
-  '"reason":"<one short clause in Bulgarian naming the deciding attribute>"}]}',
+  '"reason":"<една кратка фраза на български>"}]}',
 ].join('\n');
 
 /**
@@ -158,11 +163,19 @@ export class ClaudeService {
    * the answer is a request an operator can make deliberately rather than
    * something they infer from whether searches feel different.
    */
-  async health(): Promise<{ enabled: boolean; model: string | null; ok: boolean; detail: string }> {
+  async health(): Promise<{
+    enabled: boolean;
+    model: string | null;
+    /** Every model this account can use, so a missing Haiku is visible rather than inferred. */
+    available: string[];
+    ok: boolean;
+    detail: string;
+  }> {
     if (!this.client) {
       return {
         enabled: false,
         model: null,
+        available: [],
         ok: false,
         detail: this.config.enabled
           ? 'ANTHROPIC_API_KEY is set to something that is not a key. Matching runs deterministically.'
@@ -175,14 +188,34 @@ export class ClaudeService {
     this.discoveryFailedAt = 0;
     const model = await this.resolveModel();
 
-    return model
-      ? { enabled: true, model, ok: true, detail: `The key works. Comparisons will use ${model}.` }
-      : {
-          enabled: true,
-          model: null,
-          ok: false,
-          detail: 'The key was rejected or no model is available. Matching runs deterministically.',
-        };
+    let available: string[] = [];
+    try {
+      for await (const entry of this.client.models.list()) available.push(entry.id);
+    } catch {
+      available = [];
+    }
+
+    if (!model) {
+      return {
+        enabled: true,
+        model: null,
+        available,
+        ok: false,
+        detail: 'The key was rejected or no model is available. Matching runs deterministically.',
+      };
+    }
+
+    const preferred = PREFERRED_MODELS[0];
+
+    return {
+      enabled: true,
+      model,
+      available,
+      ok: true,
+      detail: model.startsWith(preferred)
+        ? `The key works. Comparisons will use ${model}.`
+        : `The key works, but ${preferred} is not among this account's models, so comparisons will use ${model} — which costs more per comparison.`,
+    };
   }
 
   /**
@@ -211,10 +244,7 @@ export class ClaudeService {
       const available: string[] = [];
       for await (const model of this.client.models.list()) available.push(model.id);
 
-      const chosen =
-        PREFERRED_MODELS.find((candidate) => available.includes(candidate)) ??
-        available.find((id) => id.includes('haiku')) ??
-        available[0];
+      const chosen = pickModel(available);
 
       if (!chosen) {
         this.logger.warn('The account lists no models. AI matching stays off.');
@@ -224,12 +254,12 @@ export class ClaudeService {
 
       this.model = chosen;
 
-      if (chosen !== PREFERRED_MODELS[0]) {
+      if (chosen.startsWith(PREFERRED_MODELS[0])) {
+        this.logger.log(`AI matching will use ${chosen}.`);
+      } else {
         this.logger.warn(
           `${PREFERRED_MODELS[0]} is not available; matching will use ${chosen}, which costs more per comparison.`,
         );
-      } else {
-        this.logger.log(`AI matching will use ${chosen}.`);
       }
 
       return chosen;
@@ -307,6 +337,36 @@ export class ClaudeService {
       return null;
     }
   }
+}
+
+/**
+ * Picks the cheapest model this account can actually use.
+ *
+ * An account lists aliases (`claude-haiku-4-5`) or dated snapshots
+ * (`claude-haiku-4-5-20251001`) or both, and which one appears is not
+ * something the caller controls. Comparing exact strings against that list
+ * silently skipped a Haiku that was right there under its dated name and fell
+ * through to Sonnet — three times the price per comparison, with a log line
+ * claiming Haiku was unavailable.
+ *
+ * The alias is preferred where both exist: it keeps following the current
+ * snapshot instead of pinning one that will eventually be retired.
+ */
+export function pickModel(available: string[]): string | undefined {
+  for (const preferred of PREFERRED_MODELS) {
+    if (available.includes(preferred)) return preferred;
+
+    const dated = available
+      .filter((id) => id.startsWith(`${preferred}-`))
+      .sort()
+      .pop();
+
+    if (dated) return dated;
+  }
+
+  // Nothing recognised. Any Haiku beats guessing at the first row, which on a
+  // full account is Opus.
+  return available.find((id) => id.includes('haiku')) ?? available[0];
 }
 
 /**

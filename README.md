@@ -239,7 +239,13 @@ Categories are recognised in Bulgarian, English, German and French. Where the ca
 
 ### Model routing
 
-Routine matching runs on **Claude Haiku**, chosen at runtime by asking the API which models the account has (`models.list()`) rather than hard-coding an id that will one day be retired. If Haiku is absent the cheapest available model is used, with a warning. Nothing calls Opus for a product search.
+Routine matching runs on **Claude Haiku**, chosen at runtime by asking the API which models the account has (`models.list()`) rather than hard-coding an id that will one day be retired. Accounts list aliases (`claude-haiku-4-5`), dated snapshots (`claude-haiku-4-5-20251001`) or both, so the match is by prefix — the alias wins where both appear, since it keeps following the current snapshot. If no Haiku is listed the cheapest available model is used, with a warning. Nothing calls Opus for a product search.
+
+Check what a deployment resolved to:
+
+```bash
+curl -s localhost:3000/api/v1/matching/health -H "x-api-key: $API_KEY"
+```
 
 With no `ANTHROPIC_API_KEY` the AI half is off and matching still works — rungs 1 to 5 answer most pairs. That is the normal state of a fresh deployment, not a degraded one.
 

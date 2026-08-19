@@ -1,3 +1,4 @@
+import { pickModel } from './claude.service';
 import { confidenceBand, matchNames } from './deterministic-matcher';
 import { detectCategory, extractAttributes, suggestCorrection } from './attributes';
 import { measurementsOf, normaliseProductName, similarity } from './normalisation';
@@ -249,5 +250,36 @@ describe('deterministic product matching', () => {
       expect(confidenceBand(0.75)).toBe('possible');
       expect(confidenceBand(0.5)).toBe('weak');
     });
+  });
+});
+
+describe('choosing a model from what the account actually has', () => {
+  it('finds Haiku under its dated name', () => {
+    // The account that exposed this lists snapshots, not aliases. Comparing
+    // exact strings skipped a Haiku that was right there and fell through to
+    // Sonnet — three times the price per comparison, with a log line claiming
+    // Haiku was unavailable.
+    expect(
+      pickModel([
+        'claude-opus-5',
+        'claude-sonnet-5',
+        'claude-haiku-4-5-20251001',
+        'claude-sonnet-4-5-20250929',
+      ]),
+    ).toBe('claude-haiku-4-5-20251001');
+  });
+
+  it('prefers the alias where both exist, so it keeps following the snapshot', () => {
+    expect(pickModel(['claude-haiku-4-5-20251001', 'claude-haiku-4-5', 'claude-opus-5'])).toBe(
+      'claude-haiku-4-5',
+    );
+  });
+
+  it('falls to the next cheapest when no Haiku is listed at all', () => {
+    expect(pickModel(['claude-opus-5', 'claude-sonnet-5'])).toBe('claude-sonnet-5');
+  });
+
+  it('never lands on Opus by accident when something cheaper is present', () => {
+    expect(pickModel(['claude-opus-5', 'claude-haiku-4-5'])).toBe('claude-haiku-4-5');
   });
 });

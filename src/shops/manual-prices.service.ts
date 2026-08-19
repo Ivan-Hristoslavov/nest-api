@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { normaliseProductName, tokensOf } from '../matching/normalisation';
 import { ManualPrice } from './entities/manual-price.entity';
 import { Shop } from './entities/shop.entity';
 
@@ -45,26 +46,40 @@ export class ManualPricesService {
   }
 
   /**
-   * Rows of this supplier's list matching what was searched for.
+   * Rows of this supplier's list worth putting in front of the matcher.
    *
-   * Every word must appear, so "кабел свт" does not return the whole cable
-   * shelf because one word matched.
+   * This used to demand every word, which was right when it was the only
+   * filter and wrong now that one follows it. A supplier who writes "Philips
+   * CorePro 840 неутрална светлина" for the bulb somebody searched for as
+   * "Philips LED 12W E27 4000K" shares exactly one word, so requiring all of
+   * them meant that supplier was never even considered — and the matcher,
+   * whose entire job is to recognise that pair, never saw it.
+   *
+   * So retrieval is broad and ranking is not: rows are kept if they share any
+   * word, ordered by how many they share, and cut to `limit`. Deciding which
+   * of them is actually the same article happens downstream, where it can be
+   * done properly and explained.
    */
   async search(shopId: string, query: string, limit = 8): Promise<ManualPrice[]> {
-    const words = fold(query)
-      .split(/[\s,./-]+/)
-      .filter((word) => word.length >= 2);
+    // The matcher's own tokeniser: it folds homoglyphs, canonicalises units so
+    // "12 вата" finds "12W", and drops the filler words that would otherwise
+    // match every row on the list.
+    const words = tokensOf(query);
 
     if (words.length === 0) return [];
 
     const rows = await this.prices.find({ where: { shopId } });
 
     return rows
-      .filter((row) => {
-        const haystack = fold(`${row.name} ${row.shopCode ?? ''}`);
-        return words.every((word) => haystack.includes(word));
+      .map((row) => {
+        const haystack = normaliseProductName(`${row.name} ${row.shopCode ?? ''}`);
+        const shared = words.filter((word) => haystack.includes(word)).length;
+        return { row, shared };
       })
-      .slice(0, limit);
+      .filter((entry) => entry.shared > 0)
+      .sort((a, b) => b.shared - a.shared || a.row.name.localeCompare(b.row.name))
+      .slice(0, limit)
+      .map((entry) => entry.row);
   }
 
   /**
@@ -154,15 +169,5 @@ export class ManualPricesService {
   }
 }
 
-const HOMOGLYPH_FROM = 'аеорсухкмтвнАЕОРСУХКМТВН';
-const HOMOGLYPH_TO = 'aeopcyxkmtbhAEOPCYXKMTBH';
-
-/** Cyrillic letters that look Latin, folded onto their twins, lowercased. */
-function fold(text: string): string {
-  let out = '';
-  for (const letter of text) {
-    const index = HOMOGLYPH_FROM.indexOf(letter);
-    out += index === -1 ? letter : HOMOGLYPH_TO[index];
-  }
-  return out.toLowerCase();
-}
+// The homoglyph table that used to live here now has one home, in the
+// matcher's normaliser, which this searches through.
