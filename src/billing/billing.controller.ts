@@ -163,10 +163,13 @@ export class BillingController {
       },
     },
   })
-  plans(): { enabled: boolean; plans: string[] } {
+  plans(): { enabled: boolean; plans: string[]; topUpUrl: string | null } {
     return {
       enabled: this.checkout.enabled,
       plans: this.checkout.availablePlans().map((entry) => entry.plan),
+      // Null when nothing is configured, so the interface offers a top-up only
+      // where one can actually be bought.
+      topUpUrl: this.checkout.topUpUrl,
     };
   }
 

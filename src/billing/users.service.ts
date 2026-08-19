@@ -249,6 +249,27 @@ export class UsersService {
     return { email: user.email };
   }
 
+  /**
+   * Adds bought comparisons to an account's allowance.
+   *
+   * Raises the ceiling rather than lowering the count, so a top-up survives
+   * the monthly reset on a paid plan and does not quietly expire at the end of
+   * the month somebody bought it in — they paid for comparisons, not for a
+   * window in which to make them.
+   */
+  async creditAiComparisons(userId: string, count: number): Promise<User> {
+    const user = await this.findOne(userId);
+
+    user.aiMatchesLimit += count;
+    const saved = await this.usersRepository.save(user);
+
+    this.logger.log(
+      `Credited ${count} AI comparisons to ${saved.email}; allowance is now ${saved.aiMatchesLimit}.`,
+    );
+
+    return saved;
+  }
+
   /** Marks an account as lapsed. The key stays on the row but stops working. */
   async expire(userId: string, reason: string): Promise<User> {
     const user = await this.findOne(userId);

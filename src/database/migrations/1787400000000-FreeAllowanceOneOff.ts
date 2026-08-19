@@ -21,17 +21,13 @@ export class FreeAllowanceOneOff1787400000000 implements MigrationInterface {
       WHERE "plan" = 'free' AND "ai_matches_limit" <> 50
     `);
 
-    await queryRunner.query(
-      `ALTER TABLE "users" ALTER COLUMN "ai_matches_limit" SET DEFAULT 50`,
-    );
+    await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "ai_matches_limit" SET DEFAULT 50`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       UPDATE "users" SET "ai_matches_limit" = 200 WHERE "plan" = 'free'
     `);
-    await queryRunner.query(
-      `ALTER TABLE "users" ALTER COLUMN "ai_matches_limit" SET DEFAULT 200`,
-    );
+    await queryRunner.query(`ALTER TABLE "users" ALTER COLUMN "ai_matches_limit" SET DEFAULT 200`);
   }
 }

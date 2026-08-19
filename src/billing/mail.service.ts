@@ -198,6 +198,33 @@ export class MailService implements OnModuleInit {
     return this.send(user.email, subject, html, text);
   }
 
+  /** Confirms bought comparisons landed, and says what they are for. */
+  async sendTopUpReceipt(user: User, count: number): Promise<boolean> {
+    const subject = `Добавихме ${count} AI сравнения`;
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: `Новата ви наличност е ${user.aiMatchesLimit}.`,
+      heading: 'Сравненията са добавени',
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          `Благодарим ви. Добавихме <strong>${count}</strong> AI сравнения към акаунта ви.`,
+        ),
+        dataRows([
+          ['Добавени', String(count)],
+          ['Обща наличност', String(user.aiMatchesLimit)],
+          ['Използвани досега', String(user.aiMatchesUsed)],
+        ]),
+        paragraph('Сравненията не изтичат в края на месеца — платили сте за брой, не за срок.'),
+      ],
+      cta: { label: 'Към търсенето', url: this.config.appUrl },
+    });
+
+    return this.send(user.email, subject, html, text);
+  }
+
   /** Tells a customer their subscription has lapsed and the key has stopped. */
   async sendAccessExpired(user: User, reason: string): Promise<boolean> {
     const subject = 'Достъпът ви до PriceGuard е спрян';

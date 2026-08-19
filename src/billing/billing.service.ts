@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 
+import { Configuration } from '../config/configuration';
 import { BillingEvent } from './entities/billing-event.entity';
 import { UserPlan } from './entities/user.entity';
 import { MailService } from './mail.service';
@@ -18,6 +20,8 @@ export interface NormalisedBillingEvent {
   paymentId: string | null;
   /** Plan slug from the product/variant name, when derivable. */
   plan: UserPlan | null;
+  /** Price ids this payment covered, for recognising a top-up. */
+  priceIds: string[];
   /** End of the paid period, when the provider states one. */
   expiresAt: Date | null;
 }
@@ -76,12 +80,17 @@ const REVOKING_EVENTS = new Set([
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
+  private readonly topUpPacks: Record<string, number>;
+
   constructor(
     @InjectRepository(BillingEvent)
     private readonly eventsRepository: Repository<BillingEvent>,
     private readonly usersService: UsersService,
     private readonly mail: MailService,
-  ) {}
+    configService: ConfigService<Configuration, true>,
+  ) {
+    this.topUpPacks = configService.get('checkout', { infer: true }).topUpPacks;
+  }
 
   /**
    * Applies one verified webhook.
@@ -108,6 +117,15 @@ export class BillingService {
     }
 
     const record = claim.record;
+
+    // Checked before activation: a top-up is a completed payment like any
+    // other, and read as one it would move the customer onto a plan they did
+    // not buy.
+    const credited = this.topUpFor(event);
+
+    if (credited > 0) {
+      return this.creditTopUp(event, record, credited);
+    }
 
     if (ACTIVATING_EVENTS.has(event.eventType)) {
       return this.activate(event, record);
@@ -273,6 +291,52 @@ export class BillingService {
     await this.eventsRepository.save(record);
   }
 
+  /** How many comparisons this payment bought, or zero if it bought none. */
+  private topUpFor(event: NormalisedBillingEvent): number {
+    if (!ACTIVATING_EVENTS.has(event.eventType)) return 0;
+
+    return event.priceIds.reduce((total, id) => total + (this.topUpPacks[id] ?? 0), 0);
+  }
+
+  /**
+   * Adds bought comparisons to an account, creating it if the buyer is new.
+   *
+   * A top-up never changes the plan and never issues a key on its own: someone
+   * buying more comparisons for an account they already use must not have that
+   * account's key rotated as a side effect of paying.
+   */
+  private async creditTopUp(
+    event: NormalisedBillingEvent,
+    record: BillingEvent,
+    count: number,
+  ): Promise<WebhookOutcome> {
+    if (!event.email) {
+      await this.finish(record, false, 'No customer email in payload');
+      return {
+        received: true,
+        processed: false,
+        duplicate: false,
+        note: 'No customer email in payload',
+      };
+    }
+
+    const user = await this.usersService.findOrCreateByEmail(event.email, event.name);
+    const credited = await this.usersService.creditAiComparisons(user.id, count);
+
+    await this.finish(record, true, `Credited ${count} AI comparisons`, credited.id);
+    await this.mail.sendTopUpReceipt(credited, count);
+
+    this.logger.log(`Top-up: ${count} comparisons for ${credited.email}`);
+
+    return {
+      received: true,
+      processed: true,
+      duplicate: false,
+      note: `Credited ${count} AI comparisons`,
+      userId: credited.id,
+    };
+  }
+
   /**
    * Flattens the two providers' very different payload shapes into one struct.
    *
@@ -350,6 +414,7 @@ export class BillingService {
         this.string(data.id) ??
         null,
       plan: this.planFrom(attributes, data),
+      priceIds: this.priceIdsFrom(data, attributes),
       expiresAt: this.dateFrom(
         this.string(data.next_billed_at) ??
           this.string(attributes.renews_at) ??
@@ -357,6 +422,50 @@ export class BillingService {
           this.string(data.current_billing_period_ends_at),
       ),
     };
+  }
+
+  /**
+   * Every price this payment covered.
+   *
+   * A top-up and a subscription arrive as the same kind of event, so the price
+   * is the only thing that distinguishes them. Collected from the shapes the
+   * three providers use rather than one, because the alternative is a top-up
+   * silently read as a plan change.
+   */
+  private priceIdsFrom(
+    data: Record<string, unknown>,
+    attributes: Record<string, unknown>,
+  ): string[] {
+    const ids: string[] = [];
+
+    const push = (value: unknown): void => {
+      const id = this.string(value);
+      if (id) ids.push(id);
+    };
+
+    // Paddle Billing: data.items[].price.id
+    const items = Array.isArray(data.items) ? data.items : [];
+    for (const item of items) {
+      const record = this.record(item);
+      push(this.record(record.price).id);
+      push(record.price_id);
+    }
+
+    // Lemon Squeezy keeps the variant on the order attributes.
+    push(attributes.variant_id);
+    push(attributes.first_order_item);
+
+    // Stripe: the price rides on the line items when they are expanded, and on
+    // metadata otherwise.
+    const lineItems = Array.isArray(this.record(data.line_items).data)
+      ? (this.record(data.line_items).data as unknown[])
+      : [];
+    for (const line of lineItems) {
+      push(this.record(this.record(line).price).id);
+    }
+    push(this.record(data.metadata).price_id);
+
+    return [...new Set(ids)];
   }
 
   /** Maps a product/variant name onto a plan, defaulting to Starter. */

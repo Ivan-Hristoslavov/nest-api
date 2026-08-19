@@ -148,6 +148,30 @@ describe('deterministic product matching', () => {
     });
   });
 
+  describe('borrowed acronyms', () => {
+    it('matches "лед крушка" against a listing that writes LED', () => {
+      // Reported from a live search: the buyer typed the acronym in Cyrillic,
+      // every listing wrote it in Latin, and nothing matched. The homoglyph
+      // fold cannot help — л and д look nothing like l and d.
+      const verdict = matchNames('лед крушка', 'LED крушка 12W E27');
+
+      expect(verdict.confidence).toBeGreaterThanOrEqual(0.7);
+      expect(verdict.blocked).toBe(false);
+    });
+
+    it('matches the other way round too', () => {
+      expect(matchNames('LED крушка 12W', 'лед крушка 12W').confidence).toBeGreaterThanOrEqual(0.7);
+    });
+
+    it('leaves ordinary Bulgarian words alone', () => {
+      // Only borrowed acronyms are rewritten; "кухня" must not become anything.
+      expect(normaliseProductName('кухня')).toBe(normaliseProductName('кухня'));
+      expect(matchNames('лед крушка', 'Оборудвана ъглова кухня VANIA').confidence).toBeLessThan(
+        0.7,
+      );
+    });
+  });
+
   describe('spelling', () => {
     it('suggests the brand somebody meant', () => {
       expect(suggestCorrection('iphnoe 15')).toBe('iphone 15');

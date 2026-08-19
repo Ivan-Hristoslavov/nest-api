@@ -28,6 +28,38 @@ export function foldHomoglyphs(text: string): string {
 }
 
 /**
+ * Latin technical terms as Bulgarians type them in Cyrillic.
+ *
+ * The homoglyph fold handles letters that *look* alike — "Е27" against "E27".
+ * It cannot handle "лед", because л and д look nothing like l and d, so a
+ * buyer typing "лед крушка" matched no listing that wrote "LED крушка": one
+ * side normalised to "лeд", the other to "led", and they never met.
+ *
+ * Deliberately a short list of borrowed acronyms rather than a transliteration
+ * of the whole alphabet: transliterating everything would rewrite ordinary
+ * Bulgarian words too, and the fold this sits next to was built around the
+ * visual pairs, not the phonetic ones.
+ */
+const TERM_ALIASES: Record<string, string> = {
+  лед: 'led',
+  олед: 'oled',
+  лцд: 'lcd',
+  тв: 'tv',
+  юсб: 'usb',
+  хдми: 'hdmi',
+  ссд: 'ssd',
+  хдд: 'hdd',
+  лан: 'lan',
+  смарт: 'smart',
+  ватов: 'w',
+};
+
+/** Rewrites borrowed acronyms to the Latin spelling both sides can share. */
+export function normaliseBorrowedTerms(text: string): string {
+  return (text || '').replace(/[\p{L}]+/gu, (word) => TERM_ALIASES[word.toLowerCase()] ?? word);
+}
+
+/**
  * Unit spellings that mean the same measurement.
  *
  * Keyed by the *normalised* form so the table is also the answer. Multilingual
@@ -121,7 +153,7 @@ export interface Measurement {
  * inventing token boundaries inside model codes.
  */
 export function normaliseText(raw: string): string {
-  return foldHomoglyphs(raw || '')
+  return foldHomoglyphs(normaliseBorrowedTerms(raw || ''))
     .toLowerCase()
     .replace(/[«»"'`´’‚„()[\]{}]/g, ' ')
     .replace(/[.,;:!?/\\|+]/g, ' ')

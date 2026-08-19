@@ -1,4 +1,5 @@
 import { parseRates } from '../products/currency';
+import { parseTopUpPacks } from '../billing/top-up-packs';
 import {
   BillingProvider,
   EnvironmentVariables,
@@ -91,6 +92,10 @@ export interface AlertsConfig {
 export interface CheckoutConfig {
   /** Hosted payment page per plan, from whichever provider issues invoices. */
   links: Partial<Record<'starter' | 'pro' | 'business', string>>;
+  /** Where to buy more AI comparisons, when that is offered at all. */
+  topUpLink?: string;
+  /** Provider price id → comparisons credited by that purchase. */
+  topUpPacks: Record<string, number>;
 }
 
 export interface StripeConfig {
@@ -276,6 +281,8 @@ export const configuration = (): Configuration => {
         pro: env.CHECKOUT_LINK_PRO,
         business: env.CHECKOUT_LINK_BUSINESS,
       },
+      topUpLink: env.CHECKOUT_LINK_TOPUP,
+      topUpPacks: parseTopUpPacks(env.TOPUP_PRICE_IDS),
     },
     matching: {
       // Enabled *and* keyed. A deployment with the flag on and no key would

@@ -45,6 +45,11 @@ export class CheckoutService {
     return this.stripe !== null || Object.values(this.checkout.links).some(Boolean);
   }
 
+  /** Where more AI comparisons are sold, when that is offered at all. */
+  get topUpUrl(): string | null {
+    return this.checkout.topUpLink ?? null;
+  }
+
   /**
    * Which plans can actually be bought right now.
    *

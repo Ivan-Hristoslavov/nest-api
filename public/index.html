@@ -377,6 +377,22 @@
           transform: none;
         }
       }
+      .chip-in {
+        opacity: 0;
+        animation: chip-in 260ms ease-out forwards;
+      }
+
+      @keyframes chip-in {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
       .fade-up {
         animation: fade-up 0.35s ease both;
       }
@@ -440,19 +456,56 @@
           <span class="text-[16px] font-bold tracking-tight text-slate-200">PriceGuard</span>
         </button>
 
+        <!-- Two navigations, never both.
+             A visitor is reading about a product and needs the argument for
+             it; somebody signed in is working and needs the two screens the
+             work happens on. Showing all five to everyone made the app look
+             like a brochure and the brochure look like an app. -->
         <nav
+          data-nav="guest"
           class="ml-auto hidden items-center gap-1 rounded-xl bg-ink-900 p-1 ring-1 ring-white/5 md:flex"
           aria-label="Основна навигация"
         >
           <button
             type="button"
             data-view="landing"
+            data-scroll="how"
             class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
           >
-            <i class="fa-solid fa-bolt mr-1.5 text-[11px]"></i>Планове
+            Как работи
           </button>
-          <!-- Ordered as the work is done: find what to buy, then watch what
-               you already buy, then the settings behind both. -->
+          <button
+            type="button"
+            data-view="landing"
+            data-scroll="matching"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+          >
+            Разпознаване
+          </button>
+          <button
+            type="button"
+            data-view="landing"
+            data-scroll="pricing"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+          >
+            Цени
+          </button>
+          <button
+            type="button"
+            data-view="landing"
+            data-scroll="api"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+          >
+            API
+          </button>
+        </nav>
+
+        <nav
+          data-nav="app"
+          hidden
+          class="ml-auto items-center gap-1 rounded-xl bg-ink-900 p-1 ring-1 ring-white/5 md:flex"
+          aria-label="Навигация в приложението"
+        >
           <button
             type="button"
             data-view="catalogue"
@@ -470,17 +523,9 @@
           <button
             type="button"
             data-view="landing"
-            data-scroll="matching"
-            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-500 transition hover:text-slate-200"
           >
-            <i class="fa-solid fa-wand-magic-sparkles mr-1.5 text-[11px]"></i>Разпознаване
-          </button>          <button
-            type="button"
-            data-view="landing"
-            data-scroll="api"
-            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
-          >
-            <i class="fa-solid fa-code mr-1.5 text-[11px]"></i>API
+            <i class="fa-solid fa-circle-info mr-1.5 text-[11px]"></i>За продукта
           </button>
           <!-- Revealed only when the key in use turns out to be an operator
                key. Offering it to a customer and then answering 403 reads as a
@@ -543,6 +588,7 @@
           <button
             type="button"
             data-view="dashboard"
+            data-guest-only
             class="nav-link rounded-lg bg-accent-500 px-3.5 py-2 text-[13px] font-semibold text-white transition hover:bg-accent-600"
           >
             Демо табло
@@ -1695,6 +1741,34 @@
       <!-- ================================================================ -->
       <section id="view-catalogue" class="view" role="region" aria-label="Търсене при доставчици" hidden>
         <div class="mx-auto max-w-[1400px] px-5 py-12 sm:px-8">
+          <!-- What this account is and what is left of it.
+               Shown in both app views because "which plan am I on" and "how
+               much is left" are questions people ask while working, not while
+               reading a settings page. Hidden entirely for a visitor who has
+               not identified themselves — there is nothing true to put in it. -->
+          <div
+            data-plan-bar
+            hidden
+            class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/8 bg-ink-900 px-5 py-3.5"
+          >
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-circle-user text-[13px] text-accent-500"></i>
+              <span data-plan-email class="text-[13px] font-medium text-slate-200"></span>
+              <span data-plan-name class="rounded-md bg-accent-500/12 px-2 py-0.5 text-[11.5px] font-semibold text-accent-600 dark:text-accent-300"></span>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div data-plan-products class="min-w-[150px]"></div>
+              <div data-plan-ai class="min-w-[150px]"></div>
+            </div>
+            <button
+              type="button"
+              data-plan-manage
+              class="ml-auto rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100"
+            >
+              Акаунт
+            </button>
+          </div>
+
           <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="text-3xl font-bold text-slate-200">Търси при доставчиците</h2>
@@ -1835,6 +1909,34 @@
       <!-- ================================================================ -->
       <section id="view-dashboard" class="view" role="region" aria-label="Табло за мониторинг" hidden>
         <div class="mx-auto max-w-[1400px] px-5 py-12 sm:px-8">
+          <!-- What this account is and what is left of it.
+               Shown in both app views because "which plan am I on" and "how
+               much is left" are questions people ask while working, not while
+               reading a settings page. Hidden entirely for a visitor who has
+               not identified themselves — there is nothing true to put in it. -->
+          <div
+            data-plan-bar
+            hidden
+            class="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/8 bg-ink-900 px-5 py-3.5"
+          >
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-circle-user text-[13px] text-accent-500"></i>
+              <span data-plan-email class="text-[13px] font-medium text-slate-200"></span>
+              <span data-plan-name class="rounded-md bg-accent-500/12 px-2 py-0.5 text-[11.5px] font-semibold text-accent-600 dark:text-accent-300"></span>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div data-plan-products class="min-w-[150px]"></div>
+              <div data-plan-ai class="min-w-[150px]"></div>
+            </div>
+            <button
+              type="button"
+              data-plan-manage
+              class="ml-auto rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100"
+            >
+              Акаунт
+            </button>
+          </div>
+
           <!-- Header -->
           <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -2050,9 +2152,18 @@
               </table>
             </div>
 
-            <div id="table-empty" class="hidden px-5 py-16 text-center text-[13.5px] text-slate-500">
+            <div id="table-empty" class="hidden px-5 py-16 text-center">
               <i class="fa-solid fa-inbox mb-3 block text-2xl text-slate-700"></i>
-              Няма артикули, отговарящи на търсенето.
+              <p id="table-empty-text" class="text-[13.5px] text-slate-500">
+                Няма артикули, отговарящи на търсенето.
+              </p>
+              <button
+                type="button"
+                id="table-empty-action"
+                class="mt-4 hidden rounded-xl bg-accent-500 px-5 py-2.5 text-[13.5px] font-semibold text-white transition hover:bg-accent-600"
+              >
+                Добави първия артикул
+              </button>
             </div>
           </div>
 
@@ -3651,6 +3762,7 @@
 
         if (name === 'dashboard') loadProducts();
         if (name === 'catalogue') void loadShops();
+        if (name === 'dashboard' || name === 'catalogue') void refreshPlanBar();
         if (name === 'operator') void loadOperatorPanel();
       }
 
@@ -3918,6 +4030,7 @@
           if (!response.ok) throw new Error('HTTP ' + response.status);
 
           setApiKey(candidate);
+          renderAccount();
           showKeyStatus('Ключът е валиден и запазен в този браузър.', 'success');
           toast('API ключът е активен.', 'success');
           window.setTimeout(() => closeModal('key-modal'), 700);
@@ -3935,6 +4048,7 @@
 
       $('#key-remove').addEventListener('click', function () {
         setApiKey('');
+        renderAccount();
         $('#key-input').value = '';
         showKeyStatus('Ключът е премахнат от този браузър.', 'info');
         loadProducts();
@@ -4124,6 +4238,9 @@
       ];
 
       let products = DEMO_PRODUCTS.slice();
+
+      /** How many products this account actually has, as the API reported. */
+      let trackedCount = 0;
       let revealed = false;
       let activeFilters = { savings: false, problems: false, supplier: '', brand: '', category: '' };
       const expandedRows = new Set();
@@ -5193,6 +5310,18 @@
           .join('');
 
         $('#table-empty').classList.toggle('hidden', list.length > 0);
+
+        if (list.length === 0) {
+          // "Nothing tracked yet" and "nothing matches this filter" are
+          // different problems with different next steps, and a single message
+          // sends half the readers looking for a filter they never set.
+          const nothingTracked = products.length === 0;
+
+          $('#table-empty-text').textContent = nothingTracked
+            ? 'Още не следите нищо. Добавете артикул и ще проверяваме цената му всеки час.'
+            : 'Няма артикули, отговарящи на търсенето.';
+          $('#table-empty-action').classList.toggle('hidden', !nothingTracked);
+        }
         $('#table-count').textContent = list.length + ' от ' + products.length + ' артикула';
 
         body.querySelectorAll('[data-row]').forEach(function (row) {
@@ -5359,8 +5488,13 @@
           const items = Array.isArray(page.data) ? page.data : [];
 
           if (items.length === 0) {
-            products = DEMO_PRODUCTS.slice();
-            $('#data-source-label').textContent = 'няма записи в API-то — демо данни';
+            // A signed-in account with nothing tracked gets an empty table and
+            // says so. It used to get the demo catalogue, which is a screen
+            // full of realistic products that are not yours — a customer's
+            // first impression of their own account was somebody else's data.
+            products = [];
+            trackedCount = 0;
+            $('#data-source-label').textContent = 'вашият акаунт — още няма следени артикули';
           } else {
             products = items.map(function (product) {
               const listings = product.competitors || [];
@@ -5416,13 +5550,19 @@
               };
             });
 
+            trackedCount = page.meta && typeof page.meta.total === 'number' ? page.meta.total : items.length;
             $('#data-source-label').textContent = 'на живо от API-то';
           }
         } catch (error) {
-          products = DEMO_PRODUCTS.slice();
-          $('#data-source-label').textContent = getApiKey()
-            ? 'API-то е недостъпно — демо данни'
-            : 'няма API ключ — демо данни';
+          // Demo rows are for the visitor who has not signed in and is looking
+          // around. For anyone authenticated they would be a lie about their
+          // own catalogue, so a failure shows an empty table and the reason.
+          const identified = Boolean(getSession() || getApiKey());
+          products = identified ? [] : DEMO_PRODUCTS.slice();
+          trackedCount = 0;
+          $('#data-source-label').textContent = identified
+            ? 'API-то не отговори — опитайте пак'
+            : 'демонстрационни данни — влезте, за да видите вашите';
         } finally {
           icon.classList.remove('fa-spin');
           rebuildSupplierFilter();
@@ -6586,9 +6726,9 @@
         const parts = [];
 
         if (matching.decidedDeterministically > 0) {
-          parts.push(
-            matching.decidedDeterministically + ' по спецификация',
-          );
+          // "8 по спецификация" read as "8 matched" on a search where all
+          // eight were rejected. It is a count of decisions, so it says so.
+          parts.push('решени по спецификация: ' + matching.decidedDeterministically);
         }
         if (matching.aiCacheHits > 0) parts.push(matching.aiCacheHits + ' от запомнени');
         if (matching.aiCallsMade > 0 && matching.aiModel) {
@@ -6609,9 +6749,10 @@
         }
         if (matching.aiSkippedReason === 'quota' && matching.aiQuota) {
           parts.push(
-            'AI лимитът за месеца е изчерпан (' +
+            'AI сравненията свършиха (' +
               matching.aiQuota.limit +
-              ') — сравнението продължава по спецификации',
+              ') — сравнявам по баркод и спецификация' +
+              (topUpUrl ? ' · <a href="' + escapeHtml(topUpUrl) + '" target="_blank" rel="noopener" class="font-semibold text-accent-500 hover:underline">купи още</a>' : ''),
           );
         } else if (matching.aiSkippedReason === 'quota') {
           parts.push('AI лимитът за месеца е изчерпан');
@@ -6699,6 +6840,56 @@
 
         const strong = hits.filter((hit) => !isWeak(hit));
         const weak = hits.filter(isWeak);
+
+        // Eight kitchens returned for "лед крушка" is not eight results. When
+        // nothing clears the bar, the honest answer is "nothing matched" with
+        // the shop's guesses folded away — listing them like results makes the
+        // tool look broken when it was the shop's search engine being generous.
+        if (strong.length === 0) {
+          results.innerHTML =
+            '<div class="overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">' +
+            '<div class="px-5 py-10 text-center">' +
+            '<i class="fa-solid fa-magnifying-glass mb-3 block text-2xl text-slate-700"></i>' +
+            '<p class="text-[14px] font-medium text-slate-300">Никой доставчик няма „' +
+            escapeHtml(query) +
+            '"</p>' +
+            '<p class="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-slate-500">' +
+            'Магазините върнаха ' +
+            weak.length +
+            ' ' +
+            plural(weak.length, 'резултат', 'резултата') +
+            ', но нито един не е този артикул. Опитайте с модел, мощност или артикулен номер.' +
+            '</p>' +
+            '<button type="button" id="show-weak" class="mt-4 rounded-lg border border-white/10 bg-ink-850 px-4 py-2 text-[12.5px] font-medium text-slate-400 transition hover:text-slate-200">' +
+            'Покажи какво върнаха магазините' +
+            '</button>' +
+            '</div>' +
+            '<div id="weak-list" class="hidden divide-y divide-white/[0.06] border-t border-white/8"></div>' +
+            '</div>';
+
+          const list = document.getElementById('weak-list');
+          list.innerHTML = weak
+            .map(function (hit) {
+              return (
+                '<div class="flex items-center gap-3 px-5 py-2.5 text-[12.5px]">' +
+                '<span class="min-w-0 flex-1 truncate text-slate-400">' + escapeHtml(hit.name) + '</span>' +
+                '<span class="shrink-0 text-slate-600">' + escapeHtml(hit.shopName) + '</span>' +
+                '<span class="num shrink-0 text-slate-500">' +
+                (hit.effectivePrice === null ? '—' : hit.effectivePrice.toFixed(2) + ' ' + escapeHtml(hit.effectiveCurrency)) +
+                '</span></div>'
+              );
+            })
+            .join('');
+
+          document.getElementById('show-weak').addEventListener('click', function () {
+            list.classList.toggle('hidden');
+            this.textContent = list.classList.contains('hidden')
+              ? 'Покажи какво върнаха магазините'
+              : 'Скрий';
+          });
+
+          return;
+        }
 
         const ordered = [
           ...strong.filter((hit) => comparable.has(hit.groupKey)),
@@ -7061,28 +7252,70 @@
         });
 
         return (
-          '<div class="rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-4">' +
-          '<div class="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">' +
-          '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i> Разчетох заявката' +
+          '<div class="overflow-hidden rounded-2xl border border-accent-500/25 bg-accent-500/[0.05]">' +
+          '<div class="flex items-center gap-2 border-b border-accent-500/15 px-5 py-2.5 text-[12px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">' +
+          '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>Разчетох заявката' +
+          '<span class="ml-auto font-normal normal-case text-slate-500">' + shops + ' ' + plural(shops, 'доставчик', 'доставчици') + '</span>' +
           '</div>' +
+          '<div class="px-5 py-4">' +
           (chips.length
-            ? '<div class="mt-2.5 flex flex-wrap gap-1.5">' +
+            ? '<div class="flex flex-wrap gap-1.5">' +
               chips
                 .map(
-                  ([label, value]) =>
-                    '<span class="rounded-md bg-ink-900 px-2 py-1 text-[11.5px] text-slate-300 ring-1 ring-white/8">' +
+                  ([label, value], index) =>
+                    // Staggered so the attributes appear one after another —
+                    // the reading is instant, and showing it instantly makes it
+                    // look like a static label rather than something worked out.
+                    '<span class="chip-in rounded-md bg-ink-900 px-2 py-1 text-[11.5px] text-slate-300 ring-1 ring-white/8" style="animation-delay:' +
+                    index * 70 +
+                    'ms">' +
                     '<span class="text-slate-500">' + escapeHtml(label) + ':</span> ' +
                     escapeHtml(String(value)) +
                     '</span>',
                 )
                 .join('') +
               '</div>'
-            : '<p class="mt-2 text-[12.5px] text-slate-400">Търся по описание — добавете мощност, размер или модел за по-точно сравнение.</p>') +
-          '<p class="mt-3 text-[12.5px] text-slate-500">Питам ' + shops + ' ' + plural(shops, 'доставчик', 'доставчици') + '…</p>' +
-          '<div id="stream-shops" class="mt-2 space-y-1"></div>' +
-          '<div id="stream-stage" class="mt-2 text-[12.5px] text-slate-400"></div>' +
-          '</div>'
+            : '<p class="text-[12.5px] text-slate-400">Търся по описание — добавете мощност, размер или модел за по-точно сравнение.</p>') +
+          '<div id="stream-shops" class="mt-3 space-y-1"></div>' +
+          '<div id="stream-stage" class="mt-3"></div>' +
+          '</div></div>'
         );
+      }
+
+      /**
+       * The line that says what is happening now.
+       *
+       * Given its own renderer because the AI step is the one people are
+       * curious about and it is over in a second or two — long enough to be
+       * missed if it looks like every other line, which is why it gets a
+       * pulsing mark, its own colour and the model's name.
+       */
+      function renderStage(stage) {
+        const box = document.getElementById('stream-stage');
+        if (!box) return;
+
+        if (stage.kind === 'ai') {
+          box.innerHTML =
+            '<div class="flex items-center gap-2.5 rounded-xl border border-accent-500/30 bg-accent-500/10 px-3 py-2.5">' +
+            '<span class="relative flex h-2 w-2">' +
+            '<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75"></span>' +
+            '<span class="relative inline-flex h-2 w-2 rounded-full bg-accent-500"></span>' +
+            '</span>' +
+            '<span class="text-[12.5px] text-slate-200">' +
+            '<strong class="font-semibold">AI проверява</strong> ' +
+            stage.count + ' ' + plural(stage.count, 'оферта', 'оферти') +
+            ', които спецификациите не решават' +
+            '</span>' +
+            '<span class="ml-auto font-mono text-[11px] text-slate-500">' + escapeHtml(stage.model || '') + '</span>' +
+            '</div>';
+          return;
+        }
+
+        box.innerHTML =
+          '<div class="flex items-center gap-2.5 text-[12.5px] text-slate-400">' +
+          '<i class="fa-solid fa-circle-notch fa-spin text-[11px] text-slate-500"></i>' +
+          escapeHtml(stage.text) +
+          '</div>';
       }
 
       const CATEGORY_LABELS = {
@@ -7116,6 +7349,7 @@
 
         $('#catalogue-spinner').classList.remove('hidden');
         results.innerHTML = '';
+        aiShownUntil = 0;
         live.innerHTML =
           '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
           '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>Разчитам заявката…</div>';
@@ -7173,6 +7407,9 @@
         }
       }
 
+      /** Until when the AI stage stays on screen, so it is not missed. */
+      let aiShownUntil = 0;
+
       /** @returns true when the stream is finished. */
       function handleSearchEvent(event, query) {
         const live = $('#live-results');
@@ -7201,28 +7438,38 @@
         }
 
         if (event.type === 'matching') {
-          const stage = document.getElementById('stream-stage');
-          if (stage) {
-            stage.textContent =
-              'Сравнявам ' + event.candidates + ' ' + plural(event.candidates, 'оферта', 'оферти') + ' по спецификация…';
-          }
+          renderStage({
+            kind: 'matching',
+            text:
+              'Сравнявам ' + event.candidates + ' ' + plural(event.candidates, 'оферта', 'оферти') + ' по спецификация…',
+          });
           return false;
         }
 
         if (event.type === 'ai') {
-          const stage = document.getElementById('stream-stage');
-          if (stage) {
-            stage.innerHTML =
-              '<i class="fa-solid fa-wand-magic-sparkles mr-1 text-[10px] text-accent-500"></i>' +
-              event.comparisons + ' ' + plural(event.comparisons, 'оферта', 'оферти') +
-              ' не се решават от спецификациите — питам ' + escapeHtml(event.model || 'модела') + '…';
-          }
+          renderStage({ kind: 'ai', count: event.comparisons, model: event.model });
+          // Held on screen briefly even when the answer is already cached: the
+          // step people are most curious about must not flash past unread.
+          aiShownUntil = Date.now() + 900;
           return false;
         }
 
         if (event.type === 'result') {
+          const wait = Math.max(0, aiShownUntil - Date.now());
+          if (wait > 0) {
+            const payload = event;
+            window.setTimeout(function () {
+              renderShopOutcomes(payload);
+              renderCatalogueResults(payload.hits, query, payload.matching);
+              void refreshPlanBar();
+            }, wait);
+            return false;
+          }
+
           renderShopOutcomes(event);
           renderCatalogueResults(event.hits, query, event.matching);
+          // The search may have just spent from the allowance.
+          void refreshPlanBar();
           return false;
         }
 
@@ -7429,6 +7676,10 @@
 
       $('#basket-run').addEventListener('click', priceBasket);
 
+      $('#table-empty-action').addEventListener('click', function () {
+        $('#add-product').click();
+      });
+
       $('#catalogue-search').addEventListener('click', searchCatalogue);
       $('#catalogue-query').addEventListener('keydown', function (event) {
         if (event.key === 'Enter') searchCatalogue();
@@ -7621,6 +7872,25 @@
       function renderAccount() {
         const session = getSession();
         const signedIn = Boolean(session);
+        // A key pasted by hand is also somebody working, not browsing.
+        const identified = signedIn || Boolean(getApiKey());
+
+        $$('[data-nav="guest"]').forEach(function (nav) {
+          nav.hidden = identified;
+          nav.classList.toggle('hidden', identified);
+          nav.classList.toggle('md:flex', !identified);
+        });
+        $$('[data-nav="app"]').forEach(function (nav) {
+          nav.hidden = !identified;
+          nav.classList.toggle('hidden', !identified);
+          nav.classList.toggle('md:flex', identified);
+        });
+        $$('[data-guest-only]').forEach(function (element) {
+          element.hidden = identified;
+          element.classList.toggle('hidden', identified);
+        });
+
+        void refreshPlanBar();
 
         $('#signin-button').hidden = signedIn;
         $('#signin-button').classList.toggle('hidden', signedIn);
@@ -7803,6 +8073,81 @@
         openModal('signin-modal');
       }
 
+      /**
+       * Fills the bar that says whose account this is and what is left of it.
+       *
+       * Reads /billing/me rather than trusting the session payload: the plan
+       * and the allowances move — a purchase, a month rolling over, a search
+       * that just spent three comparisons — and a figure that only refreshes
+       * on sign-in is wrong for most of the time somebody is looking at it.
+       */
+      async function refreshPlanBar() {
+        const bars = $$('[data-plan-bar]');
+        if (bars.length === 0) return;
+
+        const identified = Boolean(getSession() || getApiKey());
+
+        if (!identified) {
+          bars.forEach((bar) => (bar.hidden = true));
+          return;
+        }
+
+        try {
+          const response = await fetch(ENDPOINTS.billingMe, { headers: authHeaders() });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          account = await response.json();
+        } catch (error) {
+          // An operator key has no account row, and a dead session has none
+          // either. Neither is worth an error message here.
+          bars.forEach((bar) => (bar.hidden = true));
+          return;
+        }
+
+        // Counted from what the API returned, not from the table: the table
+        // may be holding demo rows for a visitor, and an empty account was
+        // reading "9 / 100" because of them.
+        const tracked = trackedCount;
+
+        bars.forEach(function (bar) {
+          bar.hidden = false;
+          bar.querySelector('[data-plan-email]').textContent = account.email;
+          bar.querySelector('[data-plan-name]').textContent = PLAN_NAMES[account.plan] || account.plan;
+          bar.querySelector('[data-plan-products]').innerHTML = meterHtml(
+            'Следени артикули',
+            Math.min(tracked, account.productLimit),
+            account.productLimit,
+          );
+          bar.querySelector('[data-plan-ai]').innerHTML = meterHtml(
+            account.aiMatchesRenew ? 'AI сравнения / месец' : 'AI сравнения (еднократно)',
+            account.aiMatchesUsed,
+            account.aiMatchesLimit,
+            { topUp: true },
+          );
+        });
+      }
+
+      const PLAN_NAMES = { free: 'Безплатен', starter: 'Занаят', pro: 'Магазин', business: 'Верига' };
+
+      /** Where more comparisons are sold, once the server has said whether they are. */
+      let topUpUrl = null;
+
+      (async function loadTopUpOffer() {
+        try {
+          const response = await fetch(ENDPOINTS.billingPlans, { headers: { Accept: 'application/json' } });
+          if (!response.ok) return;
+
+          const payload = await response.json();
+          topUpUrl = payload.topUpUrl || null;
+        } catch (error) {
+          /* nothing on offer is the safe assumption */
+        }
+      })();
+
+      $$('[data-plan-manage]').forEach(function (button) {
+        button.addEventListener('click', openSignIn);
+      });
+
       /** The account panel: who this is, and what is left of the month. */
       async function renderAccountPanel() {
         const box = $('#account-usage');
@@ -7823,6 +8168,7 @@
               account.aiMatchesRenew ? 'AI сравнения този месец' : 'AI сравнения (еднократно)',
               account.aiMatchesUsed,
               account.aiMatchesLimit,
+              { topUp: true },
             ) +
             (account.aiMatchesRenew
               ? ''
@@ -7840,9 +8186,10 @@
         }
       }
 
-      function meterHtml(label, used, limit) {
+      function meterHtml(label, used, limit, options) {
         const share = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
         const tone = share >= 90 ? 'bg-red-500' : share >= 70 ? 'bg-amber-500' : 'bg-accent-500';
+        const offerTopUp = options && options.topUp && topUpUrl && share >= 70;
 
         return (
           '<div>' +
@@ -7852,7 +8199,15 @@
           '</div>' +
           '<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">' +
           '<div class="h-full rounded-full ' + tone + '" style="width:' + share + '%"></div>' +
-          '</div></div>'
+          '</div>' +
+          // Offered only when it is nearly spent and only when it is actually
+          // for sale. A permanent "buy more" next to a full meter is an advert.
+          (offerTopUp
+            ? '<a href="' + escapeHtml(topUpUrl) + '" target="_blank" rel="noopener" ' +
+              'class="mt-1.5 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-accent-500 hover:underline">' +
+              '<i class="fa-solid fa-plus text-[9px]"></i>Купи още сравнения</a>'
+            : '') +
+          '</div>'
         );
       }
 
@@ -9193,6 +9548,9 @@
       $('#build-stamp').textContent = 'build 2026-08-17 17:14';
 
       renderApiKeyBadge();
+      // Decides which navigation the header shows, so it runs before the first
+      // view is opened rather than after the reader has seen the wrong one.
+      renderAccount();
       rebuildSupplierFilter();
       renderTable();
       void detectOperator();

@@ -454,6 +454,28 @@ export class EnvironmentVariables {
   @IsOptional()
   CHECKOUT_LINK_BUSINESS?: string;
 
+  /**
+   * Where somebody buys more AI comparisons when the allowance runs out.
+   *
+   * The search itself never stops — matching falls back to barcodes, article
+   * numbers and specifications, which settle most pairs — so this is a way to
+   * buy back the help with the awkward ones, not a way to unblock the product.
+   */
+  @IsUrl({ require_tld: false })
+  @IsOptional()
+  CHECKOUT_LINK_TOPUP?: string;
+
+  /**
+   * Which purchases credit comparisons, as `price_id:count` pairs.
+   *
+   * The webhook cannot otherwise tell a top-up from a subscription: both
+   * arrive as a completed payment. Without this mapping a top-up would be
+   * read as a plan change, which is the wrong thing entirely.
+   */
+  @IsString()
+  @IsOptional()
+  TOPUP_PRICE_IDS?: string;
+
   // --- Currency ------------------------------------------------------------
   /**
    * Rates against the euro for currencies outside the pegged BGN pair, as
