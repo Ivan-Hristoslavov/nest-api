@@ -69,17 +69,30 @@ export const PLAN_PRODUCT_LIMIT: Record<UserPlan, number> = {
  * disagreeing. This is the one definition.
  */
 export function effectiveAiUsage(
-  user: Pick<User, 'aiMatchesUsed' | 'aiMatchesLimit' | 'aiPeriodStartedAt'>,
+  user: Pick<User, 'plan' | 'aiMatchesUsed' | 'aiMatchesLimit' | 'aiPeriodStartedAt'>,
   now = new Date(),
-): { used: number; limit: number } {
+): { used: number; limit: number; renews: boolean } {
+  // The free allowance does not renew, and that is the whole anti-abuse
+  // design. A monthly free allowance is worth farming — open three mailboxes,
+  // get three allowances, every month, for ever. A one-off allowance is worth
+  // farming once, for a handful of comparisons, which is not worth anyone's
+  // morning. Paying customers get a monthly one because they are paying for it.
+  const renews = user.plan !== UserPlan.Free;
+
+  if (!renews) {
+    return { used: user.aiMatchesUsed, limit: user.aiMatchesLimit, renews };
+  }
+
   const started = user.aiPeriodStartedAt;
   const monthElapsed = !started || now.getTime() - started.getTime() > 30 * 24 * 3600_000;
 
-  return { used: monthElapsed ? 0 : user.aiMatchesUsed, limit: user.aiMatchesLimit };
+  return { used: monthElapsed ? 0 : user.aiMatchesUsed, limit: user.aiMatchesLimit, renews };
 }
 
 export const PLAN_AI_MATCH_LIMIT: Record<UserPlan, number> = {
-  [UserPlan.Free]: 200,
+  // Once, not per month — enough to see what the model settles that arithmetic
+  // cannot, not enough to be worth opening mailboxes for.
+  [UserPlan.Free]: 50,
   [UserPlan.Starter]: 2_000,
   [UserPlan.Pro]: 10_000,
   [UserPlan.Business]: 50_000,

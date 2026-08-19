@@ -63,7 +63,7 @@ export interface MatchRunSummary {
    * moment to say "this cost one of your comparisons" is the response that
    * spent it — not a settings page someone reads at the end of the month.
    */
-  aiQuota: { used: number; limit: number } | null;
+  aiQuota: { used: number; limit: number; renews: boolean } | null;
   durationMs: number;
 }
 
@@ -353,15 +353,20 @@ export class MatchingService {
     if (!user) return wanted;
 
     const now = new Date();
-    const { used, limit } = effectiveAiUsage(user, now);
-    const monthElapsed = used === 0 && user.aiMatchesUsed > 0 ? true : !user.aiPeriodStartedAt;
+    const { used, limit, renews } = effectiveAiUsage(user, now);
+
+    // A period that has rolled over is one where the stored counter is higher
+    // than what now counts as spent; on a plan that never renews there is no
+    // such thing.
+    const periodRolledOver = renews && (used < user.aiMatchesUsed || !user.aiPeriodStartedAt);
     const remaining = Math.max(0, limit - used);
     const granted = Math.min(wanted, remaining);
 
     if (granted === 0) {
       this.logger.log(
-        `Account ${ownerId} has spent its ${user.aiMatchesLimit} AI comparisons for this period; ` +
-          'searching continues without AI.',
+        `Account ${ownerId} has spent its ${limit} AI comparisons` +
+          (renews ? ' for this period' : ' (free plan, one-off allowance)') +
+          '; searching continues without AI.',
       );
       return 0;
     }
@@ -370,7 +375,7 @@ export class MatchingService {
       { id: user.id },
       {
         aiMatchesUsed: used + granted,
-        aiPeriodStartedAt: monthElapsed ? now : (user.aiPeriodStartedAt ?? now),
+        aiPeriodStartedAt: periodRolledOver ? now : (user.aiPeriodStartedAt ?? now),
       },
     );
 

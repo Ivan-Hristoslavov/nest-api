@@ -95,8 +95,15 @@ export class MyAccountDto {
   })
   aiMatchesUsed!: number;
 
-  @ApiProperty({ description: 'AI comparisons this plan allows per month.', example: 2000 })
+  @ApiProperty({ description: 'AI comparisons this plan allows.', example: 2000 })
   aiMatchesLimit!: number;
+
+  @ApiProperty({
+    description:
+      'Whether the allowance renews monthly. False on the free plan, where it is a one-off — a renewing free allowance is worth opening mailboxes for.',
+    example: true,
+  })
+  aiMatchesRenew!: boolean;
 
   @ApiPropertyOptional({
     description: 'Identifying prefix of the key in use. The rest is never stored.',

@@ -246,6 +246,7 @@ export class BillingController {
       productLimit: user.productLimit,
       aiMatchesUsed: aiUsage.used,
       aiMatchesLimit: aiUsage.limit,
+      aiMatchesRenew: aiUsage.renews,
       apiKeyPrefix: user.apiKeyPrefix,
       apiKeyIssuedAt: user.apiKeyIssuedAt ? user.apiKeyIssuedAt.toISOString() : null,
       accessExpiresAt: user.accessExpiresAt ? user.accessExpiresAt.toISOString() : null,

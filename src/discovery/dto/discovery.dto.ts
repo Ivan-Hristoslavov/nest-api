@@ -373,9 +373,9 @@ export class MatchingSummaryDto {
     description:
       'The monthly AI allowance of the calling account, including what this very search spent. Null for callers with no account to meter.',
     nullable: true,
-    example: { used: 12, limit: 2000 },
+    example: { used: 12, limit: 2000, renews: true },
   })
-  aiQuota!: { used: number; limit: number } | null;
+  aiQuota!: { used: number; limit: number; renews: boolean } | null;
 
   @ApiProperty({ example: 180 }) durationMs!: number;
 }

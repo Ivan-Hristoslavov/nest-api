@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
-import { User } from '../billing/entities/user.entity';
+import { User, UserPlan } from '../billing/entities/user.entity';
 import { AiMatchOutcome, AiMatchRequest, ClaudeService } from './claude.service';
 import { MatchCache } from './entities/match-cache.entity';
 import { MatchCandidate, MatchingService, fingerprint } from './matching.service';
@@ -254,7 +254,12 @@ describe('MatchingService', () => {
   describe('the meter the customer sees', () => {
     it('reports the allowance including what this search just spent', async () => {
       const { service, users } = await build({
-        user: { aiMatchesUsed: 0, aiMatchesLimit: 100, aiPeriodStartedAt: new Date() },
+        user: {
+          plan: UserPlan.Pro,
+          aiMatchesUsed: 0,
+          aiMatchesLimit: 100,
+          aiPeriodStartedAt: new Date(),
+        },
         aiVerdicts: [
           { id: 'a', same: true, confidence: 0.9, reason: 'проверено' },
           { id: 'b', same: true, confidence: 0.9, reason: 'проверено' },
@@ -278,20 +283,45 @@ describe('MatchingService', () => {
 
       const run = await service.match('acc-1', QUERY, ambiguous);
 
-      expect(run.aiQuota).toEqual({ used: 2, limit: 100 });
+      expect(run.aiQuota).toEqual({ used: 2, limit: 100, renews: true });
     });
 
-    it('shows zero spent when the monthly period has rolled over', async () => {
+    it('shows zero spent when a paid plan rolls over', async () => {
       const stale = new Date(Date.now() - 40 * 24 * 3600_000);
       const { service } = await build({
-        user: { aiMatchesUsed: 87, aiMatchesLimit: 100, aiPeriodStartedAt: stale },
+        user: {
+          plan: UserPlan.Pro,
+          aiMatchesUsed: 87,
+          aiMatchesLimit: 100,
+          aiPeriodStartedAt: stale,
+        },
         aiVerdicts: [],
       });
 
       const run = await service.match('acc-1', QUERY, []);
 
       // Last month's 87 must not be presented as this month's spend.
-      expect(run.aiQuota).toEqual({ used: 0, limit: 100 });
+      expect(run.aiQuota).toEqual({ used: 0, limit: 100, renews: true });
+    });
+
+    it('never rolls the free allowance over, however long it has been', async () => {
+      const longAgo = new Date(Date.now() - 400 * 24 * 3600_000);
+      const { service, claude } = await build({
+        user: {
+          plan: UserPlan.Free,
+          aiMatchesUsed: 50,
+          aiMatchesLimit: 50,
+          aiPeriodStartedAt: longAgo,
+        },
+      });
+
+      const run = await service.match('acc-1', QUERY, ambiguous);
+
+      // A monthly free allowance is worth farming mailboxes for; a one-off one
+      // is worth farming once, for fifty comparisons.
+      expect(run.aiQuota).toEqual({ used: 50, limit: 50, renews: false });
+      expect(run.aiSkippedReason).toBe('quota');
+      expect(claude.matchCandidates).not.toHaveBeenCalled();
     });
 
     it('has no meter for a caller with no account', async () => {

@@ -927,7 +927,7 @@
               <p class="mt-4 text-[16px] leading-relaxed text-slate-400">
                 Всички функции са във всеки план.
                 <strong class="text-slate-300">Различават се две числа: колко артикула следим
-                вместо вас и колко трудни сравнения минават през AI.</strong>
+                вместо вас и колко трудни сравнения минават през AI всеки месец.</strong>
                 Доставчиците са неограничени навсякъде — колкото повече сравнявате, толкова
                 по-евтино купувате, и не е редно да ви таксуваме за това.
               </p>
@@ -946,8 +946,8 @@
                   Безплатно · 10 следени артикула
                 </h3>
                 <p class="mt-1.5 text-[13.5px] leading-relaxed text-slate-400">
-                  Същите функции, по-малък списък: 10 артикула и 200 AI сравнения месечно. Без
-                  карта — получавате ключ на имейла си и започвате веднага.
+                  Същите функции, по-малък списък: 10 артикула и 50 AI сравнения еднократно —
+                  колкото да видите какво решава моделът. Без карта, ключът пристига на имейла.
                 </p>
               </div>
               <button
@@ -6603,7 +6603,8 @@
               matching.aiQuota.used +
               ' от ' +
               matching.aiQuota.limit +
-              ' AI сравнения този месец',
+              ' AI сравнения' +
+              (matching.aiQuota.renews ? ' този месец' : ' (безплатен план)'),
           );
         }
         if (matching.aiSkippedReason === 'quota' && matching.aiQuota) {
@@ -7819,10 +7820,15 @@
 
           box.innerHTML =
             meterHtml(
-              'AI сравнения този месец',
+              account.aiMatchesRenew ? 'AI сравнения този месец' : 'AI сравнения (еднократно)',
               account.aiMatchesUsed,
               account.aiMatchesLimit,
             ) +
+            (account.aiMatchesRenew
+              ? ''
+              : '<p class="text-[12px] leading-relaxed text-slate-500">Безплатният план дава ' +
+                account.aiMatchesLimit +
+                ' сравнения еднократно. Търсенето продължава и след това — по спецификации, без модел.</p>') +
             (account.apiKeyPrefix
               ? '<p class="text-[12px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
                 escapeHtml(account.apiKeyPrefix) +
