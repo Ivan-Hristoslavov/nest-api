@@ -6210,6 +6210,46 @@
        * catalogue with specifications in the names, almost every row is
        * settled by arithmetic and the model sees a handful.
        */
+      /**
+       * The answer, in a sentence.
+       *
+       * Everything else on this screen is evidence; this is the conclusion —
+       * who to buy from and what choosing them is worth. Derived entirely from
+       * the rows above rather than written by a model, because a sentence that
+       * sounds authoritative and disagrees with the table underneath it is
+       * worse than no sentence.
+       */
+      function verdictHtml(best, priced, dearest) {
+        if (!best || priced.length < 2) return '';
+
+        const saving = dearest - best.effectivePrice;
+
+        return (
+          '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-white/8 bg-emerald-500/[0.05] px-5 py-3">' +
+          '<span class="text-[13px] text-slate-300">Най-евтин: ' +
+          '<strong class="font-semibold text-slate-100">' +
+          escapeHtml(best.shopName) +
+          '</strong> — <strong class="num font-semibold text-emerald-400">' +
+          best.effectivePrice.toFixed(2) +
+          ' ' +
+          escapeHtml(best.effectiveCurrency) +
+          '</strong></span>' +
+          (saving >= 0.01
+            ? '<span class="text-[12.5px] text-slate-500">с ' +
+              saving.toFixed(2) +
+              ' ' +
+              escapeHtml(best.effectiveCurrency) +
+              ' под най-скъпата оферта за същия артикул</span>'
+            : '') +
+          (best.match
+            ? '<span class="ml-auto text-[12px] text-slate-500">съвпадение ' +
+              Math.round(best.match.confidence * 100) +
+              '%</span>'
+            : '') +
+          '</div>'
+        );
+      }
+
       function matchingSummaryHtml(matching) {
         if (!matching) return '';
 
@@ -6602,6 +6642,9 @@
           '</p>' +
           matchingSummaryHtml(matching) +
           spread +
+          '</div>' +
+          verdictHtml(best, priced, dearest) +
+          '<div class="hidden">' +
           '</div>' +
           '<table class="w-full table-fixed text-left"><colgroup>' +
           columns +

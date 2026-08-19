@@ -159,6 +159,17 @@ export class MatchingService {
       durationMs: Date.now() - startedAt,
     };
 
+    // Without the confidence, the line says what a search cost and not what it
+    // was worth — and "the matcher got vaguer last week" is exactly the kind of
+    // drift that is invisible until a customer reports a wrong order.
+    const topConfidence = summary.results.reduce(
+      (best, result) => Math.max(best, result.confidence),
+      0,
+    );
+    const confidentCount = summary.results.filter(
+      (result) => result.confidence >= DEFAULT_THRESHOLDS.floor,
+    ).length;
+
     // One structured line per search: enough to answer "why was this match
     // made" and "what did this search cost" months later, with no product
     // names from other accounts and no customer identifiers in the message.
@@ -166,7 +177,8 @@ export class MatchingService {
       `match query="${normaliseProductName(query)}" candidates=${summary.candidates} ` +
         `deterministic=${summary.decidedDeterministically} ai_calls=${aiCallsMade} ` +
         `ai_cache_hits=${aiCacheHits} model=${summary.aiModel ?? 'none'} ` +
-        `skipped=${skipped ?? 'no'} ms=${summary.durationMs}`,
+        `skipped=${skipped ?? 'no'} top_confidence=${topConfidence.toFixed(2)} ` +
+        `confident=${confidentCount} ms=${summary.durationMs}`,
     );
 
     return summary;
