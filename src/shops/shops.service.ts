@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { ProbeResult } from '../discovery/shop-probe.service';
+import { ManualPrice } from './entities/manual-price.entity';
 import { Shop } from './entities/shop.entity';
 
 /**
@@ -17,7 +18,10 @@ import { Shop } from './entities/shop.entity';
 export class ShopsService {
   private readonly logger = new Logger(ShopsService.name);
 
-  constructor(@InjectRepository(Shop) private readonly shops: Repository<Shop>) {}
+  constructor(
+    @InjectRepository(Shop) private readonly shops: Repository<Shop>,
+    @InjectRepository(ManualPrice) private readonly manualPrices: Repository<ManualPrice>,
+  ) {}
 
   findAll(ownerId: string): Promise<Shop[]> {
     return this.shops.find({ where: { ownerId }, order: { name: 'ASC' } });
@@ -137,10 +141,30 @@ export class ShopsService {
     return this.shops.save(shop);
   }
 
-  async remove(ownerId: string, id: string): Promise<void> {
+  /**
+   * Removes a supplier and the prices entered by hand against it.
+   *
+   * For a supplier with no website that list *is* the data — typed off a
+   * price sheet, and retypeable only from that sheet. Losing it silently
+   * because somebody removed the wrong row is not recoverable by re-reading
+   * anything.
+   */
+  async remove(ownerId: string, id: string, purge = false): Promise<void> {
     const shop = await this.findOne(ownerId, id);
+    const prices = await this.manualPrices.count({ where: { shopId: id } });
+
+    if (prices > 0 && !purge) {
+      throw new ConflictException(
+        `„${shop.name}" носи ${prices} ръчно въведени цени, които не могат да бъдат прочетени отново. ` +
+          'Повторете заявката с ?purge=true, ако наистина искате да ги загубите.',
+      );
+    }
+
     await this.shops.remove(shop);
-    this.logger.log(`Shop ${shop.host} removed.`);
+
+    this.logger.warn(
+      `Account ${ownerId} removed shop ${shop.host} ("${shop.name}") with ${prices} manual prices.`,
+    );
   }
 }
 

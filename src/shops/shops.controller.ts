@@ -19,6 +19,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiConflictResponse,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -26,6 +27,7 @@ import {
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
+import { PurgeQueryDto } from '../common/dto/purge-query.dto';
 import { ShopProbeService } from '../discovery/shop-probe.service';
 import { ImportManualPricesDto, ImportResultDto, ManualPriceDto } from './dto/manual-prices.dto';
 import { CreateShopDto, UpdateShopDto } from './dto/shops.dto';
@@ -189,14 +191,23 @@ export class ShopsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a supplier' })
+  @ApiOperation({
+    summary: 'Remove a supplier',
+    description:
+      'A supplier carrying hand-entered prices is refused unless `purge=true` is passed: that list was typed off a price sheet and cannot be read back from anywhere.',
+  })
+  @ApiConflictResponse({
+    description: 'The supplier has manual prices and `purge=true` was not passed.',
+    type: ErrorResponseDto,
+  })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiNoContentResponse({ description: 'Shop deleted.' })
   @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
   remove(
     @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: PurgeQueryDto,
   ): Promise<void> {
-    return this.shops.remove(ownerId, id);
+    return this.shops.remove(ownerId, id, query.purge);
   }
 }

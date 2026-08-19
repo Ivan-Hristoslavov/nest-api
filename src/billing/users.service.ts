@@ -182,6 +182,36 @@ export class UsersService {
     return saved;
   }
 
+  /**
+   * Erases an account and everything it owns.
+   *
+   * The privacy policy promises this, so it has to be something an operator
+   * can actually do rather than a sentence. `owner_id` carries
+   * `ON DELETE CASCADE`, so removing the row takes the products, listings,
+   * price history, alerts and hand-entered prices with it.
+   *
+   * The caller must repeat the account's email. There is no undo, ids look
+   * alike in a support ticket, and "delete this account" typed against the
+   * wrong uuid is otherwise indistinguishable from the right one.
+   */
+  async eraseAccount(id: string, confirmEmail: string): Promise<{ email: string }> {
+    const user = await this.findOne(id);
+
+    if (this.normaliseEmail(confirmEmail) !== user.email) {
+      throw new ConflictException(
+        `Потвърждението не съвпада. Акаунт ${id} е на ${user.email}; повторете точно този адрес.`,
+      );
+    }
+
+    await this.usersRepository.delete({ id });
+
+    this.logger.warn(
+      `ERASED account ${id} (${user.email}) and all data owned by it. This is not reversible.`,
+    );
+
+    return { email: user.email };
+  }
+
   /** Marks an account as lapsed. The key stays on the row but stops working. */
   async expire(userId: string, reason: string): Promise<User> {
     const user = await this.findOne(userId);

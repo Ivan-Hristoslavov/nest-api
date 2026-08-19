@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, Repository } from 'typeorm';
 
@@ -474,16 +480,44 @@ export class ProductsService {
     return saved;
   }
 
-  async remove(ownerId: string, id: string): Promise<void> {
-    // Delete by id and check the affected count: one round trip instead of
-    // SELECT-then-DELETE, and no race between the two statements.
-    const result = await this.productsRepository.delete({ id, ownerId });
+  /**
+   * Deletes a product, its listings and every price ever recorded for it.
+   *
+   * The cascade is the whole point of the caution: those observations cannot
+   * be collected again, because the pages that carried them have since
+   * changed. A product that has never moved is deleted without argument; one
+   * with history is refused until the caller asks for it explicitly.
+   */
+  async remove(ownerId: string, id: string, purge = false): Promise<void> {
+    const product = await this.productsRepository.findOne({
+      where: { id, ownerId },
+      select: { id: true, name: true },
+    });
 
-    if (!result.affected) {
+    if (!product) {
       throw new NotFoundException(`Product with id "${id}" not found.`);
     }
 
-    this.logger.log(`Deleted product ${id}`);
+    const [history, listings] = await Promise.all([
+      this.priceHistoryRepository.count({ where: { productId: id } }),
+      this.competitorsRepository.count({ where: { productId: id } }),
+    ]);
+
+    if (history > 0 && !purge) {
+      throw new ConflictException(
+        `„${product.name}" има ${history} записани промени в цената при ${listings} доставчика. ` +
+          'Изтриването ги маха завинаги — те не могат да бъдат прочетени отново. ' +
+          'Повторете заявката с ?purge=true, ако наистина искате това.',
+      );
+    }
+
+    await this.productsRepository.delete({ id, ownerId });
+
+    // Logged with the account and the damage: "deleted product <uuid>" is not
+    // enough to answer a customer asking where their history went.
+    this.logger.warn(
+      `Account ${ownerId} deleted product ${id} ("${product.name}") with ${history} price records and ${listings} listings.`,
+    );
   }
 
   async findPriceHistory(

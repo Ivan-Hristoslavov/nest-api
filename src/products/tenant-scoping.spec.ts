@@ -88,7 +88,12 @@ describe('tenant scoping in ProductsService', () => {
   it('scopes deletion, so a stray id cannot remove another account’s row', async () => {
     await expect(service.remove(ownerId, 'prod-1')).rejects.toThrow(NotFoundException);
 
-    expect(products.delete).toHaveBeenCalledWith({ id: 'prod-1', ownerId });
+    // The scope is now on the lookup that precedes the delete, and the delete
+    // never runs for a row this account cannot see.
+    expect(products.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'prod-1', ownerId } }),
+    );
+    expect(products.delete).not.toHaveBeenCalled();
   });
 
   it('counts only this account when enforcing the plan limit', async () => {

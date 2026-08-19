@@ -181,3 +181,17 @@ export class FreeAccountDto {
   })
   emailed!: boolean;
 }
+
+/** Confirmation for an irreversible account erasure. */
+export class EraseAccountDto {
+  @ApiProperty({
+    description:
+      'The account’s own email, repeated. A mismatch refuses the request — there is no undo and uuids look alike in a support ticket.',
+    format: 'email',
+    example: 'kupuvach@moiat-magazin.bg',
+  })
+  @IsEmail()
+  @MaxLength(255)
+  @Transform(trimString)
+  confirmEmail!: string;
+}

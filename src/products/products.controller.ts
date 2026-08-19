@@ -27,6 +27,7 @@ import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Owner, OwnerAccount } from '../common/decorators/owner.decorator';
 import { User } from '../billing/entities/user.entity';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
+import { PurgeQueryDto } from '../common/dto/purge-query.dto';
 import { PaginatedResponseDto } from '../common/dto/paginated-response.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ApiPaginatedResponse } from '../common/swagger/api-paginated-response.decorator';
@@ -216,16 +217,22 @@ export class ProductsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Stop tracking a product',
-    description: 'Permanently deletes the product and, by cascade, its price history.',
+    description:
+      'Permanently deletes the product, its listings and every price ever recorded for it. A product with history is refused unless `purge=true` is passed — those observations cannot be collected again.',
   })
   @ApiParam({ name: 'id', format: 'uuid', description: 'Product identifier.' })
   @ApiNoContentResponse({ description: 'Product deleted.' })
+  @ApiConflictResponse({
+    description: 'The product has price history and `purge=true` was not passed.',
+    type: ErrorResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'No product with this id.', type: ErrorResponseDto })
   remove(
     @Owner() ownerId: string,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: PurgeQueryDto,
   ): Promise<void> {
-    return this.productsService.remove(ownerId, id);
+    return this.productsService.remove(ownerId, id, query.purge);
   }
 
   @Get(':id/history')

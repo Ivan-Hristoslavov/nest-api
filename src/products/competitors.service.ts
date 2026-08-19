@@ -47,6 +47,8 @@ export class CompetitorsService {
     private readonly competitorsRepository: Repository<Competitor>,
     @InjectRepository(Product)
     private readonly productsRepository: Repository<Product>,
+    @InjectRepository(PriceHistory)
+    private readonly priceHistoryRepository: Repository<PriceHistory>,
     private readonly dataSource: DataSource,
     private readonly alertsService: AlertsService,
     configService: ConfigService<Configuration, true>,
@@ -140,7 +142,7 @@ export class CompetitorsService {
     return saved;
   }
 
-  async remove(ownerId: string, id: string): Promise<void> {
+  async remove(ownerId: string, id: string, purge = false): Promise<void> {
     const competitor = await this.findOne(ownerId, id);
 
     if (competitor.isPrimary) {
@@ -149,8 +151,24 @@ export class CompetitorsService {
       );
     }
 
+    // Price history hangs off the listing as well as the product, so removing
+    // one supplier erases what that supplier used to charge — the series you
+    // would want when arguing about a price increase.
+    const history = await this.priceHistoryRepository.count({ where: { competitorId: id } });
+
+    if (history > 0 && !purge) {
+      throw new ConflictException(
+        `„${competitor.name}" има ${history} записани цени. Изтриването им е окончателно. ` +
+          'Повторете заявката с ?purge=true, ако наистина искате това.',
+      );
+    }
+
     await this.competitorsRepository.delete({ id });
     await this.recomputeProduct(competitor.productId);
+
+    this.logger.warn(
+      `Account ${ownerId} deleted listing ${id} ("${competitor.name}") with ${history} price records.`,
+    );
   }
 
   /**

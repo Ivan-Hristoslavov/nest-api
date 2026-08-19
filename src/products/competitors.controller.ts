@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -25,6 +26,7 @@ import {
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
+import { PurgeQueryDto } from '../common/dto/purge-query.dto';
 import { CompetitorsService } from './competitors.service';
 import { CreateCompetitorDto } from './dto/create-competitor.dto';
 import { PriceCheckResultDto } from './dto/price-check-result.dto';
@@ -102,12 +104,17 @@ export class CompetitorsController {
     description: 'Attempted to delete the primary listing.',
     type: ErrorResponseDto,
   })
+  @ApiConflictResponse({
+    description: 'The listing has recorded prices and `purge=true` was not passed.',
+    type: ErrorResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'No competitor with this id.', type: ErrorResponseDto })
   remove(
     @Owner() ownerId: string,
     @Param('competitorId', new ParseUUIDPipe({ version: '4' })) competitorId: string,
+    @Query() query: PurgeQueryDto,
   ): Promise<void> {
-    return this.competitorsService.remove(ownerId, competitorId);
+    return this.competitorsService.remove(ownerId, competitorId, query.purge);
   }
 
   @Patch(':competitorId/promote')

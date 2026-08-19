@@ -2,12 +2,15 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Logger,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -20,9 +23,11 @@ import {
   ApiCreatedResponse,
   ApiExcludeEndpoint,
   ApiHeader,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -39,6 +44,7 @@ import { BillingService } from './billing.service';
 import { CheckoutService, PurchasablePlan } from './checkout.service';
 import { MailService } from './mail.service';
 import {
+  EraseAccountDto,
   FreeAccountDto,
   IssuedApiKeyDto,
   MyAccountDto,
@@ -338,6 +344,30 @@ export class BillingController {
     );
 
     return this.issue(user.id, dto.environment ?? 'live', Boolean(user.apiKeyPrefix));
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Delete('users/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Erase an account and its data (operator only)',
+    description:
+      'Deletes the account together with every product, listing, price record, alert and hand-entered price it owns. This is what answers a GDPR erasure request, and it is not reversible — the caller must repeat the account’s email as confirmation.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiNoContentResponse({ description: 'Account and all its data erased.' })
+  @ApiConflictResponse({
+    description: 'The confirmation email does not match the account.',
+    type: ErrorResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'No account with this id.', type: ErrorResponseDto })
+  async eraseAccount(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: EraseAccountDto,
+  ): Promise<void> {
+    const { email } = await this.usersService.eraseAccount(id, query.confirmEmail);
+    this.logger.warn(`Operator erased account ${id} (${email}) on request.`);
   }
 
   private async issue(
