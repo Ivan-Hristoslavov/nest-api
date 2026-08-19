@@ -470,6 +470,13 @@
           <button
             type="button"
             data-view="landing"
+            data-scroll="matching"
+            class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles mr-1.5 text-[11px]"></i>Разпознаване
+          </button>          <button
+            type="button"
+            data-view="landing"
             data-scroll="api"
             class="nav-link rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-slate-400 transition hover:text-slate-200"
           >
@@ -586,8 +593,8 @@
               <p class="mx-auto mt-7 max-w-2xl text-[17px] leading-relaxed text-slate-400">
                 Влизате в пет портала на едро, сравнявате ръчно, записвате в Excel — и до обяд
                 цените вече са други. PriceGuard прави тази обиколка вместо вас
-                <span class="font-semibold text-slate-200">на всеки час</span> — включително при
-                доставчика без сайт, чийто ценоразпис качвате веднъж — и ви казва само едно:
+                <span class="font-semibold text-slate-200">на всеки час</span>, разпознава един и
+                същ артикул, както и да го е кръстил доставчикът, и ви казва само едно:
                 <span class="font-semibold text-slate-200">къде да купите днес и колко
                   спестявате</span>.
               </p>
@@ -781,6 +788,117 @@
           </div>
         </div>
 
+        <!-- Matching -->
+        <div id="matching" class="border-t border-white/5 bg-ink-900/40">
+          <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+            <div class="mx-auto max-w-2xl text-center">
+              <span
+                class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-ink-900 px-3 py-1 text-[12px] font-medium text-slate-400"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles text-[11px] text-accent-500"></i>
+                Включено във всеки план
+              </span>
+              <h2 class="mt-6 text-3xl font-bold text-slate-200 sm:text-4xl">
+                Един артикул, петима доставчици, пет различни имена
+              </h2>
+              <p class="mt-5 text-[16px] leading-relaxed text-slate-400">
+                Същата крушка при трима доставчици се казва
+                <span class="font-mono text-[14px] text-slate-300">PHILIPS LED BULB 12W E27 4000K</span>,
+                <span class="font-mono text-[14px] text-slate-300">Philips CorePro LED 12W 840 E27</span>
+                и
+                <span class="font-mono text-[14px] text-slate-300">LED Lampe 12W E27 neutralweiss</span>.
+                Сравнение по думи ги брои за три различни неща — и ви скрива по-евтиния.
+                Ние сравняваме спецификацията, не думите.
+              </p>
+            </div>
+
+            <div class="mt-14 grid gap-5 md:grid-cols-3">
+              <article class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+                <span
+                  class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/12 ring-1 ring-emerald-500/25"
+                >
+                  <i class="fa-solid fa-equals text-emerald-400"></i>
+                </span>
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  Първо това, което може да се провери
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  Баркод, артикулен номер, моделен код, после спецификациите: мощност, фасунга,
+                  сечение, памет, размер на екрана. Повечето оферти се решават тук — точно,
+                  повторяемо и без да питаме нищо.
+                </p>
+              </article>
+
+              <article class="rounded-2xl border border-accent-500/30 bg-accent-500/[0.06] p-6 shadow-panel">
+                <span
+                  class="grid h-10 w-10 place-items-center rounded-xl bg-accent-500/15 ring-1 ring-accent-500/30"
+                >
+                  <i class="fa-solid fa-wand-magic-sparkles text-accent-400"></i>
+                </span>
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  AI — само за трудното
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-300">
+                  Когато доставчикът пише „840" вместо 4000K, „neutralweiss" вместо неутрална, или
+                  описва артикула на друг език — питаме езиков модел. Само за офертите, които
+                  спецификациите не решават, и веднъж за цялото търсене. Отговорът се помни, за да
+                  не се плаща втори път.
+                </p>
+              </article>
+
+              <article class="rounded-2xl border border-white/8 bg-ink-900 p-6 shadow-panel">
+                <span
+                  class="grid h-10 w-10 place-items-center rounded-xl bg-red-500/12 ring-1 ring-red-500/25"
+                >
+                  <i class="fa-solid fa-ban text-red-400"></i>
+                </span>
+                <h3 class="mt-4 text-[15px] font-semibold text-slate-200">
+                  Каквото не сливаме никога
+                </h3>
+                <p class="mt-2 text-[14px] leading-relaxed text-slate-400">
+                  128GB не е 256GB. 55″ не е 65″. 12W не е 15W. 3x1.5 не е 5x4. Разлика в
+                  спецификацията спира сравнението — и никой модел не може да я отмени. По-ниска
+                  цена на друг артикул не е спестяване.
+                </p>
+              </article>
+            </div>
+
+            <!-- The claim this section makes is checkable, so here is the check. -->
+            <div
+              class="mx-auto mt-12 max-w-3xl overflow-hidden rounded-2xl border border-white/8 bg-ink-950 shadow-panel"
+            >
+              <div
+                class="flex items-center gap-2 border-b border-white/5 bg-ink-900 px-5 py-2.5 text-[12px] text-slate-500"
+              >
+                <i class="fa-solid fa-list-check text-[11px]"></i>
+                Всеки ред казва защо е решен така
+              </div>
+              <div class="divide-y divide-white/[0.06] text-[13px]">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+                  <span class="rounded-md bg-emerald-500/12 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-400">съвпада 92%</span>
+                  <span class="text-slate-300">PHILIPS LED BULB 12W E27 4000K</span>
+                  <span class="ml-auto text-[12px] text-slate-500">мощност ✓ · фасунга ✓ · цветна температура ✓</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+                  <span class="rounded-md bg-sky-500/12 px-1.5 py-0.5 text-[10.5px] font-semibold text-sky-300">съвпада 88% · AI</span>
+                  <span class="text-slate-300">LED Lampe 12W E27 neutralweiss</span>
+                  <span class="ml-auto text-[12px] text-slate-500">neutralweiss означава 4000K</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+                  <span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-400">слабо 50% · AI</span>
+                  <span class="text-slate-400">Стойка за лампа Philips 12W</span>
+                  <span class="ml-auto text-[12px] text-slate-500">аксесоар, не самата лампа</span>
+                </div>
+              </div>
+              <div class="border-t border-white/5 px-5 py-3 text-[12.5px] leading-relaxed text-slate-500">
+                Редовете, в които не сме убедени, се показват отделно и не участват в сметката за
+                цени. Предпочитаме да кажем „не съм сигурен", отколкото да ви пратим поръчка при
+                грешния доставчик.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Pricing -->
         <div id="pricing" class="border-t border-white/5 bg-ink-900/40">
           <div class="mx-auto max-w-7xl px-5 py-20 sm:px-8">
@@ -788,7 +906,8 @@
               <h2 class="text-3xl font-bold text-slate-200 sm:text-4xl">Прозрачно ценообразуване</h2>
               <p class="mt-4 text-[16px] leading-relaxed text-slate-400">
                 Всички функции са във всеки план.
-                <strong class="text-slate-300">Различава се едно: колко артикула следим вместо вас.</strong>
+                <strong class="text-slate-300">Различават се две числа: колко артикула следим
+                вместо вас и колко трудни сравнения минават през AI.</strong>
                 Доставчиците са неограничени навсякъде — колкото повече сравнявате, толкова
                 по-евтино купувате, и не е редно да ви таксуваме за това.
               </p>
@@ -807,8 +926,8 @@
                   Безплатно · 10 следени артикула
                 </h3>
                 <p class="mt-1.5 text-[13.5px] leading-relaxed text-slate-400">
-                  Същите функции, по-малък списък. Без карта — получавате ключ на имейла си и
-                  започвате веднага.
+                  Същите функции, по-малък списък: 10 артикула и 200 AI сравнения месечно. Без
+                  карта — получавате ключ на имейла си и започвате веднага.
                 </p>
               </div>
               <button
@@ -838,6 +957,10 @@
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">100 следени артикула</strong></span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-slate-200">2 000 AI сравнения</strong> месечно — за офертите, които спецификациите не решават</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
@@ -893,6 +1016,10 @@
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-slate-200">10 000 AI сравнения</strong> месечно — за офертите, които спецификациите не решават</span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">Неограничени доставчици</strong> — включително тези без сайт, чийто ценоразпис качвате</span>
                   </li>
                   <li class="flex gap-3">
@@ -937,6 +1064,10 @@
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">2 000 следени артикула</strong></span>
+                  </li>
+                  <li class="flex gap-3">
+                    <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
+                    <span><strong class="font-semibold text-slate-200">50 000 AI сравнения</strong> месечно — за офертите, които спецификациите не решават</span>
                   </li>
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
@@ -1123,6 +1254,38 @@
                   Не. Доставчиците, договорените отстъпки и въведените от вас цени са видими само с
                   вашия ключ. Публичните числа на тази страница са общи бройки — колко доставчици и
                   артикула има в системата — и никога чии са.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Как разбирате, че два различно написани артикула са едно и също?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  По спецификацията, не по думите. Първо това, което може да се провери — баркод,
+                  артикулен номер, моделен код — после мощност, фасунга, сечение, памет, размер.
+                  Каквото остане неясно, отива при езиков модел: „840" вместо 4000K,
+                  „neutralweiss" вместо неутрална светлина, описание на чужд език. Всеки ред в
+                  таблицата носи процент и причината зад него, така че решението може да се
+                  провери, а не само да се приеме.
+                </p>
+              </details>
+              <details class="group py-5">
+                <summary
+                  class="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-slate-200"
+                >
+                  Може ли AI да сбърка и да ми поръча грешното?
+                  <i class="fa-solid fa-plus shrink-0 text-[13px] text-slate-500 transition group-open:rotate-45"></i>
+                </summary>
+                <p class="mt-3 text-[14.5px] leading-relaxed text-slate-400">
+                  Разлика в спецификацията спира сравнението преди моделът да е попитан: 128GB
+                  срещу 256GB, 55″ срещу 65″, 12W срещу 15W не стигат до него и никоя негова
+                  преценка не може да ги слее. Моделът може да повиши увереността, но никога над
+                  94% — над това остава запазено за баркод, артикулен номер или съвпадащи
+                  спецификации, тоест за неща, които можете да проверите сами. Офертите под 70%
+                  се показват отделно и не влизат в сметката за цени.
                 </p>
               </details>
               <details class="group py-5">
