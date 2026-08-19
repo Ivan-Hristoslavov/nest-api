@@ -51,6 +51,7 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
       .addTag('Analytics', 'История, посока на цената и къде губите')
       .addTag('Scraper', 'Състояние на проверките и ръчно пускане')
       .addTag('Billing', 'Регистрация, планове и ключове')
+      .addTag('Matching', 'Състояние на AI сравнението')
       .addTag('Stats', 'Публични броячи за началната страница')
       .addTag('Health', 'Проби на услугата и базата')
       // No `.addServer()` here on purpose: `createDocument` already bakes the

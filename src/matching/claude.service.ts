@@ -20,6 +20,17 @@ const PREFERRED_MODELS = [
   'claude-opus-5',
 ] as const;
 
+/**
+ * What a real key looks like.
+ *
+ * The README shows `ANTHROPIC_API_KEY=sk-ant-...` as an example, and an
+ * example pasted verbatim is indistinguishable from a key to every check that
+ * only asks whether the value is empty. The result is the worst of both
+ * states: the service reports AI as configured, every search pays a failed
+ * round trip, and nothing says why.
+ */
+const KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,}$/;
+
 /** How long a failed discovery is respected before trying again. */
 const DISCOVERY_RETRY_MS = 5 * 60_000;
 
@@ -108,9 +119,22 @@ export class ClaudeService {
   constructor(configService: ConfigService<Configuration, true>) {
     this.config = configService.get('matching', { infer: true });
 
-    this.client = this.config.enabled ? new Anthropic({ apiKey: this.config.apiKey }) : null;
+    const key = this.config.apiKey ?? '';
+    const usable = this.config.enabled && KEY_SHAPE.test(key);
 
-    if (!this.config.enabled) {
+    this.client = usable ? new Anthropic({ apiKey: key }) : null;
+
+    if (usable) {
+      this.logger.log('AI matching is on. The model is chosen on first use.');
+    } else if (this.config.enabled) {
+      // Set, but not to a key. Said loudly, because the deployment believes it
+      // switched this on and every symptom otherwise appears somewhere else.
+      this.logger.error(
+        `ANTHROPIC_API_KEY is set to something that is not a key (${key.length} characters). ` +
+          'It looks like the placeholder from the README was copied literally. ' +
+          'AI matching stays OFF until a real key from console.anthropic.com replaces it.',
+      );
+    } else {
       this.logger.log(
         'AI matching is off (no ANTHROPIC_API_KEY). Matching runs on barcodes, article numbers and specifications only.',
       );
@@ -124,6 +148,41 @@ export class ClaudeService {
   /** Which model is in use, once one has been chosen. */
   get activeModel(): string | null {
     return this.model;
+  }
+
+  /**
+   * Answers "is AI actually working here" without spending a token.
+   *
+   * Listing models authenticates the key, which is the whole question after
+   * someone pastes one in. Matching itself needs no such call — this exists so
+   * the answer is a request an operator can make deliberately rather than
+   * something they infer from whether searches feel different.
+   */
+  async health(): Promise<{ enabled: boolean; model: string | null; ok: boolean; detail: string }> {
+    if (!this.client) {
+      return {
+        enabled: false,
+        model: null,
+        ok: false,
+        detail: this.config.enabled
+          ? 'ANTHROPIC_API_KEY is set to something that is not a key. Matching runs deterministically.'
+          : 'No ANTHROPIC_API_KEY. Matching runs deterministically, which answers most pairs.',
+      };
+    }
+
+    // Discovery is cached for the life of the process, so a health check run
+    // after fixing a key must be allowed to try again immediately.
+    this.discoveryFailedAt = 0;
+    const model = await this.resolveModel();
+
+    return model
+      ? { enabled: true, model, ok: true, detail: `The key works. Comparisons will use ${model}.` }
+      : {
+          enabled: true,
+          model: null,
+          ok: false,
+          detail: 'The key was rejected or no model is available. Matching runs deterministically.',
+        };
   }
 
   /**

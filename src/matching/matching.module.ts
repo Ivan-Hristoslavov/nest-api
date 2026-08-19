@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../billing/entities/user.entity';
 import { ClaudeService } from './claude.service';
 import { MatchCache } from './entities/match-cache.entity';
+import { MatchingController } from './matching.controller';
 import { MatchingService } from './matching.service';
 
 /**
@@ -16,6 +17,7 @@ import { MatchingService } from './matching.service';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([MatchCache, User])],
+  controllers: [MatchingController],
   providers: [MatchingService, ClaudeService],
   exports: [MatchingService, ClaudeService],
 })

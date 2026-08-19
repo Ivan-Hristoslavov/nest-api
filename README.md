@@ -244,7 +244,7 @@ Routine matching runs on **Claude Haiku**, chosen at runtime by asking the API w
 With no `ANTHROPIC_API_KEY` the AI half is off and matching still works — rungs 1 to 5 answer most pairs. That is the normal state of a fresh deployment, not a degraded one.
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...        # absent = deterministic matching only
+ANTHROPIC_API_KEY=                  # a real key from console.anthropic.com; empty = deterministic matching only
 AI_MATCHING_ENABLED=true
 AI_MATCH_MODEL=                     # pin one only to reproduce a disputed match
 AI_MATCH_MAX_CANDIDATES=12          # per search, after ranking
@@ -402,7 +402,7 @@ Ordered so nothing on the list depends on something below it.
 
 - [ ] Add your own suppliers and run one real order through `POST /discovery/basket`. The first search per supplier takes 6–20 seconds; after that it is cached.
 - [ ] Decide what `ALERT_EMAIL_FALLBACK_TO` should be, or leave it unset.
-- [ ] **Optional: set `ANTHROPIC_API_KEY`** to switch on the AI half of product matching. Without it matching runs on barcodes, article numbers and specifications, which answers most pairs; with it the awkward ones — a German listing against a Bulgarian query — are answered too. See section 6a for what it costs and how it is bounded.
+- [ ] **Optional: set `ANTHROPIC_API_KEY`** to a real key from console.anthropic.com to switch on the AI half of product matching. Check it with `GET /api/v1/matching/health` (operator key) — a placeholder pasted literally is refused there and logged at boot rather than failing quietly on every search. Without it matching runs on barcodes, article numbers and specifications, which answers most pairs; with it the awkward ones — a German listing against a Bulgarian query — are answered too. See section 6a for what it costs and how it is bounded.
 - [ ] Optional: set `FX_RATES_PER_EUR` (e.g. `USD:1.08,GBP:0.85`) if any supplier quotes outside BGN/EUR. Unset, those prices are reported as uncomparable rather than converted at a guess.
 - [ ] **Check each supplier's terms** before adding it. `robots.txt` is honoured automatically; terms of service are not machine-readable and remain a human decision.
 - [ ] Watch `GET /stats` — it is what the landing page prints, so it is also the fastest way to see whether sweeps are working.
