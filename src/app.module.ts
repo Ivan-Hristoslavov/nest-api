@@ -12,6 +12,7 @@ import { ShopsModule } from './shops/shops.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
+import { KeyRevocationModule } from './common/key-revocation.service';
 import { Configuration, configuration } from './config/configuration';
 import { buildTypeOrmOptions } from './database/typeorm-options.factory';
 import { HealthModule } from './health/health.module';
@@ -52,6 +53,10 @@ import { StatsModule } from './stats/stats.module';
 
     // Powers the recurring competitor price sweep in ScraperModule.
     ScheduleModule.forRoot(),
+
+    // Global, and imported before BillingModule: both the guard's cache and
+    // the billing code that revokes keys resolve the same instance.
+    KeyRevocationModule,
 
     // BillingModule first: ApiKeyGuard resolves customer keys through the
     // UsersService it exports.

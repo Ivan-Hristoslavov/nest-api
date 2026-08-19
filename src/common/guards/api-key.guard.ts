@@ -14,6 +14,7 @@ import { Request } from 'express';
 
 import { User } from '../../billing/entities/user.entity';
 import { UsersService } from '../../billing/users.service';
+import { KeyRevocationService } from '../key-revocation.service';
 import { Configuration } from '../../config/configuration';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
@@ -25,6 +26,8 @@ export interface AuthenticatedRequest extends Request {
 }
 
 interface CacheEntry {
+  /** The revocation epoch this entry was created under. */
+  epoch: number;
   user: User | null;
   expiresAt: number;
 }
@@ -61,6 +64,7 @@ export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly usersService: UsersService,
+    private readonly revocations: KeyRevocationService,
     configService: ConfigService<Configuration, true>,
   ) {
     const auth = configService.get('auth', { infer: true });
@@ -152,7 +156,10 @@ export class ApiKeyGuard implements CanActivate {
     const cacheKey = createHash('sha256').update(presentedKey, 'utf8').digest('hex');
     const cached = this.cache.get(cacheKey);
 
-    if (cached && cached.expiresAt > Date.now()) {
+    // A revocation since this entry was written makes it stale regardless of
+    // its age: rotating a key or erasing an account must take effect now, not
+    // when the TTL happens to lapse.
+    if (cached && cached.expiresAt > Date.now() && cached.epoch === this.revocations.currentEpoch) {
       return cached.user;
     }
 
@@ -162,7 +169,11 @@ export class ApiKeyGuard implements CanActivate {
       this.cache.clear();
     }
 
-    this.cache.set(cacheKey, { user, expiresAt: Date.now() + this.cacheTtlMs });
+    this.cache.set(cacheKey, {
+      user,
+      expiresAt: Date.now() + this.cacheTtlMs,
+      epoch: this.revocations.currentEpoch,
+    });
     return user;
   }
 

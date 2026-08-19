@@ -39,6 +39,7 @@ import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { KeyRevocationService } from '../common/key-revocation.service';
 import { AuthenticatedRequest } from '../common/guards/api-key.guard';
 import { BillingService } from './billing.service';
 import { CheckoutService, PurchasablePlan } from './checkout.service';
@@ -69,6 +70,7 @@ export class BillingController {
     private readonly usersService: UsersService,
     private readonly mail: MailService,
     private readonly checkout: CheckoutService,
+    private readonly revocations: KeyRevocationService,
   ) {}
 
   /**
@@ -367,6 +369,12 @@ export class BillingController {
     @Query() query: EraseAccountDto,
   ): Promise<void> {
     const { email } = await this.usersService.eraseAccount(id, query.confirmEmail);
+
+    // The row is gone; the guard's cache must not keep authorising it for the
+    // rest of the TTL. An erased account that still answers 200 for half a
+    // minute is not erased.
+    this.revocations.revokeCachedKeys(`account ${id} erased`);
+
     this.logger.warn(`Operator erased account ${id} (${email}) on request.`);
   }
 
@@ -376,6 +384,10 @@ export class BillingController {
     replacedPreviousKey: boolean,
   ): Promise<IssuedApiKeyDto> {
     const { user, apiKey } = await this.usersService.issueApiKey(userId, environment);
+
+    // Rotation is destructive by design and says so: the old key has to stop
+    // working now, not when a cached lookup happens to expire.
+    this.revocations.revokeCachedKeys(`key rotated for ${user.email}`);
 
     // Emailed as well as returned. The response reaches whoever made the
     // request — often an operator acting for the customer — and the customer

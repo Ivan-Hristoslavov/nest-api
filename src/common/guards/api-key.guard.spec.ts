@@ -5,6 +5,7 @@ import { Reflector } from '@nestjs/core';
 import { User, UserStatus } from '../../billing/entities/user.entity';
 import { UsersService } from '../../billing/users.service';
 import { Configuration } from '../../config/configuration';
+import { KeyRevocationService } from '../key-revocation.service';
 import { ApiKeyGuard, AuthenticatedRequest } from './api-key.guard';
 
 const OPERATOR_KEY = 'pk_operator_valid_key_0123456789';
@@ -51,7 +52,11 @@ function createGuard(options: {
   user?: User | null;
   isPublic?: boolean;
   cacheTtlMs?: number;
-}): { guard: ApiKeyGuard; usersService: { findByApiKey: jest.Mock; touchLastUsed: jest.Mock } } {
+}): {
+  guard: ApiKeyGuard;
+  usersService: { findByApiKey: jest.Mock; touchLastUsed: jest.Mock };
+  revocations: KeyRevocationService;
+} {
   const reflector = {
     getAllAndOverride: jest.fn().mockReturnValue(options.isPublic ?? false),
   } as unknown as Reflector;
@@ -69,9 +74,17 @@ function createGuard(options: {
     }),
   } as unknown as ConfigService<Configuration, true>;
 
+  const revocations = new KeyRevocationService();
+
   return {
-    guard: new ApiKeyGuard(reflector, usersService as unknown as UsersService, configService),
+    guard: new ApiKeyGuard(
+      reflector,
+      usersService as unknown as UsersService,
+      revocations,
+      configService,
+    ),
     usersService,
+    revocations,
   };
 }
 
@@ -203,5 +216,33 @@ describe('ApiKeyGuard', () => {
       await expect(guard.canActivate(createContext().context)).resolves.toBe(true);
       expect(usersService.findByApiKey).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('revocation beats the cache', () => {
+  it('stops honouring a cached key the moment one is revoked', async () => {
+    const user = {
+      id: 'u1',
+      status: UserStatus.Active,
+      isActive: () => true,
+    } as unknown as User;
+
+    const { guard, usersService, revocations } = createGuard({ user });
+
+    const first = createContext({ 'x-api-key': 'pk_live_customer' });
+    await expect(guard.canActivate(first.context)).resolves.toBe(true);
+
+    // Second call is served from the cache — no second lookup.
+    const second = createContext({ 'x-api-key': 'pk_live_customer' });
+    await expect(guard.canActivate(second.context)).resolves.toBe(true);
+    expect(usersService.findByApiKey).toHaveBeenCalledTimes(1);
+
+    // Rotation or erasure happens elsewhere; the account is gone.
+    revocations.revokeCachedKeys('erased in a test');
+    usersService.findByApiKey.mockResolvedValue(null);
+
+    const third = createContext({ 'x-api-key': 'pk_live_customer' });
+    await expect(guard.canActivate(third.context)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(usersService.findByApiKey).toHaveBeenCalledTimes(2);
   });
 });
