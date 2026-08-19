@@ -50,6 +50,23 @@ export const PLAN_PRODUCT_LIMIT: Record<UserPlan, number> = {
 };
 
 /**
+ * AI comparisons an account may spend per month.
+ *
+ * Metered apart from price checks because it is a different cost with a
+ * different shape: a price check is one request to a shop, a comparison is
+ * tokens. Generous on purpose — the deterministic matcher answers most pairs
+ * for nothing, so these numbers are only ever reached by genuinely ambiguous
+ * catalogues, and an account that hits the ceiling keeps searching with the
+ * AI half switched off rather than being stopped.
+ */
+export const PLAN_AI_MATCH_LIMIT: Record<UserPlan, number> = {
+  [UserPlan.Free]: 200,
+  [UserPlan.Starter]: 2_000,
+  [UserPlan.Pro]: 10_000,
+  [UserPlan.Business]: 50_000,
+};
+
+/**
  * A paying customer and the API key they authenticate with.
  *
  * **The plaintext key is never stored.** `apiKeyHash` holds a SHA-256 digest
@@ -124,6 +141,23 @@ export class User {
   })
   @Column({ name: 'product_limit', type: 'int', default: PLAN_PRODUCT_LIMIT[UserPlan.Free] })
   productLimit!: number;
+
+  @ApiProperty({ description: 'AI comparisons spent in the current month.', example: 42 })
+  @Column({ name: 'ai_matches_used', type: 'int', default: 0 })
+  aiMatchesUsed!: number;
+
+  @ApiProperty({ description: 'AI comparisons this plan allows per month.', example: 2000 })
+  @Column({ name: 'ai_matches_limit', type: 'int', default: PLAN_AI_MATCH_LIMIT[UserPlan.Free] })
+  aiMatchesLimit!: number;
+
+  @ApiPropertyOptional({
+    description: 'When the current AI allowance period began.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ name: 'ai_period_started_at', type: 'timestamptz', nullable: true })
+  aiPeriodStartedAt!: Date | null;
 
   @ApiPropertyOptional({
     description: 'Customer id at the merchant of record (Paddle / Lemon Squeezy).',

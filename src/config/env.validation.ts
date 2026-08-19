@@ -394,6 +394,56 @@ export class EnvironmentVariables {
   @IsOptional()
   ALERT_EMAIL_FALLBACK_TO?: string;
 
+  // --- AI product matching -------------------------------------------------
+  /**
+   * Without a key the matcher runs deterministically and the product still
+   * works — barcodes, article numbers and specifications answer most pairs.
+   * The key buys the remainder: the pairs where one supplier writes "840" and
+   * the other writes "4000K".
+   */
+  @IsString()
+  @IsOptional()
+  ANTHROPIC_API_KEY?: string;
+
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  AI_MATCHING_ENABLED = true;
+
+  /**
+   * Pinning a model is for reproducing a disputed match, not for normal use.
+   * Left unset, the service asks the API which models exist and takes the
+   * cheapest one it knows how to use — so a retired model cannot take the
+   * search down with it.
+   */
+  @IsString()
+  @IsOptional()
+  AI_MATCH_MODEL?: string;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @Max(40)
+  @IsOptional()
+  AI_MATCH_MAX_CANDIDATES = 12;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1000)
+  @IsOptional()
+  AI_MATCH_TIMEOUT_MS = 9000;
+
+  // --- Currency ------------------------------------------------------------
+  /**
+   * Rates against the euro for currencies outside the pegged BGN pair, as
+   * `USD:1.08,GBP:0.85`. Unset means unconvertible, which is reported as such
+   * rather than guessed — a made-up rate is a wrong comparison presented as a
+   * fact.
+   */
+  @IsString()
+  @IsOptional()
+  FX_RATES_PER_EUR?: string;
+
   // --- Rate limiting -------------------------------------------------------
   @Transform(toNumber)
   @IsInt()

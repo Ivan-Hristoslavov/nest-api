@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
 import { BasketLineDto, BasketResultDto, BasketSupplierDto } from './dto/basket.dto';
+import { MatchResult, MatchRunSummary, MatchingService } from '../matching/matching.service';
 import { rank, RankableOffer, RankedHit } from './ranking';
 import { ManualPricesService } from '../shops/manual-prices.service';
 import { SearchCache } from './entities/search-cache.entity';
@@ -78,6 +79,7 @@ export class DiscoveryService {
     private readonly rateLimiter: HostRateLimiterService,
     private readonly sitemap: SitemapLookupService,
     private readonly manualPrices: ManualPricesService,
+    private readonly matching: MatchingService,
     @InjectRepository(SearchCache)
     private readonly cache: Repository<SearchCache>,
     @Inject(PRICE_SOURCE) private readonly priceSource: PriceSource,
@@ -579,6 +581,8 @@ export class DiscoveryService {
       limit?: number;
       /** False forces a fresh read — for the buyer about to place the order. */
       useCache?: boolean;
+      /** False compares on barcodes and specifications only, never a model. */
+      useAi?: boolean;
     } = {},
   ): Promise<{
     query: string;
@@ -592,7 +596,8 @@ export class DiscoveryService {
       count: number;
       searchUrl: string;
     }>;
-    hits: RankedHit[];
+    hits: Array<RankedHit & { match?: MatchResult }>;
+    matching?: Omit<MatchRunSummary, 'results'>;
   }> {
     const startedAt = Date.now();
     const trimmed = query.trim();
@@ -641,12 +646,54 @@ export class DiscoveryService {
       }
     }
 
-    const hits = rank(
+    const ranked = rank(
       offers,
       (options.currency ?? 'EUR').toUpperCase(),
       options.limit ?? 60,
       trimmed,
     );
+
+    // Matching runs on what survived ranking, not on everything every shop
+    // returned. Ranking has already thrown away the shop's wilder guesses, and
+    // a model asked about those is a model paid to say "no".
+    const run = await this.matching.match(
+      ownerId,
+      trimmed,
+      ranked.map((hit, index) => ({
+        id: String(index),
+        name: hit.name,
+        supplier: hit.shopName,
+      })),
+      { useAi: options.useAi !== false },
+    );
+
+    const byId = new Map(run.results.map((result) => [result.id, result]));
+
+    const hits = ranked
+      .map((hit, index) => ({ ...hit, match: byId.get(String(index)) }))
+      // Confidence outranks price, and price decides within a confidence band.
+      // The cheapest row is the wrong answer when it is a different article,
+      // which is the mistake this whole feature exists to stop.
+      .sort((left, right) => {
+        const gap = (right.match?.confidence ?? 0) - (left.match?.confidence ?? 0);
+        if (Math.abs(gap) >= 0.1) return gap;
+        if (left.effectivePrice === null) return 1;
+        if (right.effectivePrice === null) return -1;
+        return left.effectivePrice - right.effectivePrice;
+      });
+
+    // The per-candidate results are already attached to their hits above;
+    // repeating them at the top level would double the payload for nothing.
+    const matching = {
+      understood: run.understood,
+      candidates: run.candidates,
+      decidedDeterministically: run.decidedDeterministically,
+      aiCallsMade: run.aiCallsMade,
+      aiCacheHits: run.aiCacheHits,
+      aiModel: run.aiModel,
+      aiSkippedReason: run.aiSkippedReason,
+      durationMs: run.durationMs,
+    };
 
     // Remember how each shop behaved, so a storefront that quietly stopped
     // answering shows up in the supplier list instead of only in the logs.
@@ -674,6 +721,7 @@ export class DiscoveryService {
         searchUrl: result.searchUrl,
       })),
       hits,
+      matching,
     };
   }
 

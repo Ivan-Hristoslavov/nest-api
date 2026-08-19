@@ -15,6 +15,7 @@ import { ApiKeyGuard } from './common/guards/api-key.guard';
 import { Configuration, configuration } from './config/configuration';
 import { buildTypeOrmOptions } from './database/typeorm-options.factory';
 import { HealthModule } from './health/health.module';
+import { MatchingModule } from './matching/matching.module';
 import { ProductsModule } from './products/products.module';
 import { ScraperModule } from './scraper/scraper.module';
 import { StatsModule } from './stats/stats.module';
@@ -59,6 +60,7 @@ import { StatsModule } from './stats/stats.module';
     AlertsModule,
     ScraperModule,
     DiscoveryModule,
+    MatchingModule,
     ShopsModule,
     AnalyticsModule,
     StatsModule,

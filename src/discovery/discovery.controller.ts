@@ -127,6 +127,7 @@ export class DiscoveryController {
       currency: query.currency,
       inStockOnly: query.inStockOnly,
       limit: query.limit,
+      useAi: query.ai,
     });
   }
 

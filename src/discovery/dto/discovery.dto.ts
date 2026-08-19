@@ -204,9 +204,28 @@ export class CompareQueryDto extends SearchQueryDto {
   @Max(200)
   @IsOptional()
   limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'False compares on barcodes, article numbers and specifications only — never a model. Matching still runs and still returns confidence; it just stops before the part that costs money and adds latency.',
+    default: true,
+  })
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : (value as unknown),
+  )
+  @IsBoolean()
+  @IsOptional()
+  ai?: boolean;
 }
 
 export class RankedHitDto {
+  @ApiPropertyOptional({
+    type: () => MatchDto,
+    description:
+      'Whether this offer is the article you searched for, and why. Absent only when matching was not run.',
+  })
+  match?: MatchDto;
+
   @ApiProperty({
     description: 'Kind of article, so a cable is not price-compared against a cable drum.',
     example: 'кабел h05v-k',
@@ -286,6 +305,73 @@ export class ShopOutcomeDto {
   @ApiProperty({ description: 'The URL that was fetched.', format: 'uri' }) searchUrl!: string;
 }
 
+export class MatchReasonDto {
+  @ApiProperty({ example: 'Мощност' }) label!: string;
+  @ApiProperty({ example: '12W' }) left!: string;
+  @ApiProperty({ example: '12W' }) right!: string;
+  @ApiProperty({ example: true }) agrees!: boolean;
+}
+
+export class MatchDto {
+  @ApiProperty({
+    description:
+      'How sure we are that this offer is the article you searched for, 0–1. Above 0.95 something checkable proved it — a barcode, an article number, a model code. Between 0.85 and 0.94 the specifications agree. Below 0.7 do not treat it as the same product.',
+    example: 0.96,
+  })
+  confidence!: number;
+
+  @ApiProperty({ enum: ['certain', 'high', 'possible', 'weak'], example: 'certain' })
+  band!: string;
+
+  @ApiProperty({
+    description: 'What decided it. Everything except `ai` is arithmetic on the two names.',
+    enum: ['gtin', 'sku', 'model', 'attributes', 'text', 'ai', 'conflict', 'none'],
+    example: 'attributes',
+  })
+  method!: string;
+
+  @ApiProperty({ example: 'Съвпадат: марка, мощност, фасунга.' })
+  explanation!: string;
+
+  @ApiProperty({
+    type: MatchReasonDto,
+    isArray: true,
+    description: 'Attribute by attribute, so the decision can be checked rather than trusted.',
+  })
+  reasons!: MatchReasonDto[];
+}
+
+export class MatchingSummaryDto {
+  @ApiProperty({ description: 'What the query was understood to mean, before any model ran.' })
+  understood!: Record<string, unknown>;
+
+  @ApiProperty({ example: 24 }) candidates!: number;
+
+  @ApiProperty({
+    description: 'Pairs settled by barcode, article number, model code or specification — free.',
+    example: 21,
+  })
+  decidedDeterministically!: number;
+
+  @ApiProperty({ description: 'Requests actually sent to a model.', example: 1 })
+  aiCallsMade!: number;
+
+  @ApiProperty({ description: 'Pairs answered from a previous model verdict.', example: 2 })
+  aiCacheHits!: number;
+
+  @ApiPropertyOptional({ nullable: true, example: 'claude-haiku-4-5' })
+  aiModel!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Why no model ran, when none did.',
+    enum: ['disabled', 'quota', 'unreachable'],
+    nullable: true,
+  })
+  aiSkippedReason!: string | null;
+
+  @ApiProperty({ example: 180 }) durationMs!: number;
+}
+
 export class ComparisonDto {
   @ApiProperty({ example: 'крушка 20W' }) query!: string;
 
@@ -303,7 +389,15 @@ export class ComparisonDto {
   @ApiProperty({
     type: RankedHitDto,
     isArray: true,
-    description: 'Every offer found, cheapest-for-you first, grouped by kind of article.',
+    description:
+      'Every offer found, most confident match first and cheapest-for-you within each confidence band. The cheapest row is the wrong answer when it is a different article.',
   })
   hits!: RankedHitDto[];
+
+  @ApiPropertyOptional({
+    type: MatchingSummaryDto,
+    description:
+      'What matching did and what it cost: how many pairs arithmetic settled, how many reached a model, which model, and how many came from cache.',
+  })
+  matching?: MatchingSummaryDto;
 }

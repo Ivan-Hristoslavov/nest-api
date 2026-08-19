@@ -9,7 +9,8 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { accessLogMiddleware } from './common/middleware/access-log.middleware';
-import { AppConfig } from './config/configuration';
+import { AppConfig, CurrencyConfig } from './config/configuration';
+import { convertibleCurrencies, setRatesPerEur } from './products/currency';
 import { NodeEnvironment } from './config/env.validation';
 import { setupSwagger } from './swagger';
 
@@ -27,6 +28,12 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   const appConfig = app.get(ConfigService).getOrThrow<AppConfig>('app');
   const isProduction = appConfig.nodeEnv === NodeEnvironment.Production;
+
+  // Installed once, here, so the currency module stays a pure function nothing
+  // has to inject a ConfigService to use. Without rates the pegged BGN/EUR
+  // pair still converts and everything else reports itself uncomparable —
+  // which is the honest answer, not a bug.
+  setRatesPerEur(app.get(ConfigService).getOrThrow<CurrencyConfig>('currency').ratesPerEur);
 
   app.flushLogs();
 
@@ -111,6 +118,7 @@ async function bootstrap(): Promise<void> {
   logger.log(`Price Intelligence API running in ${appConfig.nodeEnv} mode`);
   logger.log(`REST API      ${url}/${appConfig.apiPrefix}`);
   logger.log(`Health probe  ${url}/health`);
+  logger.log(`Currencies    ${convertibleCurrencies().join(', ')}`);
 
   if (appConfig.swaggerEnabled) {
     logger.log(`Swagger UI    ${url}/${appConfig.swaggerPath}`);

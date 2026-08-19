@@ -3,7 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { GeneratedApiKey, generateApiKey, hashApiKey } from './api-key.util';
-import { PLAN_PRODUCT_LIMIT, User, UserPlan, UserStatus } from './entities/user.entity';
+import {
+  PLAN_AI_MATCH_LIMIT,
+  PLAN_PRODUCT_LIMIT,
+  User,
+  UserPlan,
+  UserStatus,
+} from './entities/user.entity';
 
 /** A newly issued key, with the plaintext the caller must deliver to the user. */
 export interface IssuedApiKey {
@@ -123,6 +129,7 @@ export class UsersService {
         status: UserStatus.Active,
         plan: UserPlan.Free,
         productLimit: PLAN_PRODUCT_LIMIT[UserPlan.Free],
+        aiMatchesLimit: PLAN_AI_MATCH_LIMIT[UserPlan.Free],
       }),
     );
 
@@ -170,6 +177,7 @@ export class UsersService {
     if (details.plan) {
       user.plan = details.plan;
       user.productLimit = PLAN_PRODUCT_LIMIT[details.plan];
+      user.aiMatchesLimit = PLAN_AI_MATCH_LIMIT[details.plan];
     }
     if (details.customerId !== undefined) user.paddleCustomerId = details.customerId;
     if (details.subscriptionId !== undefined) user.subscriptionId = details.subscriptionId;

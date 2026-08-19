@@ -1,3 +1,4 @@
+import { parseRates } from '../products/currency';
 import {
   BillingProvider,
   EnvironmentVariables,
@@ -108,6 +109,20 @@ export interface MailConfig {
   supportEmail?: string;
 }
 
+export interface MatchingConfig {
+  enabled: boolean;
+  apiKey?: string;
+  /** Empty unless an operator pinned one; otherwise discovered at runtime. */
+  model?: string;
+  maxCandidates: number;
+  timeoutMs: number;
+}
+
+export interface CurrencyConfig {
+  /** Units per one euro, e.g. `{ USD: 1.08 }`. Empty means "do not convert". */
+  ratesPerEur: Record<string, number>;
+}
+
 export interface ThrottleConfig {
   ttlMs: number;
   limit: number;
@@ -115,6 +130,8 @@ export interface ThrottleConfig {
 
 export interface Configuration {
   app: AppConfig;
+  matching: MatchingConfig;
+  currency: CurrencyConfig;
   auth: AuthConfig;
   database: DatabaseConfig;
   supabase: SupabaseConfig;
@@ -246,6 +263,18 @@ export const configuration = (): Configuration => {
       emailFallbackTo: env.ALERT_EMAIL_FALLBACK_TO,
       deliveryTimeoutMs: env.ALERT_DELIVERY_TIMEOUT_MS,
       cooldownMinutes: env.ALERT_COOLDOWN_MINUTES,
+    },
+    matching: {
+      // Enabled *and* keyed. A deployment with the flag on and no key would
+      // otherwise report AI matching as available and then never do any.
+      enabled: env.AI_MATCHING_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
+      apiKey: env.ANTHROPIC_API_KEY,
+      model: env.AI_MATCH_MODEL,
+      maxCandidates: env.AI_MATCH_MAX_CANDIDATES,
+      timeoutMs: env.AI_MATCH_TIMEOUT_MS,
+    },
+    currency: {
+      ratesPerEur: parseRates(env.FX_RATES_PER_EUR),
     },
     throttle: {
       ttlMs: env.THROTTLE_TTL_MS,
