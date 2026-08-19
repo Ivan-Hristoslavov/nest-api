@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 import {
   CanActivate,
+  Inject,
   ExecutionContext,
   ForbiddenException,
   Injectable,
@@ -15,6 +16,7 @@ import { Request } from 'express';
 import { User } from '../../billing/entities/user.entity';
 import { UsersService } from '../../billing/users.service';
 import { KeyRevocationService } from '../key-revocation.service';
+import { SESSION_RESOLVER, SessionResolver, bearerOf } from '../session-resolver';
 import { Configuration } from '../../config/configuration';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
@@ -64,6 +66,7 @@ export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly usersService: UsersService,
+    @Inject(SESSION_RESOLVER) private readonly sessions: SessionResolver,
     private readonly revocations: KeyRevocationService,
     configService: ConfigService<Configuration, true>,
   ) {
@@ -92,11 +95,37 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+
+    // A browser signed in with a link carries a session; a script carries a
+    // key. Both name the same account, and everything downstream — ownership,
+    // plan limits, the AI allowance — reads that account and not how it was
+    // proven. Sessions are checked first because a browser sends both headers
+    // during the changeover from the old key-in-localStorage flow.
+    const sessionToken = bearerOf(request.headers.authorization);
+
+    if (sessionToken) {
+      const owner = await this.sessions.resolveSession(sessionToken);
+
+      if (!owner) {
+        throw new UnauthorizedException('Сесията е изтекла. Влезте отново.');
+      }
+
+      if (!owner.isActive()) {
+        throw new ForbiddenException(
+          `Account is ${owner.status}. Renew your subscription to reactivate this account.`,
+        );
+      }
+
+      request.user = owner;
+      request.isAdmin = false;
+      return true;
+    }
+
     const presentedKey = this.extractKey(request);
 
     if (!presentedKey) {
       throw new UnauthorizedException(
-        `Missing API key. Send it in the '${this.headerName}' header.`,
+        `Missing credentials. Send an API key in the '${this.headerName}' header, or sign in and send the session as 'Authorization: Bearer'.`,
       );
     }
 

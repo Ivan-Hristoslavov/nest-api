@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AlertsModule } from './alerts/alerts.module';
+import { AuthModule } from './auth/auth.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BillingModule } from './billing/billing.module';
 import { ShopsModule } from './shops/shops.module';
@@ -61,6 +62,9 @@ import { StatsModule } from './stats/stats.module';
     // BillingModule first: ApiKeyGuard resolves customer keys through the
     // UsersService it exports.
     BillingModule,
+    // After BillingModule (it uses the account lookup) and before the global
+    // guard, which resolves sessions through the token this binds.
+    AuthModule,
     ProductsModule,
     AlertsModule,
     ScraperModule,

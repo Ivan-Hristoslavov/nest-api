@@ -127,6 +127,77 @@ export class MailService implements OnModuleInit {
     return this.send(user.email, subject, html, text);
   }
 
+  /**
+   * The link that signs somebody in.
+   *
+   * Short-lived and single use, and the message says both — a person who
+   * receives one they did not ask for should know exactly how much it is worth
+   * and that ignoring it is enough.
+   */
+  async sendSignInLink(user: User, url: string, minutes: number): Promise<boolean> {
+    const subject = 'Вход в PriceGuard';
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: `Връзката важи ${minutes} минути и се използва веднъж.`,
+      heading: 'Влезте в таблото си',
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          `Натиснете бутона и ще ви пуснем в акаунта <strong>${escapeHtml(user.email)}</strong>. Няма парола за помнене.`,
+        ),
+        noticeBox(
+          `Връзката важи <strong>${minutes} минути</strong> и работи само веднъж. Ако не сте я поискали вие — не правете нищо; без натискане не се случва нищо.`,
+        ),
+      ],
+      cta: { label: 'Влез в таблото', url },
+      footnotes: [
+        'Ако бутонът не сработи, копирайте адреса от него в браузъра.',
+        'Това писмо не съдържа вашия API ключ — той се използва от програми, а този вход е за хора.',
+      ],
+    });
+
+    return this.send(user.email, subject, html, text);
+  }
+
+  /**
+   * The first link: it proves the mailbox and opens the account.
+   *
+   * Distinct from the sign-in link because it is doing more, and because the
+   * person reading it has not seen the product yet — the message has to say
+   * what happens when they click, not assume they remember asking.
+   */
+  async sendVerificationLink(user: User, url: string, minutes: number): Promise<boolean> {
+    const subject = 'Потвърдете имейла си за PriceGuard';
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: `Едно натискане отваря акаунта. Връзката важи ${minutes} минути.`,
+      heading: 'Остана едно натискане',
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          'Потвърдете, че този имейл е ваш, и акаунтът се отваря веднага — с ключ за API-то и безплатния план.',
+        ),
+        dataRows([
+          ['План', 'Безплатен'],
+          ['Следени артикула', String(user.productLimit)],
+          ['AI сравнения', `${user.aiMatchesLimit} на месец`],
+          ['Доставчици', 'без ограничение'],
+        ]),
+        noticeBox(
+          `Връзката важи <strong>${minutes} минути</strong> и работи веднъж. Ако не сте се регистрирали вие — не правете нищо и акаунтът никога не се отваря.`,
+        ),
+      ],
+      cta: { label: 'Потвърди и влез', url },
+      footnotes: ['Ако бутонът не сработи, копирайте адреса от него в браузъра.'],
+    });
+
+    return this.send(user.email, subject, html, text);
+  }
+
   /** Tells a customer their subscription has lapsed and the key has stopped. */
   async sendAccessExpired(user: User, reason: string): Promise<boolean> {
     const subject = 'Достъпът ви до PriceGuard е спрян';

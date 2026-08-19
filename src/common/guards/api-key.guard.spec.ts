@@ -50,11 +50,13 @@ function createContext(headers: Record<string, string | string[]> = {}): {
 function createGuard(options: {
   operatorKeys?: string[];
   user?: User | null;
+  sessionUser?: User | null;
   isPublic?: boolean;
   cacheTtlMs?: number;
 }): {
   guard: ApiKeyGuard;
   usersService: { findByApiKey: jest.Mock; touchLastUsed: jest.Mock };
+  sessions: { resolveSession: jest.Mock };
   revocations: KeyRevocationService;
 } {
   const reflector = {
@@ -75,15 +77,18 @@ function createGuard(options: {
   } as unknown as ConfigService<Configuration, true>;
 
   const revocations = new KeyRevocationService();
+  const sessions = { resolveSession: jest.fn().mockResolvedValue(options.sessionUser ?? null) };
 
   return {
     guard: new ApiKeyGuard(
       reflector,
       usersService as unknown as UsersService,
+      sessions,
       revocations,
       configService,
     ),
     usersService,
+    sessions,
     revocations,
   };
 }
@@ -244,5 +249,41 @@ describe('revocation beats the cache', () => {
     const third = createContext({ 'x-api-key': 'pk_live_customer' });
     await expect(guard.canActivate(third.context)).rejects.toBeInstanceOf(UnauthorizedException);
     expect(usersService.findByApiKey).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('sessions', () => {
+  const signedIn = {
+    id: 'u1',
+    email: 'kupuvach@example.com',
+    status: UserStatus.Active,
+    isActive: () => true,
+  } as unknown as User;
+
+  it('accepts a browser signed in with a link', async () => {
+    const { guard, sessions, usersService } = createGuard({ sessionUser: signedIn });
+    const { context, request } = createContext({ authorization: 'Bearer pg_sess_abc' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.user).toBe(signedIn);
+    expect(request.isAdmin).toBe(false);
+    expect(sessions.resolveSession).toHaveBeenCalledWith('pg_sess_abc');
+    // A session is not a key: no key lookup happens at all.
+    expect(usersService.findByApiKey).not.toHaveBeenCalled();
+  });
+
+  it('refuses an expired session with a message a person can act on', async () => {
+    const { guard } = createGuard({ sessionUser: null });
+    const { context } = createContext({ authorization: 'Bearer pg_sess_stale' });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(/Влезте отново/);
+  });
+
+  it('still accepts an API key when no session is presented', async () => {
+    const { guard } = createGuard({ user: signedIn });
+    const { context, request } = createContext({ 'x-api-key': 'pk_live_customer' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.user).toBe(signedIn);
   });
 });

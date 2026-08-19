@@ -520,6 +520,26 @@
             <i class="fa-solid fa-key text-[11px]"></i>
             <span id="api-key-label">Няма ключ</span>
           </button>
+          <!-- Shown to whoever is signed in; the sign-in button takes its
+               place otherwise. One of the two is always visible. -->
+          <button
+            type="button"
+            id="account-button"
+            hidden
+            class="items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[12px] font-medium text-accent-600 transition hover:bg-accent-500/20 dark:text-accent-300 sm:flex"
+            title="Вашият акаунт"
+          >
+            <i class="fa-solid fa-circle-user text-[11px]"></i>
+            <span id="account-label"></span>
+          </button>
+          <button
+            type="button"
+            id="signin-button"
+            class="hidden items-center gap-2 rounded-lg border border-white/8 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-white/15 hover:text-slate-100 sm:flex"
+          >
+            <i class="fa-solid fa-right-to-bracket text-[11px]"></i>
+            Вход
+          </button>
           <button
             type="button"
             data-view="dashboard"
@@ -2221,6 +2241,111 @@
     </div>
 
     <!-- ================================================================== -->
+    <!-- MODAL — sign in                                                     -->
+    <!--                                                                     -->
+    <!-- Three states in one dialog: ask for the address, say the mail is on -->
+    <!-- its way, or — once signed in — show whose account this is and how   -->
+    <!-- to leave it.                                                        -->
+    <!-- ================================================================== -->
+    <div
+      id="signin-modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="signin-modal-title"
+    >
+      <div
+        class="w-full max-w-lg rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-2xl sm:p-7"
+      >
+        <div class="flex items-start gap-4">
+          <span
+            class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/30"
+          >
+            <i class="fa-solid fa-right-to-bracket text-[16px] text-accent-400"></i>
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 id="signin-modal-title" class="text-[16px] font-semibold text-slate-200">Вход</h3>
+            <p class="mt-1.5 text-[13px] leading-relaxed text-slate-400">
+              Без парола. Пращаме ви връзка на имейла — тя ви пуска в таблото.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-close-modal="signin-modal"
+            aria-label="Затвори"
+            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="signin-form" class="mt-6" novalidate>
+          <label for="signin-email" class="mb-2 block text-[13px] font-medium text-slate-300">
+            Имейл на акаунта
+          </label>
+          <div class="relative">
+            <i
+              class="fa-solid fa-envelope pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[13px] text-slate-500"
+            ></i>
+            <input
+              type="email"
+              id="signin-email"
+              autocomplete="email"
+              required
+              placeholder="vie@vashata-firma.bg"
+              class="w-full rounded-xl border border-white/10 bg-ink-900 py-3 pl-10 pr-4 text-[14px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+          </div>
+
+          <p id="signin-status" class="mt-3 hidden text-[12.5px]"></p>
+
+          <button
+            type="submit"
+            class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+          >
+            <i id="signin-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[13px]"></i>
+            Изпрати ми връзка
+          </button>
+
+          <p class="mt-3 text-center text-[12px] leading-relaxed text-slate-500">
+            Нямате акаунт?
+            <button type="button" data-signup class="font-semibold text-accent-500 underline-offset-2 hover:underline">
+              Направете безплатен
+            </button>
+          </p>
+        </form>
+
+        <div id="signin-sent" class="mt-6 hidden text-center">
+          <span class="grid h-12 w-12 mx-auto place-items-center rounded-full bg-accent-500/12">
+            <i class="fa-solid fa-paper-plane text-[18px] text-accent-400"></i>
+          </span>
+          <p class="mt-4 text-[14px] leading-relaxed text-slate-300">
+            Ако този имейл има акаунт, връзката вече пътува към него.
+          </p>
+          <p class="mt-2 text-[12.5px] leading-relaxed text-slate-500">
+            Важи 15 минути и работи веднъж. Проверете и папка „Спам".
+          </p>
+        </div>
+
+        <div id="signin-account" class="mt-6 hidden">
+          <div class="rounded-xl border border-white/8 bg-ink-900 p-4">
+            <p class="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Влезли сте като</p>
+            <p id="account-email" class="mt-1.5 text-[14px] font-medium text-slate-200"></p>
+            <p id="account-plan" class="mt-0.5 text-[12.5px] text-slate-500"></p>
+          </div>
+          <div id="account-usage" class="mt-3 space-y-2"></div>
+          <button
+            type="button"
+            id="signout-button"
+            class="mt-5 w-full rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-red-500/40 hover:text-red-300"
+          >
+            Изход от този браузър
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
     <!-- MODAL — free signup                                                 -->
     <!--                                                                     -->
     <!-- Two states in one dialog: ask for an email, then show the key once. -->
@@ -2312,36 +2437,24 @@
           </p>
         </form>
 
-        <!-- Shown once the key exists. It is never retrievable again, so this
-             is the only screen that will ever display it. -->
-        <div id="signup-done" class="mt-6 hidden">
-          <p class="text-[13.5px] leading-relaxed text-slate-300">
-            Акаунтът е готов. Ето ключа ви — виждате го само сега.
+        <!-- Nothing is granted yet: the account opens when the link in the
+             mailbox is used, which is the point of asking for one. -->
+        <div id="signup-done" class="mt-6 hidden text-center">
+          <span class="mx-auto grid h-12 w-12 place-items-center rounded-full bg-accent-500/12">
+            <i class="fa-solid fa-envelope-open-text text-[18px] text-accent-400"></i>
+          </span>
+          <p class="mt-4 text-[14px] leading-relaxed text-slate-300">
+            Изпратихме ви връзка. Отворете я и акаунтът се отваря — заедно с ключа за API-то.
           </p>
-          <div
-            class="mt-3 flex items-center gap-2 rounded-xl border border-accent-500/30 bg-ink-900 p-3"
-          >
-            <code
-              id="signup-key"
-              class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-accent-400"
-            ></code>
-            <button
-              type="button"
-              id="signup-copy"
-              class="shrink-0 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100"
-            >
-              <i class="fa-solid fa-copy text-[12px]"></i>
-              Копирай
-            </button>
-          </div>
-          <p id="signup-mailed" class="mt-2.5 text-[12.5px] text-slate-500"></p>
+          <p class="mt-2 text-[12.5px] leading-relaxed text-slate-500">
+            Връзката важи 15 минути и работи веднъж. Проверете и папка „Спам".
+          </p>
           <button
             type="button"
-            id="signup-continue"
-            class="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-accent-600"
+            data-close-modal="signup-modal"
+            class="mt-5 w-full rounded-xl border border-white/10 bg-ink-900 px-5 py-3 text-[14px] font-medium text-slate-300 transition hover:border-white/25"
           >
-            Към търсенето
-            <i class="fa-solid fa-arrow-right text-[13px]"></i>
+            Ясно
           </button>
         </div>
       </div>
@@ -3304,7 +3417,11 @@
         billingUsers: API_BASE + '/billing/users',
         billingCheckout: API_BASE + '/billing/checkout',
         billingPlans: API_BASE + '/billing/plans',
-        billingSignup: API_BASE + '/billing/signup',
+        authRegister: API_BASE + '/auth/register',
+        billingMe: API_BASE + '/billing/me',
+        authSignIn: API_BASE + '/auth/sign-in',
+        authSession: API_BASE + '/auth/session',
+        authSignOut: API_BASE + '/auth/sign-out',
         stats: API_BASE + '/stats',
         billingRotateKey: API_BASE + '/billing/users/api-key',
       };
@@ -3338,8 +3455,57 @@
       }
 
       /** Every authenticated call goes through here, so the header is never forgotten. */
+      /**
+       * Where a signed-in browser keeps its proof.
+       *
+       * Separate from the API key on purpose: the key is a machine credential
+       * that belongs in a script and cannot be read back once issued, while
+       * this is handed out again on every sign-in and can be dropped from one
+       * device without breaking anybody's integration.
+       */
+      const SESSION_STORAGE = 'priceguard.session';
+
+      function getSession() {
+        try {
+          const raw = window.localStorage.getItem(SESSION_STORAGE);
+          if (!raw) return null;
+
+          const session = JSON.parse(raw);
+          // A session that has run out is the same as none: dropping it here
+          // means the interface asks for a sign-in instead of firing requests
+          // that will all answer 401.
+          if (!session.token || new Date(session.expiresAt).getTime() < Date.now()) {
+            window.localStorage.removeItem(SESSION_STORAGE);
+            return null;
+          }
+
+          return session;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function setSession(session) {
+        try {
+          if (session) window.localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
+          else window.localStorage.removeItem(SESSION_STORAGE);
+        } catch (error) {
+          /* private browsing — the tab stays signed in, the next one will not */
+        }
+      }
+
       function authHeaders(extra) {
         const headers = Object.assign({ Accept: 'application/json' }, extra || {});
+
+        // A session wins where both exist. Somebody who has just signed in
+        // means to act as that account, whatever key is left in this browser
+        // from before.
+        const session = getSession();
+        if (session) {
+          headers.Authorization = 'Bearer ' + session.token;
+          return headers;
+        }
+
         const key = getApiKey();
         if (key) headers['x-api-key'] = key;
         return headers;
@@ -3589,7 +3755,7 @@
         button.addEventListener('click', () => closeModal(button.dataset.closeModal));
       });
 
-      ['key-modal', 'signup-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
+      ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
         // Clicking the backdrop closes; clicking the panel must not.
         document.getElementById(id).addEventListener('click', function (event) {
           if (event.target === this) closeModal(id);
@@ -3606,7 +3772,7 @@
           return;
         }
 
-        ['key-modal', 'signup-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
+        ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
       });
 
       /* ------------------------------------------------------------------ *
@@ -7301,6 +7467,250 @@
       }
 
       /* ------------------------------------------------------------------ *
+       * Signing in
+       *
+       * A link in the mailbox instead of a password. The link lands back on
+       * this page as `#signin=<token>`, which is traded for a session before
+       * anything else runs — so a person following a link from their phone at
+       * 7am arrives already signed in rather than at a key prompt.
+       * ------------------------------------------------------------------ */
+
+      let account = null;
+
+      function renderAccount() {
+        const session = getSession();
+        const signedIn = Boolean(session);
+
+        $('#signin-button').hidden = signedIn;
+        $('#signin-button').classList.toggle('hidden', signedIn);
+        $('#signin-button').classList.toggle('sm:flex', !signedIn);
+
+        $('#account-button').hidden = !signedIn;
+        $('#account-button').classList.toggle('hidden', !signedIn);
+        $('#account-button').classList.toggle('sm:flex', signedIn);
+
+        if (signedIn) {
+          const label = (account && account.email) || session.email || 'акаунт';
+          $('#account-label').textContent = label.split('@')[0];
+        }
+
+        // The key badge is for people driving the API by hand. Once there is a
+        // session it is noise, and worse, it implies the key is what is being
+        // used when it is not.
+        $('#api-key-button').classList.toggle('hidden', signedIn);
+        $('#api-key-button').classList.toggle('sm:flex', !signedIn);
+      }
+
+      function showSignInStatus(message, tone) {
+        const element = $('#signin-status');
+        element.textContent = message;
+        element.className =
+          'mt-3 text-[12.5px] ' +
+          (tone === 'error' ? 'text-red-400' : tone === 'success' ? 'text-emerald-400' : 'text-slate-400');
+        element.classList.remove('hidden');
+      }
+
+      function openSignIn() {
+        const signedIn = Boolean(getSession());
+
+        $('#signin-form').classList.toggle('hidden', signedIn);
+        $('#signin-sent').classList.add('hidden');
+        $('#signin-account').classList.toggle('hidden', !signedIn);
+        $('#signin-status').classList.add('hidden');
+
+        if (signedIn) void renderAccountPanel();
+        openModal('signin-modal');
+      }
+
+      $('#signin-button').addEventListener('click', openSignIn);
+      $('#account-button').addEventListener('click', openSignIn);
+
+      $('#signin-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const email = $('#signin-email').value.trim();
+        if (!email || email.indexOf('@') === -1) {
+          showSignInStatus('Въведете имейла, с който сте се регистрирали.', 'error');
+          return;
+        }
+
+        $('#signin-spinner').classList.remove('hidden');
+
+        try {
+          const response = await fetch(ENDPOINTS.authSignIn, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+
+          if (response.status === 429) {
+            showSignInStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+            return;
+          }
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          // Deliberately the same screen whether or not the address is known:
+          // this page must not become a way to find out who is a customer.
+          $('#signin-form').classList.add('hidden');
+          $('#signin-sent').classList.remove('hidden');
+        } catch (error) {
+          showSignInStatus('Не се получи: ' + error.message, 'error');
+        } finally {
+          $('#signin-spinner').classList.add('hidden');
+        }
+      });
+
+      $('#signout-button').addEventListener('click', async function () {
+        try {
+          await fetch(ENDPOINTS.authSignOut, { method: 'POST', headers: authHeaders() });
+        } catch (error) {
+          // The session dies locally regardless: a network failure must not
+          // leave somebody unable to sign out of a shared computer.
+        }
+
+        setSession(null);
+        account = null;
+        renderAccount();
+        closeModal('signin-modal');
+        toast('Излязохте от този браузър.', 'info');
+        loadProducts();
+      });
+
+      /** Trades `#signin=<token>` for a session, once, at load. */
+      (async function consumeSignInLink() {
+        const match = /[#&]signin=([^&]+)/.exec(window.location.hash);
+        if (!match) {
+          renderAccount();
+          return;
+        }
+
+        const token = decodeURIComponent(match[1]);
+        // Cleared before the request so a refresh cannot replay a spent link
+        // and land on "тази връзка вече е използвана".
+        window.history.replaceState(null, '', window.location.pathname);
+
+        try {
+          const response = await fetch(ENDPOINTS.authSession, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ token }),
+          });
+
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            toast(payload.message || 'Връзката не е валидна.', 'error');
+            renderAccount();
+            return;
+          }
+
+          setSession(payload);
+          account = payload;
+          renderAccount();
+
+          if (payload.apiKey) {
+            // This exchange opened the account, so this is the one moment the
+            // key exists in readable form. Stored for this browser and shown
+            // once; afterwards only its digest survives.
+            setApiKey(payload.apiKey);
+            renderApiKeyBadge();
+            showIssuedKey(payload.apiKey);
+          } else {
+            toast('Влязохте като ' + payload.email, 'success');
+          }
+
+          switchView('dashboard');
+        } catch (error) {
+          toast('Входът не успя: ' + error.message, 'error');
+          renderAccount();
+        }
+      })();
+
+      /**
+       * The one screen that will ever display the key.
+       *
+       * Not a toast: a toast disappears, and this cannot be recovered — only
+       * replaced, which breaks whatever was already using it.
+       */
+      function showIssuedKey(apiKey) {
+        $('#signin-form').classList.add('hidden');
+        $('#signin-sent').classList.add('hidden');
+        $('#signin-account').classList.remove('hidden');
+
+        $('#account-email').textContent = (account && account.email) || '';
+        $('#account-plan').textContent = 'Акаунтът е отворен и потвърден.';
+
+        $('#account-usage').innerHTML =
+          '<p class="text-[13px] leading-relaxed text-slate-300">Ето вашия API ключ — виждате го само сега.</p>' +
+          '<div class="mt-2 flex items-center gap-2 rounded-xl border border-accent-500/30 bg-ink-900 p-3">' +
+          '<code id="issued-key" class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-accent-400">' +
+          escapeHtml(apiKey) +
+          '</code>' +
+          '<button type="button" id="issued-copy" class="shrink-0 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100">' +
+          '<i class="fa-solid fa-copy text-[12px]"></i> Копирай</button></div>' +
+          '<p class="mt-2 text-[12px] leading-relaxed text-slate-500">Изпратихме копие и на имейла ви. Ключът е за програми — в браузъра оставате влезли и без него.</p>';
+
+        $('#issued-copy').addEventListener('click', async function () {
+          try {
+            await navigator.clipboard.writeText(apiKey);
+            toast('Ключът е копиран.', 'success');
+          } catch (error) {
+            toast('Копирането не стана — маркирайте ключа и копирайте ръчно.', 'error');
+          }
+        });
+
+        openModal('signin-modal');
+      }
+
+      /** The account panel: who this is, and what is left of the month. */
+      async function renderAccountPanel() {
+        const box = $('#account-usage');
+        box.innerHTML = '<p class="text-[12.5px] text-slate-500">Зареждам…</p>';
+
+        try {
+          const response = await fetch(ENDPOINTS.billingMe, { headers: authHeaders() });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          account = await response.json();
+
+          $('#account-email').textContent = account.email;
+          $('#account-plan').textContent =
+            'План ' + account.plan + ' · ' + account.productLimit + ' следени артикула';
+
+          box.innerHTML =
+            meterHtml(
+              'AI сравнения този месец',
+              account.aiMatchesUsed,
+              account.aiMatchesLimit,
+            ) +
+            (account.apiKeyPrefix
+              ? '<p class="text-[12px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
+                escapeHtml(account.apiKeyPrefix) +
+                '…</span> — за програми. Този вход е за хора.</p>'
+              : '');
+        } catch (error) {
+          box.innerHTML =
+            '<p class="text-[12.5px] text-red-400">Данните за акаунта не се заредиха.</p>';
+        }
+      }
+
+      function meterHtml(label, used, limit) {
+        const share = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+        const tone = share >= 90 ? 'bg-red-500' : share >= 70 ? 'bg-amber-500' : 'bg-accent-500';
+
+        return (
+          '<div>' +
+          '<div class="flex items-baseline justify-between gap-3">' +
+          '<span class="text-[12.5px] text-slate-400">' + escapeHtml(label) + '</span>' +
+          '<span class="num text-[12.5px] font-semibold text-slate-300">' + used + ' / ' + limit + '</span>' +
+          '</div>' +
+          '<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">' +
+          '<div class="h-full rounded-full ' + tone + '" style="width:' + share + '%"></div>' +
+          '</div></div>'
+        );
+      }
+
+      /* ------------------------------------------------------------------ *
        * Free signup
        * ------------------------------------------------------------------ */
 
@@ -7311,7 +7721,6 @@
           $('#signup-form').classList.remove('hidden');
           $('#signup-done').classList.add('hidden');
           $('#signup-status').classList.add('hidden');
-          $('#signup-key').textContent = '';
           openModal('signup-modal');
         });
       });
@@ -7344,7 +7753,7 @@
         showSignupStatus('Създаваме акаунта…', 'info');
 
         try {
-          const response = await fetch(ENDPOINTS.billingSignup, {
+          const response = await fetch(ENDPOINTS.authRegister, {
             method: 'POST',
             headers: { 'content-type': 'application/json', Accept: 'application/json' },
             body: JSON.stringify(name ? { email, name } : { email }),
@@ -7352,11 +7761,10 @@
 
           const payload = await response.json().catch(() => ({}));
 
-          if (response.status === 409) {
-            showSignupStatus(
-              payload.message || 'Този имейл вече има акаунт.',
-              'error',
-            );
+          if (response.status === 400) {
+            // Worth spelling out: a throwaway address is something the person
+            // can fix by using their real one.
+            showSignupStatus(payload.message || 'Този имейл не става.', 'error');
             return;
           }
           if (response.status === 429) {
@@ -7367,18 +7775,11 @@
             throw new Error(payload.message || 'HTTP ' + response.status);
           }
 
-          // Stored immediately: the whole point of showing the key here is that
-          // the next click already works.
-          setApiKey(payload.apiKey);
-          renderApiKeyBadge();
-
-          $('#signup-key').textContent = payload.apiKey;
-          $('#signup-mailed').textContent = payload.emailed
-            ? 'Изпратихме копие на ' + payload.email + '. Проверете и папка „Спам".'
-            : 'Копирайте го сега — показва се само веднъж и не може да бъде възстановен.';
+          // No key here any more. It exists only once somebody opens the
+          // mailbox, which is what stops accounts being farmed from addresses
+          // nobody owns.
           $('#signup-form').classList.add('hidden');
           $('#signup-done').classList.remove('hidden');
-          toast('Акаунтът е готов.', 'success');
         } catch (error) {
           showSignupStatus('Не се получи: ' + error.message, 'error');
         } finally {
@@ -7386,18 +7787,278 @@
         }
       });
 
-      $('#signup-copy').addEventListener('click', async function () {
+      /* ------------------------------------------------------------------ *
+       * Signing in
+       *
+       * A link in the mailbox instead of a password. The link lands back on
+       * this page as `#signin=<token>`, which is traded for a session before
+       * anything else runs — so a person following a link from their phone at
+       * 7am arrives already signed in rather than at a key prompt.
+       * ------------------------------------------------------------------ */
+
+      let account = null;
+
+      function renderAccount() {
+        const session = getSession();
+        const signedIn = Boolean(session);
+
+        $('#signin-button').hidden = signedIn;
+        $('#signin-button').classList.toggle('hidden', signedIn);
+        $('#signin-button').classList.toggle('sm:flex', !signedIn);
+
+        $('#account-button').hidden = !signedIn;
+        $('#account-button').classList.toggle('hidden', !signedIn);
+        $('#account-button').classList.toggle('sm:flex', signedIn);
+
+        if (signedIn) {
+          const label = (account && account.email) || session.email || 'акаунт';
+          $('#account-label').textContent = label.split('@')[0];
+        }
+
+        // The key badge is for people driving the API by hand. Once there is a
+        // session it is noise, and worse, it implies the key is what is being
+        // used when it is not.
+        $('#api-key-button').classList.toggle('hidden', signedIn);
+        $('#api-key-button').classList.toggle('sm:flex', !signedIn);
+      }
+
+      function showSignInStatus(message, tone) {
+        const element = $('#signin-status');
+        element.textContent = message;
+        element.className =
+          'mt-3 text-[12.5px] ' +
+          (tone === 'error' ? 'text-red-400' : tone === 'success' ? 'text-emerald-400' : 'text-slate-400');
+        element.classList.remove('hidden');
+      }
+
+      function openSignIn() {
+        const signedIn = Boolean(getSession());
+
+        $('#signin-form').classList.toggle('hidden', signedIn);
+        $('#signin-sent').classList.add('hidden');
+        $('#signin-account').classList.toggle('hidden', !signedIn);
+        $('#signin-status').classList.add('hidden');
+
+        if (signedIn) void renderAccountPanel();
+        openModal('signin-modal');
+      }
+
+      $('#signin-button').addEventListener('click', openSignIn);
+      $('#account-button').addEventListener('click', openSignIn);
+
+      $('#signin-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const email = $('#signin-email').value.trim();
+        if (!email || email.indexOf('@') === -1) {
+          showSignInStatus('Въведете имейла, с който сте се регистрирали.', 'error');
+          return;
+        }
+
+        $('#signin-spinner').classList.remove('hidden');
+
         try {
-          await navigator.clipboard.writeText($('#signup-key').textContent);
-          toast('Ключът е копиран.', 'success');
+          const response = await fetch(ENDPOINTS.authSignIn, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+
+          if (response.status === 429) {
+            showSignInStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+            return;
+          }
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          // Deliberately the same screen whether or not the address is known:
+          // this page must not become a way to find out who is a customer.
+          $('#signin-form').classList.add('hidden');
+          $('#signin-sent').classList.remove('hidden');
         } catch (error) {
-          toast('Копирането не стана — маркирайте ключа и копирайте ръчно.', 'error');
+          showSignInStatus('Не се получи: ' + error.message, 'error');
+        } finally {
+          $('#signin-spinner').classList.add('hidden');
         }
       });
 
-      $('#signup-continue').addEventListener('click', function () {
-        closeModal('signup-modal');
-        switchView('catalogue');
+      $('#signout-button').addEventListener('click', async function () {
+        try {
+          await fetch(ENDPOINTS.authSignOut, { method: 'POST', headers: authHeaders() });
+        } catch (error) {
+          // The session dies locally regardless: a network failure must not
+          // leave somebody unable to sign out of a shared computer.
+        }
+
+        setSession(null);
+        account = null;
+        renderAccount();
+        closeModal('signin-modal');
+        toast('Излязохте от този браузър.', 'info');
+        loadProducts();
+      });
+
+      /** Trades `#signin=<token>` for a session, once, at load. */
+      (async function consumeSignInLink() {
+        const match = /[#&]signin=([^&]+)/.exec(window.location.hash);
+        if (!match) {
+          renderAccount();
+          return;
+        }
+
+        const token = decodeURIComponent(match[1]);
+        // Cleared before the request so a refresh cannot replay a spent link
+        // and land on "тази връзка вече е използвана".
+        window.history.replaceState(null, '', window.location.pathname);
+
+        try {
+          const response = await fetch(ENDPOINTS.authSession, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ token }),
+          });
+
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            toast(payload.message || 'Връзката не е валидна.', 'error');
+            renderAccount();
+            return;
+          }
+
+          setSession(payload);
+          account = payload;
+          renderAccount();
+          toast('Влязохте като ' + payload.email, 'success');
+          switchView('dashboard');
+        } catch (error) {
+          toast('Входът не успя: ' + error.message, 'error');
+          renderAccount();
+        }
+      })();
+
+      /** The account panel: who this is, and what is left of the month. */
+      async function renderAccountPanel() {
+        const box = $('#account-usage');
+        box.innerHTML = '<p class="text-[12.5px] text-slate-500">Зареждам…</p>';
+
+        try {
+          const response = await fetch(ENDPOINTS.billingMe, { headers: authHeaders() });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+
+          account = await response.json();
+
+          $('#account-email').textContent = account.email;
+          $('#account-plan').textContent =
+            'План ' + account.plan + ' · ' + account.productLimit + ' следени артикула';
+
+          box.innerHTML =
+            meterHtml(
+              'AI сравнения този месец',
+              account.aiMatchesUsed,
+              account.aiMatchesLimit,
+            ) +
+            (account.apiKeyPrefix
+              ? '<p class="text-[12px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
+                escapeHtml(account.apiKeyPrefix) +
+                '…</span> — за програми. Този вход е за хора.</p>'
+              : '');
+        } catch (error) {
+          box.innerHTML =
+            '<p class="text-[12.5px] text-red-400">Данните за акаунта не се заредиха.</p>';
+        }
+      }
+
+      function meterHtml(label, used, limit) {
+        const share = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+        const tone = share >= 90 ? 'bg-red-500' : share >= 70 ? 'bg-amber-500' : 'bg-accent-500';
+
+        return (
+          '<div>' +
+          '<div class="flex items-baseline justify-between gap-3">' +
+          '<span class="text-[12.5px] text-slate-400">' + escapeHtml(label) + '</span>' +
+          '<span class="num text-[12.5px] font-semibold text-slate-300">' + used + ' / ' + limit + '</span>' +
+          '</div>' +
+          '<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">' +
+          '<div class="h-full rounded-full ' + tone + '" style="width:' + share + '%"></div>' +
+          '</div></div>'
+        );
+      }
+
+      /* ------------------------------------------------------------------ *
+       * Free signup
+       * ------------------------------------------------------------------ */
+
+      $$('[data-signup]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          // Reset to the form: the dialog may still be showing a key from a
+          // previous account, and that key must not be attributed to this one.
+          $('#signup-form').classList.remove('hidden');
+          $('#signup-done').classList.add('hidden');
+          $('#signup-status').classList.add('hidden');
+          openModal('signup-modal');
+        });
+      });
+
+      function showSignupStatus(message, tone) {
+        const element = $('#signup-status');
+        element.textContent = message;
+        element.className =
+          'mt-3 text-[12.5px] ' +
+          (tone === 'error'
+            ? 'text-red-400'
+            : tone === 'success'
+              ? 'text-emerald-400'
+              : 'text-slate-400');
+        element.classList.remove('hidden');
+      }
+
+      $('#signup-form').addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const email = $('#signup-email').value.trim();
+        const name = $('#signup-name').value.trim();
+
+        if (!email || email.indexOf('@') === -1) {
+          showSignupStatus('Въведете имейл, на който да получите ключа.', 'error');
+          return;
+        }
+
+        $('#signup-spinner').classList.remove('hidden');
+        showSignupStatus('Създаваме акаунта…', 'info');
+
+        try {
+          const response = await fetch(ENDPOINTS.authRegister, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(name ? { email, name } : { email }),
+          });
+
+          const payload = await response.json().catch(() => ({}));
+
+          if (response.status === 400) {
+            // Worth spelling out: a throwaway address is something the person
+            // can fix by using their real one.
+            showSignupStatus(payload.message || 'Този имейл не става.', 'error');
+            return;
+          }
+          if (response.status === 429) {
+            showSignupStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+            return;
+          }
+          if (!response.ok) {
+            throw new Error(payload.message || 'HTTP ' + response.status);
+          }
+
+          // No key here any more. It exists only once somebody opens the
+          // mailbox, which is what stops accounts being farmed from addresses
+          // nobody owns.
+          $('#signup-form').classList.add('hidden');
+          $('#signup-done').classList.remove('hidden');
+        } catch (error) {
+          showSignupStatus('Не се получи: ' + error.message, 'error');
+        } finally {
+          $('#signup-spinner').classList.add('hidden');
+        }
       });
 
       /**

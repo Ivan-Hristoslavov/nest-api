@@ -113,28 +113,55 @@ export class UsersService {
    * since there is no password to guess and the alternative hands anyone a
    * denial-of-service against any customer they can name.
    */
-  async createFreeAccount(email: string, name?: string | null): Promise<User> {
+  async createPendingAccount(email: string, name?: string | null): Promise<User> {
     const normalised = this.normaliseEmail(email);
+    const existing = await this.findByEmail(normalised);
 
-    if (await this.findByEmail(normalised)) {
-      throw new ConflictException(
-        'Този имейл вече има акаунт. Ако сте загубили ключа си, пишете ни и ще издадем нов.',
-      );
-    }
+    if (existing) return existing;
 
     const created = await this.usersRepository.save(
       this.usersRepository.create({
         email: normalised,
         name: name?.trim() || null,
-        status: UserStatus.Active,
+        // Pending, not active: the row exists so a link can point at it, and
+        // grants nothing until that link is opened. A registration from an
+        // address nobody reads therefore leaves a dormant row rather than a
+        // working account with an AI allowance to spend.
+        status: UserStatus.Pending,
         plan: UserPlan.Free,
         productLimit: PLAN_PRODUCT_LIMIT[UserPlan.Free],
         aiMatchesLimit: PLAN_AI_MATCH_LIMIT[UserPlan.Free],
       }),
     );
 
-    this.logger.log(`Free signup: ${created.email} (${created.id})`);
+    this.logger.log(`Pending registration: ${created.email} (${created.id})`);
     return created;
+  }
+
+  /**
+   * Turns a verified registration into a usable free account.
+   *
+   * Idempotent in the way that matters: an account that is already active
+   * keeps its key rather than having it rotated out from under whatever is
+   * using it, and only a genuinely new one is issued a first key.
+   */
+  async activateFreeAccount(userId: string): Promise<{ user: User; apiKey: string }> {
+    const user = await this.findOne(userId);
+
+    if (user.status !== UserStatus.Active) {
+      user.status = UserStatus.Active;
+      await this.usersRepository.save(user);
+      this.logger.log(`Verified and activated ${user.email}`);
+    }
+
+    if (user.apiKeyHash) {
+      // Already has a key that cannot be read back. Rotating here would break
+      // whatever is using it just because somebody clicked an old link.
+      return { user, apiKey: '' };
+    }
+
+    const issued = await this.issueApiKey(user.id, 'live');
+    return { user: issued.user, apiKey: issued.apiKey };
   }
 
   /**

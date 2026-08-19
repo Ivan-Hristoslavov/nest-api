@@ -130,7 +130,10 @@ Everything except `/health` and the billing webhook needs `X-API-KEY`.
 | **POST** | **`/api/v1/discovery/basket`** | **Price a whole order at every supplier** |
 | GET | `/api/v1/discovery/compare` | Offers for one article, grouped |
 | POST | `/api/v1/discovery/detect` | Probe a domain before adding it |
-| **POST** | **`/api/v1/billing/signup`** | **Public. Free account + key, no card** |
+| **POST** | **`/api/v1/auth/register`** | **Public. Registers and emails a verification link** |
+| POST | `/api/v1/auth/sign-in` | Public. Emails a one-time sign-in link |
+| POST | `/api/v1/auth/session` | Public. Trades a link for a browser session |
+| POST | `/api/v1/auth/sign-out` | Ends this session only |
 | POST | `/api/v1/billing/checkout` | Public. Starts a Stripe Checkout Session |
 | GET | `/api/v1/billing/plans` | Public. Which plans have a Stripe price configured |
 | POST | `/api/v1/billing/webhook` | Stripe events |
@@ -319,7 +322,11 @@ With no channel configured, alerts are still stored, with `deliveryStatus: "skip
 
 ### Two ways in
 
-**Free, self-served.** `POST /billing/signup` with an email creates an active account on the free plan (10 tracked articles), issues a key, emails it *and* returns it in the response — an onboarding that depends on an inbox loses everyone whose mail is slow or mistyped. Throttled to 5 per hour per IP. An address that already has an account is refused with 409 rather than re-keyed: issuing is destructive, so re-keying would let a stranger lock a customer out.
+**Free, self-served — but not self-granted.** `POST /auth/register` creates a *pending* row and emails a link. Opening the link verifies the mailbox, activates the account, issues the key and opens a browser session in one step.
+
+The key is deliberately not returned from the registration call. It used to be, on the argument that an onboarding depending on an inbox loses people — which is true, and beside the point: it made the address decoration, so a script could farm accounts and their monthly AI allowances from mailboxes nobody owns. Disposable domains and RFC 2606 addresses are refused outright, registration is throttled to 5 per hour per IP, and an address that already has an account is sent a sign-in link instead of a second registration.
+
+**Signing in.** People get sessions, machines get keys. `POST /auth/sign-in` emails a one-time link (15 minutes, single use); `POST /auth/session` trades it for a session token sent as `Authorization: Bearer`; `POST /auth/sign-out` ends that one session and leaves other devices alone. The API key is untouched by any of it — rotating a key does not sign anyone out, and signing out does not break a customer's scripts.
 
 **Paid.** Two ways, and the choice is a tax decision rather than a technical one.
 
