@@ -596,7 +596,8 @@
         </div>
       </div>
 
-      <!-- Mobile tabs -->
+      <!-- Mobile tabs — the same split as the desktop bar, since a phone is
+           where somebody actually stands in a warehouse and searches. -->
       <nav
         class="flex items-center gap-1 border-t border-white/5 px-4 py-2 md:hidden"
         aria-label="Мобилна навигация"
@@ -604,16 +605,37 @@
         <button
           type="button"
           data-view="landing"
+          data-guest-only
           class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
         >
-          Планове
+          За продукта
+        </button>
+        <button
+          type="button"
+          data-view="landing"
+          data-scroll="pricing"
+          data-guest-only
+          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
+        >
+          Цени
+        </button>
+        <button
+          type="button"
+          data-view="catalogue"
+          data-app-only
+          hidden
+          class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
+        >
+          Търсене
         </button>
         <button
           type="button"
           data-view="dashboard"
+          data-app-only
+          hidden
           class="nav-link flex-1 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400"
         >
-          Табло
+          Следени цени
         </button>
       </nav>
     </header>
@@ -5815,13 +5837,13 @@
         strip.classList.remove('hidden');
         strip.innerHTML =
           '<i class="fa-solid fa-circle-plus mr-1.5 text-[10px] text-slate-500"></i>' +
-          'Готови за добавяне (не се търсят, докато не ги добавите): ' +
+          '<span class="mr-1.5">Готови за добавяне (не се търсят, докато не ги добавите):</span>' +
           availableShops
             .map(function (provider) {
               return (
                 '<button type="button" data-add-known="' +
                 escapeHtml(provider.host) +
-                '" class="mx-0.5 rounded-md border border-white/10 bg-ink-850 px-2 py-0.5 text-[11.5px] text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+                '" class="mr-1.5 mt-1 inline-block rounded-md border border-white/10 bg-ink-850 px-2 py-0.5 text-[11.5px] text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
                 escapeHtml(provider.name) +
                 '</button>'
               );
@@ -7889,6 +7911,10 @@
           element.hidden = identified;
           element.classList.toggle('hidden', identified);
         });
+        $$('[data-app-only]').forEach(function (element) {
+          element.hidden = !identified;
+          element.classList.toggle('hidden', !identified);
+        });
 
         void refreshPlanBar();
 
@@ -9545,7 +9571,10 @@
 
       // Visible build stamp: when the UI misbehaves, the first question is
       // always whether the browser is running the current file.
-      $('#build-stamp').textContent = 'build 2026-08-17 17:14';
+      // Read from the response rather than typed: a hand-written stamp is
+      // right until the first time somebody forgets, and this exists precisely
+      // to answer "is the browser running the current file".
+      $('#build-stamp').textContent = 'build ' + document.lastModified;
 
       renderApiKeyBadge();
       // Decides which navigation the header shows, so it runs before the first
