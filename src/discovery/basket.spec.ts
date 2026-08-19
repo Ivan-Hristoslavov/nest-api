@@ -1,3 +1,4 @@
+import { matchNames } from '../matching/deterministic-matcher';
 import { rank, RankableOffer } from './ranking';
 
 const offer = (over: Partial<RankableOffer>): RankableOffer => ({
@@ -123,5 +124,34 @@ describe('basket pricing rules', () => {
 
       expect(hits[0].recordedAt).toBeNull();
     });
+  });
+});
+
+/**
+ * The gate a line's total rests on.
+ *
+ * Previously this was "does the shop's name contain the words the buyer
+ * typed", which is wrong in both directions: a chandelier answers "лампа",
+ * and a German listing whose specification matches perfectly answers nothing
+ * at all. Both mistakes end in an order at the wrong price.
+ */
+describe('what may be counted as a quote for a line', () => {
+  const floor = 0.7;
+
+  it('keeps the chandelier out of a lamp line', () => {
+    expect(matchNames('лампа', 'ПОЛИЛЕЙ КРИСТАЛЕН 8xE14').confidence).toBeLessThan(floor);
+  });
+
+  it('lets a supplier who writes in another language fill the line', () => {
+    // The specification is identical and not one word is shared. Under the old
+    // gate this supplier was reported as unable to supply an article they
+    // stock.
+    const verdict = matchNames('LED крушка 12W Е27', 'LED Lampe 12W E27 neutralweiss');
+    expect(verdict.blocked).toBe(false);
+    expect(verdict.confidence).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it('never lets a different size fill the line', () => {
+    expect(matchNames('КАБЕЛ СВТ 3x1.5', 'КАБЕЛ СВТ 5x4').blocked).toBe(true);
   });
 });

@@ -268,6 +268,23 @@ export function similarity(left: string, right: string): number {
 }
 
 /**
+ * True when the candidate's name carries every word of the query.
+ *
+ * The crude test, and the right one for a crude question: somebody who types
+ * "лампа" has asked for a category, and a listing containing that word is a
+ * match at exactly the precision they asked for. Applying specification
+ * matching to a bare noun would answer "nothing matches" to a question that
+ * has thousands of answers.
+ */
+export function containsAllTokens(candidate: string, query: string): boolean {
+  const words = tokensOf(query);
+  if (words.length === 0) return true;
+
+  const haystack = normaliseProductName(candidate);
+  return words.every((word) => haystack.includes(word));
+}
+
+/**
  * A code that identifies an article rather than describing it.
  *
  * `H05V-K`, `ST9453B`, `CorePro840`. Letters and digits together, long enough

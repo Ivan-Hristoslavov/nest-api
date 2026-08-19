@@ -4,7 +4,7 @@ import {
   compareAttributes,
   extractAttributes,
 } from './attributes';
-import { sameIdentifier, similarity } from './normalisation';
+import { containsAllTokens, sameIdentifier, similarity } from './normalisation';
 
 /** How a verdict was reached, strongest evidence first. */
 export type MatchMethod =
@@ -158,7 +158,33 @@ export function matchDeterministically(
     };
   }
 
-  // --- Rung 6: partial evidence -------------------------------------------
+  // --- Rung 6: a question with nothing to match on ------------------------
+  //
+  // "лампа" states no brand, no measurement, no code. There is nothing to
+  // compare specifications against, and demanding them would answer "nothing
+  // matches" to a question with thousands of answers. So the answer is as
+  // precise as the question: does the listing carry the words, or not.
+  const queryIsBare =
+    query.measurements.length === 0 &&
+    Object.keys(query.specs).length === 0 &&
+    query.modelCodes.length === 0 &&
+    !query.brand;
+
+  if (queryIsBare) {
+    const contains = containsAllTokens(candidate.raw, query.raw);
+
+    return {
+      confidence: contains ? 0.75 : Math.min(0.4, text),
+      method: 'text',
+      reasons: toReasons(comparisons),
+      blocked: false,
+      // A model cannot make a vague question precise, and paying it to confirm
+      // that a lamp is a lamp is the definition of waste.
+      needsAi: false,
+    };
+  }
+
+  // --- Rung 7: partial evidence -------------------------------------------
   //
   // Text similarity alone badly understates two common cases, and both are the
   // ones this product exists for. A German listing — "LED Lampe 12W E27

@@ -161,6 +161,29 @@ describe('deterministic product matching', () => {
     });
   });
 
+  describe('a question with nothing to match on', () => {
+    it('answers a bare noun as precisely as it was asked', () => {
+      // Somebody typing "лампа" asked for a category. Demanding agreeing
+      // specifications would answer "nothing matches" to a question with
+      // thousands of answers.
+      const lamp = matchNames('лампа', 'ЛАМПА LED 9W E27');
+      expect(lamp.confidence).toBeGreaterThanOrEqual(0.7);
+      expect(lamp.needsAi).toBe(false);
+    });
+
+    it('still keeps out what the shop merely guessed at', () => {
+      // homefinishing.bg, verified: asked for "лампа" it offers a chandelier.
+      const chandelier = matchNames('лампа', 'ПОЛИЛЕЙ КРИСТАЛЕН 8xE14');
+      expect(chandelier.confidence).toBeLessThan(0.7);
+    });
+
+    it('gets stricter as soon as the question does', () => {
+      // The same shop, the same chandelier, but now the buyer said 9W E27.
+      const verdict = matchNames('лампа 9W E27', 'ПОЛИЛЕЙ КРИСТАЛЕН 8xE14');
+      expect(verdict.confidence).toBeLessThan(0.7);
+    });
+  });
+
   describe('confidence bands', () => {
     it('labels the bands the interface promises', () => {
       expect(confidenceBand(0.96)).toBe('certain');

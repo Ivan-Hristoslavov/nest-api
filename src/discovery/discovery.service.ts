@@ -15,6 +15,7 @@ import { Repository } from 'typeorm';
 
 import { Shop } from '../shops/entities/shop.entity';
 import { BasketLineDto, BasketResultDto, BasketSupplierDto } from './dto/basket.dto';
+import { DEFAULT_THRESHOLDS } from '../matching/deterministic-matcher';
 import { MatchResult, MatchRunSummary, MatchingService } from '../matching/matching.service';
 import { rank, RankableOffer, RankedHit } from './ranking';
 import { ManualPricesService } from '../shops/manual-prices.service';
@@ -38,6 +39,9 @@ const MAX_RESULTS_PER_SHOP = 8;
  * per search, so the bill follows the questions asked rather than the size of
  * anybody's catalogue.
  */
+/** Below this, an offer is not treated as a quote for the line. */
+const MATCH_FLOOR = DEFAULT_THRESHOLDS.floor;
+
 const SITEMAP_PAGE_BUDGET = 8;
 
 /**
@@ -379,17 +383,60 @@ export class DiscoveryService {
 
       const ranked = rank(offers, target, 40, line.query);
 
-      // One offer per supplier: their cheapest that genuinely matched.
+      // One offer per supplier: their cheapest that is genuinely this article.
       //
-      // Only matched ones count towards a total. A shop search is fuzzy — ask
-      // homefinishing.bg for "лампа" and it offers a chandelier — and a guess
-      // is not a quote for the line. Counted, it inflated that supplier's
-      // order to 2298 € against 220 € elsewhere and would have written them off
-      // for stocking something nobody asked about.
-      const perShop = new Map<string, RankedHit>();
-      for (const hit of ranked) {
-        if (hit.effectivePrice === null || !hit.shopId || !hit.matched) continue;
-        if (!perShop.has(hit.shopId)) perShop.set(hit.shopId, hit);
+      // The gate used to be whether the shop's name contained the words the
+      // buyer typed. That is too crude in both directions: it counted a
+      // chandelier as a quote for "лампа" — inflating one supplier's order to
+      // 2298 € against 220 € elsewhere — and it dropped a German listing whose
+      // specification matched perfectly but whose words did not, reporting a
+      // supplier as unable to fill a line they stock.
+      const candidates = ranked
+        .map((hit, index) => ({ hit, index }))
+        .filter((entry) => entry.hit.effectivePrice !== null && entry.hit.shopId);
+
+      let run = await this.matching.match(
+        ownerId,
+        line.query,
+        candidates.map((entry) => ({
+          id: String(entry.index),
+          name: entry.hit.name,
+          supplier: entry.hit.shopName,
+        })),
+        // Deterministic only, on the first pass. A forty-line order asking a
+        // model per line is forty calls for an answer the specifications
+        // usually give away.
+        { useAi: false },
+      );
+
+      const confident = (results: MatchRunSummary['results']): boolean =>
+        results.some((result) => result.confidence >= MATCH_FLOOR);
+
+      // The exception worth paying for: a line nobody appears to stock. Being
+      // told "no supplier has this" when one does is the expensive mistake, so
+      // that case — and only that case — gets a model.
+      if (candidates.length > 0 && !confident(run.results)) {
+        run = await this.matching.match(
+          ownerId,
+          line.query,
+          candidates.map((entry) => ({
+            id: String(entry.index),
+            name: entry.hit.name,
+            supplier: entry.hit.shopName,
+          })),
+          { useAi: true },
+        );
+      }
+
+      const matchOf = new Map(run.results.map((result) => [result.id, result]));
+
+      const perShop = new Map<string, RankedHit & { match?: MatchResult }>();
+      for (const entry of candidates) {
+        const match = matchOf.get(String(entry.index));
+        if (!match || match.confidence < MATCH_FLOOR) continue;
+        if (!perShop.has(entry.hit.shopId!)) {
+          perShop.set(entry.hit.shopId!, { ...entry.hit, match });
+        }
       }
 
       pricedLines.push({
