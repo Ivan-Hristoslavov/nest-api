@@ -224,7 +224,9 @@ function formatRelative(isoString) {
 
 /** Bulgarian counts one thing differently from many. "1 страници" reads as a bug. */
 function plural(count, one, many) {
-  return Number(count) === 1 ? one : many;
+  // Translated on the way out, so every "3 оферти" built with this comes out
+  // in the reader's language rather than only the ones rewritten by hand.
+  return translate(Number(count) === 1 ? one : many);
 }
 
 /** "90" → "1 ч 30 мин". Minutes past a day read as noise in a table cell. */
@@ -637,176 +639,165 @@ function minutesAgo(minutes) {
 }
 
 /**
- * Demo catalog: one product, several warehouses. This is the shape the
- * whole comparison view is built around — the interesting number is never
- * "the price", it is "the spread between the places that sell it".
+ * The sample catalogue behind the demo dashboard.
+ *
+ * Rewritten from tactical gear to electrical wholesale, which is what the rest
+ * of the product talks about: the hero panel prices cable and bulbs, the sample
+ * search answers "лед крушка", and the dashboard was showing plate carriers and
+ * airsoft replicas. One sample world rather than three, so a visitor moving
+ * between the screens sees the same suppliers and the same articles.
+ *
+ * It also makes the demo translatable at a sane cost. The old set carried
+ * thirty-six product and supplier names across nine categories; this one reuses
+ * the four suppliers from `DEMO_SHOPS` and a handful of articles, so a new
+ * language is a few dozen dictionary entries rather than a catalogue.
+ *
+ * Every price is invented. The screens that show these say so.
  */
 const DEMO_PRODUCTS = [
   {
     id: 'demo-1',
-    name: 'Тактическа жилетка BlackAirsoft SECURITY',
-    sku: 'BA-VEST-SEC-BLK',
-    brand: 'BlackAirsoft',
-    manufacturer: 'BlackAirsoft Europe OOD',
-    model: 'BA-SEC-MOLLE',
-    category: 'Тактически жилетки',
-    gtin: '3800123456781',
-    attributes: { Материя: 'Cordura 1000D', Система: 'MOLLE / PALS', Размер: 'M–XXL', Цвят: 'Черен' },
-    notes: 'Минимална поръчка 5 бр. при BlackAirsoft B2B.',
-    marketPrice: 189.0,
-    targetPrice: 150.0,
+    name: 'Кабел СВТ 3x2.5 мм²',
+    sku: 'KBL-SVT-3X25',
+    brand: 'Булкабел',
+    manufacturer: 'Булкабел АД',
+    model: 'СВТ 3x2.5',
+    category: 'Кабели',
+    gtin: '3800111000012',
+    attributes: { Сечение: '3x2.5 мм²', Жила: 'медни', Изолация: 'ПВЦ', Цвят: 'бял' },
+    notes: 'Цената е на метър. Местният склад дава ценоразпис по имейл.',
+    marketPrice: 5.4,
+    targetPrice: 4.2,
     suppliers: [
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 94.5, previousPrice: 92.0, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'BlackAirsoft Europe OOD', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 101.2, previousPrice: 101.2, inStock: true, status: 'active', currency: 'BGN', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-      { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 88.9, previousPrice: 95.4, inStock: true, status: 'active', currency: 'EUR', location: 'Бърно, Чехия', lastStrategy: 'microdata', updatedAt: minutesAgo(63) },
-      { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 112.0, previousPrice: 108.5, inStock: false, status: 'active', currency: 'EUR', location: 'Лиеж, Белгия', lastStrategy: 'json-ld', updatedAt: minutesAgo(88) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 4.68, previousPrice: 4.68, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Електро Склад ЕООД', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(12) },
+      { name: 'Кабел Про', host: 'kabel-pro.example', price: 4.73, previousPrice: 4.9, inStock: true, status: 'active', currency: 'EUR', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(31) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 5.12, previousPrice: 5.12, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'microdata', updatedAt: minutesAgo(58) },
+      { name: 'Местен склад', host: 'mesten-sklad.example', price: 4.55, previousPrice: 4.55, inStock: true, status: 'active', currency: 'EUR', location: 'Русе, България', lastStrategy: 'manual', updatedAt: minutesAgo(240) },
     ],
   },
   {
     id: 'demo-2',
-    name: 'Нож Smith & Wesson HRT — фиксирано острие',
-    sku: 'SW-HRT-FB-01',
-    brand: 'Smith & Wesson',
-    manufacturer: 'Smith & Wesson Brands, Inc.',
-    model: 'SWHRT9B',
-    category: 'Ножове',
-    gtin: '0028634705122',
-    attributes: { Острие: '9 см, 7Cr17MoV', Тип: 'Фиксирано', Дръжка: 'TPE', Ножница: 'Nylon' },
-    marketPrice: 42.9,
-    targetPrice: 34.0,
+    name: 'LED крушка E27 12W 4000K',
+    sku: 'LED-E27-12W-840',
+    brand: 'Lumex',
+    manufacturer: 'Lumex Lighting',
+    model: 'LX-A60-12W-840',
+    category: 'Осветление',
+    gtin: '3800111000029',
+    attributes: { Мощност: '12W', Фасунга: 'E27', 'Цветна температура': '4000K', Поток: '1055 lm' },
+    marketPrice: 3.2,
+    targetPrice: 2.2,
     suppliers: [
-      { name: 'S&W Dealer EU', host: 'dealer.smith-wesson-eu.com', price: 21.3, previousPrice: 22.9, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, location: 'Виена, Австрия', lastStrategy: 'json-ld', updatedAt: minutesAgo(58) },
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 24.8, previousPrice: 24.8, inStock: true, status: 'active', currency: 'BGN', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 23.15, previousPrice: 21.9, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
+      { name: 'Светлина Трейд', host: 'svetlina.example', price: 2.29, previousPrice: 2.29, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Светлина Трейд ООД', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(8) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 2.63, previousPrice: 2.51, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'selector', updatedAt: minutesAgo(22) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 2.45, previousPrice: 2.45, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'microdata', updatedAt: minutesAgo(45) },
     ],
   },
   {
     id: 'demo-3',
-    name: 'Реплика Specna Arms SA-C02 CORE',
-    sku: 'SPE-01-018315',
-    brand: 'Specna Arms',
-    manufacturer: 'Global Airsoft Sp. z o.o.',
-    model: 'SA-C02 CORE',
-    category: 'Реплики',
-    gtin: '5902543613155',
-    attributes: { Механика: 'AEG, версия 2', Дължина: '740 / 840 мм', Мощност: '~1.4 J', 'Хоп-ъп': 'Регулируем' },
-    notes: 'Най-търсеният артикул — следи се на всеки 2 часа.',
-    marketPrice: 269.0,
-    targetPrice: 210.0,
+    name: 'Контактор 25A 230V 2NO',
+    sku: 'KNT-25A-230-2NO',
+    brand: 'Elmatic',
+    manufacturer: 'Elmatic Industrial',
+    model: 'EM-C25-230',
+    category: 'Апаратура',
+    gtin: '3800111000036',
+    attributes: { Ток: '25A', Напрежение: '230V', Контакти: '2NO', Монтаж: 'DIN шина' },
+    notes: 'Поскъпна с 6% в Техно Депо вчера — алармата се задейства.',
+    marketPrice: 16.9,
+    targetPrice: 11.5,
     suppliers: [
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 158.4, previousPrice: 162.0, inStock: true, status: 'active', currency: 'BGN', isPrimary: true, location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-      { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 149.9, previousPrice: 149.9, inStock: true, status: 'active', currency: 'EUR', location: 'Бърно, Чехия', lastStrategy: 'microdata', updatedAt: minutesAgo(63) },
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 171.0, previousPrice: 168.0, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
-      { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 163.5, previousPrice: 171.2, inStock: true, status: 'active', currency: 'EUR', location: 'Лиеж, Белгия', lastStrategy: 'json-ld', updatedAt: minutesAgo(88) },
-      { name: 'S&W Dealer EU', host: 'dealer.smith-wesson-eu.com', price: 175.0, previousPrice: 175.0, inStock: true, status: 'active', currency: 'EUR', location: 'Виена, Австрия', lastStrategy: 'meta', updatedAt: minutesAgo(58) },
+      { name: 'Кабел Про', host: 'kabel-pro.example', price: 11.4, previousPrice: 11.4, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Кабел Про ЕООД', location: 'Пловдив, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(17) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 12.1, previousPrice: 12.1, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'selector', updatedAt: minutesAgo(36) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 13.2, previousPrice: 12.45, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'microdata', updatedAt: minutesAgo(64) },
     ],
   },
   {
     id: 'demo-4',
-    name: 'Балистични очила ESS Crossbow 3LS',
-    sku: 'ESS-XBW-3LS',
-    brand: 'ESS',
-    manufacturer: 'Eye Safety Systems, Inc.',
-    model: 'EE9007-05',
-    category: 'Защита за очи',
-    gtin: '0811533011253',
-    attributes: { Стандарт: 'MIL-PRF-32432', Стъкла: '3 бр. сменяеми', Покритие: 'Anti-fog' },
-    marketPrice: 128.5,
-    targetPrice: 100.0,
+    name: 'ПВЦ тръба ф20, 3 м',
+    sku: 'PVC-TR-20-3M',
+    brand: 'Пластимо',
+    manufacturer: 'Пластимо ЕООД',
+    model: 'PT-20',
+    category: 'Тръби и канали',
+    gtin: '3800111000043',
+    attributes: { Диаметър: 'ф20', Дължина: '3 м', Материал: 'ПВЦ', Клас: 'твърда' },
+    marketPrice: 1.4,
+    targetPrice: 0.95,
     suppliers: [
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 71.9, previousPrice: 69.5, inStock: true, status: 'active', currency: 'BGN', isPrimary: true, location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 74.4, previousPrice: 74.4, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
+      { name: 'Местен склад', host: 'mesten-sklad.example', price: 0.94, previousPrice: 0.94, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Местен склад', location: 'Русе, България', lastStrategy: 'manual', updatedAt: minutesAgo(180) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 0.97, previousPrice: 0.97, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(27) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 1.02, previousPrice: 1.02, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'selector', updatedAt: minutesAgo(52) },
     ],
   },
   {
     id: 'demo-5',
-    name: 'Каска FAST Maritime + NVG mount',
-    sku: 'TG-HLM-FAST-MT',
-    brand: 'TacticalGear',
-    manufacturer: 'TacticalGear Manufacturing Ltd.',
-    model: 'TG-FAST-MT-NVG',
-    category: 'Каски',
-    gtin: '3800987654321',
-    attributes: { Черупка: 'ABS', Шина: 'ARC', Планка: 'NVG shroud', Тегло: '780 г' },
-    marketPrice: 214.0,
-    targetPrice: 170.0,
+    name: 'Автоматичен прекъсвач C16 1P',
+    sku: 'AVT-C16-1P',
+    brand: 'Elmatic',
+    manufacturer: 'Elmatic Industrial',
+    model: 'EM-B1-C16',
+    category: 'Апаратура',
+    gtin: '3800111000050',
+    attributes: { Ток: '16A', Характеристика: 'C', Полюси: '1P', 'Изключвателна способност': '6kA' },
+    marketPrice: 4.6,
+    targetPrice: 3.0,
     suppliers: [
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 132.8, previousPrice: 129.0, inStock: true, status: 'warning', currency: 'EUR', isPrimary: true, location: 'София, България', lastStrategy: 'json-ld', lastError: 'Отговорът се забави — 9.4 s', updatedAt: minutesAgo(190) },
-      { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 128.0, previousPrice: 128.0, inStock: false, status: 'active', currency: 'EUR', location: 'Бърно, Чехия', lastStrategy: 'microdata', updatedAt: minutesAgo(63) },
-      { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 141.9, previousPrice: 146.0, inStock: true, status: 'active', currency: 'EUR', location: 'Лиеж, Белгия', lastStrategy: 'json-ld', updatedAt: minutesAgo(88) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 3.12, previousPrice: 3.12, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Електро Склад ЕООД', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(19) },
+      { name: 'Кабел Про', host: 'kabel-pro.example', price: 3.35, previousPrice: 3.35, inStock: false, status: 'active', currency: 'EUR', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(41) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 3.28, previousPrice: 3.4, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'microdata', updatedAt: minutesAgo(70) },
     ],
   },
   {
     id: 'demo-6',
-    name: 'Ръкавици Mechanix M-Pact Coyote',
-    sku: 'MX-MPACT-COY-L',
-    brand: 'Mechanix Wear',
-    manufacturer: 'Mechanix Wear, Inc.',
-    model: 'MPT-72-010',
-    category: 'Ръкавици',
-    gtin: '0781513620106',
-    attributes: { Размер: 'L', Защита: 'TPR кокалчета', Длан: 'Синтетична кожа', Цвят: 'Coyote' },
-    marketPrice: 46.9,
-    targetPrice: 38.0,
+    name: 'LED прожектор 50W IP65',
+    sku: 'LED-PRJ-50W-IP65',
+    brand: 'Lumex',
+    manufacturer: 'Lumex Lighting',
+    model: 'LX-FL-50',
+    category: 'Осветление',
+    gtin: '3800111000067',
+    attributes: { Мощност: '50W', Защита: 'IP65', 'Цветна температура': '6500K', Поток: '4250 lm' },
+    marketPrice: 21.5,
+    targetPrice: 14.0,
     suppliers: [
-      { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 27.4, previousPrice: 27.4, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, location: 'Бърно, Чехия', lastStrategy: 'microdata', updatedAt: minutesAgo(63) },
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 26.15, previousPrice: 28.9, inStock: true, status: 'active', currency: 'BGN', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 29.9, previousPrice: 29.9, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
+      { name: 'Светлина Трейд', host: 'svetlina.example', price: 14.9, previousPrice: 15.6, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Светлина Трейд ООД', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(14) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 16.2, previousPrice: 16.2, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'selector', updatedAt: minutesAgo(48) },
     ],
   },
   {
     id: 'demo-7',
-    name: 'Оптика Vector Optics Forester 1-5x24',
-    sku: 'VO-FRST-1524',
-    brand: 'Vector Optics',
-    manufacturer: 'Vector Optics Co., Ltd.',
-    model: 'SCOC-03',
-    category: 'Оптика',
-    gtin: '6606947103093',
-    attributes: { Увеличение: '1-5x', Обектив: '24 мм', Тръба: '30 мм', Ретикул: 'Осветен' },
-    marketPrice: 315.0,
-    targetPrice: 250.0,
+    name: 'Кабелен канал 40x25 мм, 2 м',
+    sku: 'KAN-40X25-2M',
+    brand: 'Пластимо',
+    manufacturer: 'Пластимо ЕООД',
+    model: 'PK-4025',
+    category: 'Тръби и канали',
+    gtin: '3800111000074',
+    attributes: { Размер: '40x25 мм', Дължина: '2 м', Материал: 'ПВЦ', Цвят: 'бял' },
+    marketPrice: 2.9,
+    targetPrice: 1.9,
     suppliers: [
-      { name: 'AirsoftPro Partner', host: 'partner.airsoftpro.cz', price: 199.0, previousPrice: 199.0, inStock: true, status: 'error', currency: 'EUR', isPrimary: true, location: 'Бърно, Чехия', lastStrategy: 'microdata', lastError: 'HTTP 403 — страницата отказа достъп', failureCount: 4, updatedAt: minutesAgo(1490) },
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 212.5, previousPrice: 205.0, inStock: true, status: 'active', currency: 'BGN', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
+      { name: 'Местен склад', host: 'mesten-sklad.example', price: 1.86, previousPrice: 1.86, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Местен склад', location: 'Русе, България', lastStrategy: 'manual', updatedAt: minutesAgo(300) },
+      { name: 'Кабел Про', host: 'kabel-pro.example', price: 2.04, previousPrice: 2.04, inStock: true, status: 'active', currency: 'EUR', location: 'Пловдив, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(33) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 2.18, previousPrice: 2.18, inStock: true, status: 'active', currency: 'EUR', location: 'София, България', lastStrategy: 'selector', updatedAt: minutesAgo(61) },
     ],
   },
   {
     id: 'demo-8',
-    name: 'Гранула BLS Bio 0.28g (3600 бр.)',
-    sku: 'BLS-BIO-028-3600',
-    brand: 'BLS',
-    manufacturer: 'BLS Bio Precision Co., Ltd.',
-    model: 'BLS-BIO-028',
-    category: 'Гранули',
-    gtin: '4718888028366',
-    attributes: { Тегло: '0.28 г', Брой: '3600', Тип: 'Биоразградими', Диаметър: '5.95 ± 0.01 мм' },
-    marketPrice: 24.9,
-    targetPrice: 19.0,
+    name: 'Разклонителна кутия 100x100 IP54',
+    sku: 'RK-100X100-IP54',
+    brand: 'Пластимо',
+    manufacturer: 'Пластимо ЕООД',
+    model: 'PR-100',
+    category: 'Тръби и канали',
+    gtin: '3800111000081',
+    attributes: { Размер: '100x100 мм', Защита: 'IP54', Материал: 'ПВЦ', Монтаж: 'открит' },
+    marketPrice: 3.8,
+    targetPrice: 2.4,
     suppliers: [
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: 12.6, previousPrice: 12.6, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(42) },
-      { name: 'Taginn B2B', host: 'b2b.taginn.eu', price: 11.85, previousPrice: 13.4, inStock: true, status: 'active', currency: 'EUR', location: 'Лиеж, Белгия', lastStrategy: 'json-ld', updatedAt: minutesAgo(88) },
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: 13.2, previousPrice: 13.2, inStock: true, status: 'active', currency: 'BGN', location: 'Пловдив, България', lastStrategy: 'selector', updatedAt: minutesAgo(15) },
-    ],
-  },
-  {
-    // Freshly added, never scraped: four warehouses, not one price yet.
-    // The row has to stay legible in that state too.
-    id: 'demo-9',
-    name: 'Радиостанция Baofeng UV-5R (комплект 2 бр.)',
-    sku: 'BF-UV5R-KIT2',
-    brand: 'Baofeng',
-    manufacturer: 'Fujian Baofeng Electronics Co., Ltd.',
-    model: 'UV-5R',
-    category: 'Комуникации',
-    gtin: '6959335709278',
-    attributes: { Обхват: 'VHF/UHF', Мощност: '5 W', Батерия: '1800 mAh', Комплект: '2 бр. + слушалки' },
-    notes: 'Добавен днес — първата проверка тръгва при следващия sweep.',
-    marketPrice: 59.9,
-    targetPrice: 45.0,
-    suppliers: [
-      { name: 'TacticalGear на едро', host: 'wholesale.tacticalgear.bg', price: null, inStock: null, status: 'warning', currency: 'BGN', isPrimary: true, location: 'Пловдив, България', updatedAt: minutesAgo(4) },
-      { name: 'BlackAirsoft B2B', host: 'b2b.blackairsoft.eu', price: null, inStock: null, status: 'warning', currency: 'EUR', location: 'София, България', updatedAt: minutesAgo(4) },
+      { name: 'Електро Склад', host: 'electro-sklad.example', price: 2.42, previousPrice: 2.42, inStock: true, status: 'active', currency: 'EUR', isPrimary: true, sellerName: 'Електро Склад ЕООД', location: 'София, България', lastStrategy: 'json-ld', updatedAt: minutesAgo(25) },
+      { name: 'Техно Депо', host: 'tehno-depo.example', price: 2.61, previousPrice: 2.55, inStock: true, status: 'active', currency: 'EUR', location: 'Варна, България', lastStrategy: 'microdata', updatedAt: minutesAgo(55) },
     ],
   },
 ];
@@ -1041,7 +1032,7 @@ function productThumb(product) {
     '<span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[12px] font-bold ring-1 ' +
     toneFor(label) +
     '">' +
-    escapeHtml(initialsFor(label)) +
+    escapeHtml(initialsFor(translate(label))) +
     '</span>'
   );
 }
@@ -1133,7 +1124,7 @@ function warehouseChipHtml(product, view) {
     '<span class="num text-[10.5px] font-semibold text-slate-300">' +
     tally.total +
     '</span>' +
-    '<span class="text-[10.5px] text-slate-500">склада</span>' +
+    '<span class="text-[10.5px] text-slate-500">' + translate('склада') + '</span>' +
     (dots ? '<span class="wh-dots">' + dots + '</span>' : '') +
     (overflow > 0 ? '<span class="text-[10px] text-slate-500">+' + overflow + '</span>' : '') +
     '</span>'
@@ -1752,7 +1743,9 @@ function renderTable() {
       // and manufacturer are deliberately *not* repeated here — they are
       // in the brand hover card, in the expanded row and in the filters,
       // and a third copy in the row only made every cell two lines tall.
-      const identity = [product.model, product.sku].filter(Boolean).join(' · ');
+      const identity = [product.model && translate(product.model), product.sku]
+        .filter(Boolean)
+        .join(' · ');
 
       return (
         '<tr data-row="' +
@@ -1806,7 +1799,9 @@ function renderTable() {
         (product.targetPrice != null
           ? '<span class="num mt-0.5 block whitespace-nowrap text-[11px] ' +
             (view.belowTarget ? 'text-emerald-400' : 'text-slate-500') +
-            '">праг ' +
+            '">' +
+            translate('праг') +
+            ' ' +
             euro.format(product.targetPrice) +
             '</span>'
           : '') +
@@ -1858,7 +1853,7 @@ function renderTable() {
         '"><i class="fa-solid ' +
         badge.icon +
         ' text-[10px]"></i>' +
-        badge.label +
+        translate(badge.label) +
         '</span>' +
         '<span class="mt-1 block truncate text-[11px] text-slate-500">' +
         escapeHtml(formatRelative(view.updatedAt)) +
@@ -1983,7 +1978,9 @@ function rebuildSupplierFilter() {
   const previous = select.value;
 
   select.innerHTML =
-    '<option value="">Всички складове (' +
+    '<option value="">' +
+    translate('Всички складове') +
+    ' (' +
     hosts.size +
     ')</option>' +
     Array.from(hosts)
@@ -2031,13 +2028,17 @@ function rebuildFacetFilter(selector, field, allLabel) {
     counts.size +
     ')</option>' +
     Array.from(counts.keys())
-      .sort((a, b) => a.localeCompare(b, 'bg'))
+      .sort((a, b) => translate(a).localeCompare(translate(b), document.documentElement.lang || 'bg'))
       .map(
         (value) =>
+          // The option's *value* stays the raw one, because that is what the
+          // filter compares against the product rows; only the label a person
+          // reads is translated. Swapping both would filter a Romanian label
+          // against a Bulgarian field and match nothing.
           '<option value="' +
           escapeHtml(value) +
           '">' +
-          escapeHtml(value) +
+          escapeHtml(translate(value)) +
           ' (' +
           counts.get(value) +
           ')</option>',
@@ -3197,13 +3198,17 @@ function renderShopOutcomes(result) {
     (carrying.length ? 'text-slate-200' : 'text-slate-400') +
     '">' +
     (carrying.length
-      ? 'Намерено в ' + carrying.length + ' от ' + result.shops.length + ' магазина'
+      ? formatMessage('Намерено в {found} от {total} магазина', {
+          found: carrying.length,
+          total: result.shops.length,
+        })
       : 'Не се намери в нито един магазин') +
     '</p>' +
     '<p class="text-[11.5px] text-slate-500"><i class="fa-solid fa-bolt mr-1 text-[9px] text-accent-400"></i>' +
-    'попитани на живо за ' +
-    (result.durationMs / 1000).toFixed(1) +
-    ' сек</p>' +
+    formatMessage('попитани на живо за {seconds} сек', {
+      seconds: (result.durationMs / 1000).toFixed(1),
+    }) +
+    '</p>' +
     '</div>' +
     (carrying.length
       ? '<div class="mt-2.5 flex flex-wrap gap-1.5">' +
@@ -3286,7 +3291,7 @@ function matchBadgeHtml(hit) {
     '" title="' +
     escapeHtml(title) +
     '">' +
-    band.label +
+    translate(band.label) +
     ' ' +
     percent +
     '%' +
@@ -3327,16 +3332,22 @@ function verdictHtml(best, priced, dearest) {
     escapeHtml(best.effectiveCurrency) +
     '</strong></span>' +
     (saving >= 0.01
-      ? '<span class="text-[12.5px] text-slate-500">с ' +
-        saving.toFixed(2) +
-        ' ' +
-        escapeHtml(best.effectiveCurrency) +
-        ' под най-скъпата оферта за същия артикул</span>'
+      ? '<span class="text-[12.5px] text-slate-500">' +
+        escapeHtml(
+          formatMessage('с {amount} под най-скъпата оферта за същия артикул', {
+            amount: saving.toFixed(2) + ' ' + best.effectiveCurrency,
+          }),
+        ) +
+        '</span>'
       : '') +
     (best.match
-      ? '<span class="ml-auto text-[12px] text-slate-500">съвпадение ' +
-        Math.round(best.match.confidence * 100) +
-        '%</span>'
+      ? '<span class="ml-auto text-[12px] text-slate-500">' +
+        escapeHtml(
+          formatMessage('съвпадение {percent}%', {
+            percent: Math.round(best.match.confidence * 100),
+          }),
+        ) +
+        '</span>'
       : '') +
     '</div>'
   );
@@ -3540,7 +3551,8 @@ function renderCatalogueResults(hits, query, matching) {
         // here. Under a cent it is noise and saying it would be padding.
         (spread && spread >= 0.01
           ? '<span class="ml-auto rounded-md bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">' +
-            'разлика до ' +
+            translate('разлика до') +
+            ' ' +
             spread.toFixed(2) +
             ' ' +
             escapeHtml(currency || '') +
@@ -3703,7 +3715,9 @@ function renderCatalogueResults(hits, query, matching) {
         escapeHtml(hit.effectiveCurrency) +
         '</span></span>' +
         (hit.discountPercent > 0 && hit.listedPrice !== null
-          ? '<span class="mt-0.5 block text-right text-[10.5px] text-accent-300/80">след −' +
+          ? '<span class="mt-0.5 block text-right text-[10.5px] text-accent-300/80">' +
+            translate('след') +
+            ' −' +
             hit.discountPercent +
             '%</span>'
           : '') +
@@ -3749,9 +3763,9 @@ function renderCatalogueResults(hits, query, matching) {
 
   const range =
     singleGroup && priced.length > 1
-      ? ' · от <strong class="num text-emerald-400">' +
+      ? ' · ' + translate('от') + ' <strong class="num text-emerald-400">' +
         cheapest.toFixed(2) +
-        '</strong> до <strong class="num text-slate-300">' +
+        '</strong> ' + translate('до') + ' <strong class="num text-slate-300">' +
         dearest.toFixed(2) +
         ' ' +
         escapeHtml(priced[0].effectiveCurrency) +
@@ -3767,17 +3781,19 @@ function renderCatalogueResults(hits, query, matching) {
   const spread =
     singleGroup && priced.length > 1 && cheapest > 0
       ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-semibold text-emerald-400">' +
-        'спестявате до ' +
-        (dearest - cheapest).toFixed(2) +
-        ' ' +
-        escapeHtml(priced[0].effectiveCurrency) +
-        ' на бройка</span>'
+        escapeHtml(
+          formatMessage('спестявате до {amount} на бройка', {
+            amount: (dearest - cheapest).toFixed(2) + ' ' + priced[0].effectiveCurrency,
+          }),
+        ) +
+        '</span>'
       : bestSaving > 0
         ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-semibold text-emerald-400">' +
-          'спестявате до ' +
-          bestSaving.toFixed(2) +
-          ' ' +
-          escapeHtml(priced[0].effectiveCurrency) +
+          escapeHtml(
+            formatMessage('спестявате до {amount}', {
+              amount: bestSaving.toFixed(2) + ' ' + priced[0].effectiveCurrency,
+            }),
+          ) +
           '</span>'
         : '';
 
@@ -3799,9 +3815,13 @@ function renderCatalogueResults(hits, query, matching) {
     '<p class="text-[12.5px] text-slate-500">' +
     '<strong class="text-slate-300">' +
     hits.length +
-    '</strong> оферти в ' +
-    suppliers.size +
-    (suppliers.size === 1 ? ' магазин' : ' магазина') +
+    '</strong> ' +
+    escapeHtml(
+      pluralMessage(suppliers.size, {
+        one: 'оферти в {n} магазин',
+        other: 'оферти в {n} магазина',
+      }),
+    ) +
     range +
     '</p>' +
     matchingSummaryHtml(matching) +
@@ -3997,7 +4017,10 @@ const DEMO_SHOPS = [
  */
 const DEMO_CATALOGUE = [
   {
-    keywords: ['крушка', 'лампа', 'led', 'лед', 'e27', 'bulb', 'lamp'],
+    // Every language the interface offers, because a Greek visitor types
+    // "λάμπα" and a Romanian one "bec" — and being told the sample catalogue
+    // has nothing is the demo failing at the one thing it exists for.
+    keywords: ['крушка', 'лампа', 'led', 'лед', 'e27', 'bulb', 'lamp', 'bec', 'λάμπα', 'λαμπα', 'λαμπτήρας'],
     groupKey: 'bulb-12w',
     groupLabel: 'LED крушка E27 12W 4000K',
     understood: {
@@ -4051,7 +4074,7 @@ const DEMO_CATALOGUE = [
     ],
   },
   {
-    keywords: ['кабел', 'свт', 'cable', 'провод', 'жило'],
+    keywords: ['кабел', 'свт', 'cable', 'провод', 'жило', 'cablu', 'myym', 'καλώδιο', 'καλωδιο', 'nym'],
     groupKey: 'cable-3x25',
     groupLabel: 'Кабел СВТ 3x2.5 мм²',
     understood: {
@@ -4097,14 +4120,22 @@ function demoNormalise(text) {
   const aliases = { лед: 'led', олед: 'oled', тв: 'tv' };
   return String(text || '')
     .toLowerCase()
+    // Greek accents and the final sigma are the same letters to a buyer:
+    // "λάμπα" and "λαμπα" must both find the lamp.
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ς/g, 'σ')
     .replace(/[\p{L}]+/gu, (word) => aliases[word] || word);
 }
 
 function demoEntryFor(query) {
   const folded = demoNormalise(query);
+  // Both sides folded, so an accented keyword in the list still matches a
+  // query typed without accents, and the other way round.
   return (
-    DEMO_CATALOGUE.find((entry) => entry.keywords.some((word) => folded.indexOf(word) !== -1)) ||
-    null
+    DEMO_CATALOGUE.find((entry) =>
+      entry.keywords.some((word) => folded.indexOf(demoNormalise(word)) !== -1),
+    ) || null
   );
 }
 
