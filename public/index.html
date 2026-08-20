@@ -342,6 +342,253 @@
               </p>
             </div>
 
+            <!-- The product, before the reader has to take our word for it.
+                 Live markup rather than a screenshot: the rows hover, the
+                 palette follows the theme, and every string goes through the
+                 same dictionary as the rest of the page — so this shows
+                 Bulgarian articles to a Bulgarian reader and English ones to
+                 an English reader, without a second image to maintain per
+                 language and per theme. -->
+            <figure class="mx-auto mt-14 max-w-4xl">
+              <div
+                class="overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel"
+              >
+                <!-- Window bar. Says "this is the application" faster than a
+                     caption does. -->
+                <div
+                  class="flex items-center gap-3 border-b border-white/8 bg-ink-850 px-4 py-2.5"
+                >
+                  <span class="flex gap-1.5">
+                    <span class="h-2.5 w-2.5 rounded-full bg-red-500/60"></span>
+                    <span class="h-2.5 w-2.5 rounded-full bg-amber-500/60"></span>
+                    <span class="h-2.5 w-2.5 rounded-full bg-emerald-500/60"></span>
+                  </span>
+                  <span class="text-[12px] font-medium text-slate-400">
+                    Търси при доставчиците
+                  </span>
+                  <span
+                    class="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent-500/12 px-2.5 py-1 text-[11px] font-semibold text-accent-600 dark:text-accent-300"
+                  >
+                    <span class="relative flex h-1.5 w-1.5">
+                      <span
+                        class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75"
+                      ></span>
+                      <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent-500"></span>
+                    </span>
+                    4 доставчика на живо
+                  </span>
+                </div>
+
+                <!-- Scrolls inside its own box on a phone rather than pushing
+                     the page sideways. -->
+                <div class="overflow-x-auto">
+                  <table class="w-full min-w-[560px] text-left">
+                    <thead>
+                      <tr
+                        class="border-b border-white/8 text-[10.5px] uppercase tracking-wide text-slate-500"
+                      >
+                        <th class="py-2.5 pl-5 pr-3 font-semibold">Артикул</th>
+                        <th class="px-3 py-2.5 font-semibold">Най-евтин днес</th>
+                        <th class="px-3 py-2.5 text-right font-semibold">Вашата цена</th>
+                        <th class="py-2.5 pl-3 pr-5 text-right font-semibold">Спестявате</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5">
+                      <!-- ROW 1 -->
+                      <tr class="group/row cursor-default transition hover:bg-white/[0.03]">
+                        <td class="py-3 pl-5 pr-3">
+                          <div class="text-[13.5px] font-medium text-slate-200">
+                            Кабел СВТ 3x2.5 мм²
+                          </div>
+                          <div
+                            class="mt-1.5 flex flex-wrap gap-1 opacity-60 transition group-hover/row:opacity-100"
+                          >
+                            <span
+                              class="rounded bg-accent-500/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-600 dark:text-accent-300"
+                              >Електро Склад 4,12 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Кабел Про 4,35 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Техно Депо 4,60 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Светлина Трейд 4,88 €</span
+                            >
+                          </div>
+                        </td>
+                        <td class="px-3 py-3">
+                          <div class="num text-[13.5px] font-semibold text-accent-600 dark:text-accent-300">
+                            4,12 €
+                          </div>
+                          <div class="text-[11px] text-slate-500">Електро Склад</div>
+                        </td>
+                        <td class="num px-3 py-3 text-right text-[13.5px] text-slate-400">4,60 €</td>
+                        <td class="py-3 pl-3 pr-5 text-right">
+                          <span
+                            class="num inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400"
+                          >
+                            <i class="fa-solid fa-arrow-down text-[9px]"></i>10,4%
+                          </span>
+                        </td>
+                      </tr>
+
+                      <!-- ROW 2 -->
+                      <tr class="group/row cursor-default transition hover:bg-white/[0.03]">
+                        <td class="py-3 pl-5 pr-3">
+                          <div class="text-[13.5px] font-medium text-slate-200">
+                            LED крушка E27 12W 4000K
+                          </div>
+                          <div
+                            class="mt-1.5 flex flex-wrap gap-1 opacity-60 transition group-hover/row:opacity-100"
+                          >
+                            <span
+                              class="rounded bg-accent-500/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-600 dark:text-accent-300"
+                              >Светлина Трейд 2,18 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Електро Склад 2,31 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Техно Депо 2,45 €</span
+                            >
+                            <span
+                              class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-500 line-through"
+                              >Кабел Про — няма</span
+                            >
+                          </div>
+                        </td>
+                        <td class="px-3 py-3">
+                          <div class="num text-[13.5px] font-semibold text-accent-600 dark:text-accent-300">
+                            2,18 €
+                          </div>
+                          <div class="text-[11px] text-slate-500">Светлина Трейд</div>
+                        </td>
+                        <td class="num px-3 py-3 text-right text-[13.5px] text-slate-400">2,45 €</td>
+                        <td class="py-3 pl-3 pr-5 text-right">
+                          <span
+                            class="num inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400"
+                          >
+                            <i class="fa-solid fa-arrow-down text-[9px]"></i>11,0%
+                          </span>
+                        </td>
+                      </tr>
+
+                      <!-- ROW 3 — carries the alert, which is the other half
+                           of the product: it noticed before you did. -->
+                      <tr class="group/row cursor-default transition hover:bg-white/[0.03]">
+                        <td class="py-3 pl-5 pr-3">
+                          <div class="flex items-center gap-2">
+                            <span class="text-[13.5px] font-medium text-slate-200">
+                              Контактор 25A 230V
+                            </span>
+                            <span
+                              class="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                            >
+                              <i class="fa-solid fa-bell text-[8px]"></i>поскъпна вчера
+                            </span>
+                          </div>
+                          <div
+                            class="mt-1.5 flex flex-wrap gap-1 opacity-60 transition group-hover/row:opacity-100"
+                          >
+                            <span
+                              class="rounded bg-accent-500/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-600 dark:text-accent-300"
+                              >Кабел Про 11,40 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Електро Склад 12,10 €</span
+                            >
+                            <span
+                              class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-600 dark:text-amber-400"
+                              >Техно Депо 13,20 € ↑ 6%</span
+                            >
+                          </div>
+                        </td>
+                        <td class="px-3 py-3">
+                          <div class="num text-[13.5px] font-semibold text-accent-600 dark:text-accent-300">
+                            11,40 €
+                          </div>
+                          <div class="text-[11px] text-slate-500">Кабел Про</div>
+                        </td>
+                        <td class="num px-3 py-3 text-right text-[13.5px] text-slate-400">13,20 €</td>
+                        <td class="py-3 pl-3 pr-5 text-right">
+                          <span
+                            class="num inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400"
+                          >
+                            <i class="fa-solid fa-arrow-down text-[9px]"></i>13,6%
+                          </span>
+                        </td>
+                      </tr>
+
+                      <!-- ROW 4 — the supplier with no website, priced from an
+                           uploaded list, because that is the thing nobody else
+                           does. -->
+                      <tr class="group/row cursor-default transition hover:bg-white/[0.03]">
+                        <td class="py-3 pl-5 pr-3">
+                          <div class="flex items-center gap-2">
+                            <span class="text-[13.5px] font-medium text-slate-200">
+                              ПВЦ тръба ф20, 3 м
+                            </span>
+                            <span
+                              class="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
+                            >
+                              от ценоразпис
+                            </span>
+                          </div>
+                          <div
+                            class="mt-1.5 flex flex-wrap gap-1 opacity-60 transition group-hover/row:opacity-100"
+                          >
+                            <span
+                              class="rounded bg-accent-500/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-600 dark:text-accent-300"
+                              >Местен склад 0,94 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Електро Склад 0,97 €</span
+                            >
+                            <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400"
+                              >Техно Депо 1,02 €</span
+                            >
+                          </div>
+                        </td>
+                        <td class="px-3 py-3">
+                          <div class="num text-[13.5px] font-semibold text-accent-600 dark:text-accent-300">
+                            0,94 €
+                          </div>
+                          <div class="text-[11px] text-slate-500">Местен склад</div>
+                        </td>
+                        <td class="num px-3 py-3 text-right text-[13.5px] text-slate-400">0,98 €</td>
+                        <td class="py-3 pl-3 pr-5 text-right">
+                          <span
+                            class="num inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-1 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400"
+                          >
+                            <i class="fa-solid fa-arrow-down text-[9px]"></i>4,1%
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div
+                  class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/8 bg-ink-850 px-5 py-3 text-[11.5px] text-slate-500"
+                >
+                  <span>
+                    <i class="fa-regular fa-clock mr-1.5 text-[10px]"></i>Проверено преди 12 минути
+                  </span>
+                  <span>
+                    <i class="fa-solid fa-arrow-trend-down mr-1.5 text-[10px] text-emerald-500"></i>
+                    <strong class="font-semibold text-slate-300">71,10 €</strong> спестени този месец
+                  </span>
+                  <span class="ml-auto">примерни данни</span>
+                </div>
+              </div>
+
+              <figcaption class="mt-3 text-center text-[12px] text-slate-500">
+                Задръжте върху ред, за да видите всички доставчици за него.
+              </figcaption>
+            </figure>
+
             <!-- The problem, stated as the reader lives it -->
             <div class="mx-auto mt-16 grid max-w-4xl gap-4 sm:grid-cols-3">
               <div class="rounded-2xl border border-slate-700/25 bg-ink-900 p-5 text-left">

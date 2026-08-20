@@ -164,7 +164,10 @@ function authHeaders(extra) {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.prototype.slice.call(document.querySelectorAll(selector));
 
-const euro = new Intl.NumberFormat('bg-BG', {
+// Pinned to the currency, not to the country: the amounts are euros whoever
+// is reading. Only the presentation follows the language — "4,12 €" for a
+// Bulgarian reader, "€4.12" for an English one.
+const euro = new Intl.NumberFormat(document.documentElement.lang || 'bg-BG', {
   style: 'currency',
   currency: 'EUR',
   minimumFractionDigits: 2,
