@@ -133,6 +133,12 @@ export class MyAccountDto {
     example: 5,
   })
   trialDaysLeft!: number | null;
+
+  @ApiProperty({
+    description: 'Whether a second factor is required to sign this account in.',
+    example: false,
+  })
+  totpEnabled!: boolean;
 }
 
 export class StartCheckoutDto {

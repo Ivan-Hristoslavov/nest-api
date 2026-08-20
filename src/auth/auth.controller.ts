@@ -188,6 +188,7 @@ export class AuthController {
     return {
       secret: enrolment.secret,
       otpauthUrl: enrolment.otpauthUrl,
+      qrSvg: enrolment.qrSvg,
       recoveryCodes: enrolment.recoveryCodes,
     };
   }

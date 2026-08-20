@@ -458,6 +458,19 @@ npm run migration:run    # apply pending migrations
 
 ---
 
+## 10a. Continuous integration
+
+`.github/workflows/ci.yml` runs lint, types, the 230 unit tests, the build and
+a parse check over the front end on every push and pull request. The suite
+existed before this did and was run when somebody remembered to, which is the
+state in which tests quietly rot until the day they are needed.
+
+The e2e suite is **not** in CI: it boots the real TypeORM connection and needs
+a reachable database with credentials CI does not have. Run it by hand with
+`npm run test:e2e`.
+
+---
+
 ## 11. Launch checklist
 
 Ordered so nothing on the list depends on something below it.
@@ -466,6 +479,7 @@ Ordered so nothing on the list depends on something below it.
 
 - [ ] **Fill in `COMPANY`** near the bottom of [public/index.html](public/index.html): company name, EIK, address, contact email, mail provider, effective date. Until then the terms, the privacy policy, the GDPR appendix, the footer and every "write to us" button show `[ФИРМА]` and the contact link is disabled — visibly, on purpose.
 - [ ] **Have a lawyer read the three legal pages.** They are written against what the code actually does, which is the hard half, but they are not legal advice.
+- [ ] **Run the migrations.** `npm run migration:run`. As of the two-factor work the live database is behind the entities — `trial_ends_at`, `totp_secret`, `totp_confirmed_at` and `totp_recovery_hashes` do not exist yet, and any lookup by API key fails with a 500 until they do. `npm run schema:log` shows the drift.
 - [ ] **Rotate the credentials.** The database password and Supabase keys were shared in plain text during setup, and `API_KEY` is a sample.
 - [ ] **Set `CORS_ORIGINS`** to your domain instead of `*`.
 - [ ] **Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and a price id per plan** (`STRIPE_STARTER_PRICE_ID`, `STRIPE_PRO_PRICE_ID`, `STRIPE_BUSINESS_PRICE_ID`). Without them the pricing buttons degrade to "write to us" — correct, but nobody can buy. `GET /billing/plans` tells you what is live.

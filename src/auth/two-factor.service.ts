@@ -1,5 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
+import { toString } from 'qrcode';
+
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -24,6 +26,8 @@ const RECOVERY_LENGTH = 10;
 export interface TwoFactorEnrolment {
   secret: string;
   otpauthUrl: string;
+  /** The same URI as a scannable SVG, inlined as a data URI. */
+  qrSvg: string;
   recoveryCodes: string[];
 }
 
@@ -86,7 +90,26 @@ export class TwoFactorService {
       totpRecoveryHashes: recoveryCodes.map(digest),
     });
 
-    return { secret, otpauthUrl: otpauthUrl(secret, email), recoveryCodes };
+    const uri = otpauthUrl(secret, email);
+
+    // Rendered here rather than in the browser: a QR library on the page would
+    // be another script to allow through a CSP that currently permits none,
+    // and this is one call on a screen nobody opens twice.
+    const svg = await toString(uri, {
+      type: 'svg',
+      margin: 1,
+      // Medium correction: the URI is short, and a code that still scans with
+      // a thumb over one corner beats a marginally smaller one.
+      errorCorrectionLevel: 'M',
+      color: { dark: '#0f172a', light: '#ffffff' },
+    });
+
+    return {
+      secret,
+      otpauthUrl: uri,
+      qrSvg: `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`,
+      recoveryCodes,
+    };
   }
 
   /** Switches it on, once the phone has proved it works. */

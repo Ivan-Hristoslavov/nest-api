@@ -100,7 +100,11 @@ const ENDPOINTS = {
   authSignIn: API_BASE + '/auth/sign-in',
   authSession: API_BASE + '/auth/session',
   authTotpVerify: API_BASE + '/auth/totp/verify',
+  authTotpSetup: API_BASE + '/auth/totp/setup',
+  authTotpEnable: API_BASE + '/auth/totp/enable',
+  authTotpDisable: API_BASE + '/auth/totp/disable',
   authSessions: API_BASE + '/auth/sessions',
+  authSignOutEverywhere: API_BASE + '/auth/sign-out-everywhere',
   authSignOut: API_BASE + '/auth/sign-out',
   stats: API_BASE + '/stats',
   billingRotateKey: API_BASE + '/billing/users/api-key',
@@ -4990,6 +4994,10 @@ function showSignInStatus(message, tone) {
 }
 
 function openSignIn() {
+  // Refreshed on open rather than on a timer: this dialog is the only place
+  // any of it is visible, and it is opened rarely.
+  void refreshPlanBar().then(() => refreshSecurityPanel());
+
   const signedIn = Boolean(getSession());
 
   $('#signin-form').classList.toggle('hidden', signedIn);
@@ -6736,6 +6744,258 @@ $('#copy-api-link').addEventListener('click', async function () {
   }, 2000);
 
   toast('Линкът е копиран. Ключът се подава през хедъра x-api-key.', 'success');
+});
+
+
+/* ------------------------------------------------------------------ *
+ * Security: the second factor, and the devices that are signed in
+ *
+ * Both were reachable only with curl until this existed. A protection
+ * a customer cannot switch on protects nobody, and "sign out
+ * everywhere" as the only answer to a laptop left in an office is a
+ * blunt instrument.
+ * ------------------------------------------------------------------ */
+
+/** The secret and codes from `setup`, held until enrolment is confirmed. */
+let pendingEnrolment = null;
+
+function showTotpState(state) {
+  ['off', 'enrol', 'on'].forEach(function (name) {
+    const panel = $('#totp-' + name);
+    if (panel) panel.classList.toggle('hidden', name !== state);
+  });
+}
+
+function showTotpStatus(message, tone) {
+  const element = $('#totp-status');
+  element.textContent = message;
+  element.className =
+    'mt-2 text-[12.5px] ' + (tone === 'error' ? 'text-red-400' : 'text-slate-400');
+  element.classList.remove('hidden');
+}
+
+/** Reflects whatever the account says, and lists the devices. */
+async function refreshSecurityPanel() {
+  if (!isIdentified()) return;
+
+  showTotpState(account && account.totpEnabled ? 'on' : 'off');
+  await renderSessions();
+}
+
+async function renderSessions() {
+  const list = $('#sessions-list');
+  if (!list) return;
+
+  try {
+    const response = await fetch(ENDPOINTS.authSessions, { headers: authHeaders() });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const sessions = await response.json();
+
+    if (!sessions.length) {
+      list.innerHTML =
+        '<p class="text-[12.5px] text-slate-500">' + translate('Няма други активни входове.') + '</p>';
+      return;
+    }
+
+    list.innerHTML = sessions
+      .map(function (session) {
+        return (
+          '<div class="flex items-center gap-3 rounded-lg border border-white/8 bg-ink-900 px-3 py-2">' +
+          '<i class="fa-solid ' +
+          (isPhone(session.userAgent) ? 'fa-mobile-screen' : 'fa-laptop') +
+          ' text-[12px] text-slate-500"></i>' +
+          '<div class="min-w-0 flex-1">' +
+          '<p class="truncate text-[12.5px] text-slate-300">' +
+          escapeHtml(describeDevice(session.userAgent)) +
+          (session.current
+            ? '<span class="ml-1.5 rounded bg-accent-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-600 dark:text-accent-300">' +
+              translate('този браузър') +
+              '</span>'
+            : '') +
+          '</p>' +
+          '<p class="text-[11px] text-slate-500">' +
+          escapeHtml(
+            session.lastUsedAt
+              ? translate('Последно ползван') + ' ' + formatRelative(session.lastUsedAt)
+              : translate('Още не е ползван'),
+          ) +
+          '</p></div>' +
+          (session.current
+            ? ''
+            : '<button type="button" data-revoke="' +
+              escapeHtml(session.id) +
+              '" title="' +
+              escapeHtml(translate('Прекрати този вход')) +
+              '" class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-red-400">' +
+              '<i class="fa-solid fa-xmark text-[11px]"></i></button>') +
+          '</div>'
+        );
+      })
+      .join('');
+
+    $$('[data-revoke]').forEach(function (button) {
+      button.addEventListener('click', async function () {
+        await mutate('Прекратяването', () =>
+          fetch(ENDPOINTS.authSessions + '/' + button.dataset.revoke, {
+            method: 'DELETE',
+            headers: authHeaders(),
+          }),
+        );
+        void renderSessions();
+      });
+    });
+  } catch (error) {
+    list.innerHTML =
+      '<p class="text-[12.5px] text-slate-500">' + escapeHtml(failureText(error, 'Не се зареди')) + '</p>';
+  }
+}
+
+/** "Chrome on macOS" out of a user-agent string, or something honest. */
+function describeDevice(userAgent) {
+  if (!userAgent) return translate('Неизвестно устройство');
+
+  const browser = /Edg\//.test(userAgent)
+    ? 'Edge'
+    : /Chrome\//.test(userAgent)
+      ? 'Chrome'
+      : /Safari\//.test(userAgent)
+        ? 'Safari'
+        : /Firefox\//.test(userAgent)
+          ? 'Firefox'
+          : translate('браузър');
+
+  const platform = /iPhone|iPad/.test(userAgent)
+    ? 'iOS'
+    : /Android/.test(userAgent)
+      ? 'Android'
+      : /Macintosh/.test(userAgent)
+        ? 'macOS'
+        : /Windows/.test(userAgent)
+          ? 'Windows'
+          : /Linux/.test(userAgent)
+            ? 'Linux'
+            : '';
+
+  return platform ? browser + ' · ' + platform : browser;
+}
+
+function isPhone(userAgent) {
+  return /iPhone|iPad|Android/.test(userAgent || '');
+}
+
+$('#totp-setup').addEventListener('click', async function () {
+  try {
+    const response = await fetch(ENDPOINTS.authTotpSetup, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || 'HTTP ' + response.status);
+
+    pendingEnrolment = payload;
+
+    $('#totp-qr').src = payload.qrSvg;
+    // Grouped in fours: this is read off a screen and typed into a phone by
+    // hand when the camera will not focus.
+    $('#totp-secret').textContent = payload.secret.replace(/(.{4})/g, '$1 ').trim();
+    $('#totp-recovery').innerHTML = payload.recoveryCodes
+      .map((code) => '<span class="select-all">' + escapeHtml(code) + '</span>')
+      .join('');
+    $('#totp-code').value = '';
+    $('#totp-status').classList.add('hidden');
+
+    showTotpState('enrol');
+  } catch (error) {
+    toast(failureText(error, 'Не се получи'), 'error');
+  }
+});
+
+$('#totp-cancel').addEventListener('click', function () {
+  // The secret stays on the row unconfirmed and is replaced by the next
+  // attempt. Nothing is enforced until `enable` succeeds, so abandoning
+  // half-way locks nobody out.
+  pendingEnrolment = null;
+  showTotpState('off');
+});
+
+$('#totp-confirm').addEventListener('click', async function () {
+  const code = $('#totp-code').value.trim();
+
+  if (code.length < 6) {
+    showTotpStatus(translate('Въведете шестте цифри от приложението.'), 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(ENDPOINTS.authTotpEnable, {
+      method: 'POST',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ code: code }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      showTotpStatus(translate(payload.message || 'Кодът не е верен.'), 'error');
+      return;
+    }
+
+    pendingEnrolment = null;
+    if (account) account.totpEnabled = true;
+    showTotpState('on');
+    toast(translate('Вторият фактор е включен.'), 'success');
+  } catch (error) {
+    showTotpStatus(failureText(error, 'Не се получи'), 'error');
+  }
+});
+
+$('#totp-disable').addEventListener('click', async function () {
+  const code = window.prompt(
+    translate('Въведете код от приложението, за да изключите втория фактор:'),
+  );
+  if (!code) return;
+
+  try {
+    const response = await fetch(ENDPOINTS.authTotpDisable, {
+      method: 'POST',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ code: code.trim() }),
+    });
+
+    if (!response.ok) {
+      toast(translate('Кодът не е верен.'), 'error');
+      return;
+    }
+
+    if (account) account.totpEnabled = false;
+    showTotpState('off');
+    toast(translate('Вторият фактор е изключен.'), 'info');
+  } catch (error) {
+    toast(failureText(error, 'Не се получи'), 'error');
+  }
+});
+
+$('#signout-everywhere').addEventListener('click', async function () {
+  const confirmed = await confirmDialog(
+    translate('Изход от всички устройства'),
+    translate(
+      'Всички браузъри, включително този, ще бъдат отписани. API ключът ви не се променя.',
+    ),
+    translate('Отпиши всички'),
+  );
+
+  if (!confirmed) return;
+
+  await fetch(ENDPOINTS.authSignOutEverywhere, { method: 'POST', headers: authHeaders() }).catch(
+    () => undefined,
+  );
+
+  setSession(null);
+  account = null;
+  renderAccount();
+  closeModal('signin-modal');
+  toast(translate('Отписани сте от всички устройства.'), 'success');
 });
 
 /* ------------------------------------------------------------------ *

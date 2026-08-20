@@ -125,6 +125,12 @@ export class TwoFactorEnrolmentDto {
   otpauthUrl!: string;
 
   @ApiProperty({
+    description: 'The same URI as a scannable SVG, inlined as a data URI.',
+    example: 'data:image/svg+xml;base64,PHN2Zy…',
+  })
+  qrSvg!: string;
+
+  @ApiProperty({
     description: 'Eight single-use codes for when the phone is lost. Shown once.',
     type: [String],
   })

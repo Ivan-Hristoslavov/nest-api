@@ -257,6 +257,9 @@ export class BillingController {
       // what stops a second one — but the interface has nothing to say about it.
       trialEndsAt: user.isOnTrial() ? user.trialEndsAt!.toISOString() : null,
       trialDaysLeft: user.isOnTrial() ? user.trialDaysLeft() : null,
+      // The state, never the secret: this is what lets the interface show
+      // "on" without anything sensitive leaving the server.
+      totpEnabled: user.hasTwoFactor(),
     };
   }
 

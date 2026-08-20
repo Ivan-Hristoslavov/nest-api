@@ -18,7 +18,7 @@
     "prestart:dev": "npm run build:css",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "prestart:prod": "npm run build:css",
+    "prestart:prod": "npm run build",
     "start:prod": "node dist/main",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -31,7 +31,8 @@
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert",
-    "schema:log": "npm run typeorm -- schema:log"
+    "schema:log": "npm run typeorm -- schema:log",
+    "build:og": "node scripts/build-og-image.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
@@ -54,6 +55,7 @@
     "iconv-lite": "^0.7.3",
     "nodemailer": "^9.0.5",
     "pg": "^8.13.1",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "stripe": "^22.5.0",
@@ -69,6 +71,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^8.0.1",
+    "@types/qrcode": "^1.5.6",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

@@ -1,0 +1,68 @@
+# Runs on every push and every pull request.
+#
+# The suite existed and was only ever run when somebody remembered to — which
+# is the state in which tests quietly rot until the day they are needed. The
+# jobs are ordered cheapest first, so an obvious mistake fails in thirty
+# seconds rather than after a full build.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first: the older run is
+# reporting on code nobody has any more.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` rather than `install`: it installs exactly the lockfile, so a
+      # green run here means the same tree a deploy will get.
+      - run: npm ci
+
+      - name: Formatting and lint
+        run: npx eslint "{src,test}/**/*.ts"
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test -- --ci --runInBand
+
+      # Builds the stylesheet as well as the TypeScript, so a Tailwind config
+      # that no longer parses is caught here rather than by a customer looking
+      # at an unstyled page.
+      - name: Build
+        run: npm run build
+
+      - name: The interface parses
+        run: |
+          node --check public/app.js
+          node --check public/i18n.js
+          node --check public/theme.js
+
+      # A locale file with a trailing comma is a page that silently falls back
+      # to Bulgarian for everyone who chose that language.
+      - name: Locale files are valid JSON
+        run: |
+          for file in public/locales/*.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$file','utf8'))" \
+              || { echo "::error file=$file::not valid JSON"; exit 1; }
+          done
+
+      - name: The stylesheet was generated
+        run: test -s public/styles.css
