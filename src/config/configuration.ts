@@ -20,6 +20,8 @@ export interface AppConfig {
 
 export interface AuthConfig {
   apiKeyHeader: string;
+  /** Encrypts stored TOTP secrets. Absent means two-factor cannot be enabled. */
+  totpEncryptionKey?: string;
   /** Operator keys from the environment; customer keys live in the database. */
   apiKeys: string[];
   keyCacheTtlMs: number;
@@ -128,6 +130,31 @@ export interface MatchingConfig {
   timeoutMs: number;
 }
 
+/**
+ * How long observed prices are kept, and at what resolution.
+ *
+ * `price_history` is append-only and never stops growing: two thousand watched
+ * articles checked hourly is around seventeen million rows a year, per
+ * customer. The trend charts do not need that — they need every reading while
+ * it is recent and one a day after that.
+ */
+/**
+ * Crash reporting.
+ *
+ * Off unless a DSN is supplied, and deliberately so: a half-initialised
+ * reporter that swallows errors on its way to nowhere is worse than none.
+ */
+export interface ObservabilityConfig {
+  sentryDsn?: string;
+  tracesSampleRate: number;
+  environment: string;
+}
+
+export interface HistoryConfig {
+  fullDays: number;
+  keepDays: number;
+}
+
 export interface CurrencyConfig {
   /** Units per one euro, e.g. `{ USD: 1.08 }`. Empty means "do not convert". */
   ratesPerEur: Record<string, number>;
@@ -143,6 +170,8 @@ export interface Configuration {
   checkout: CheckoutConfig;
   matching: MatchingConfig;
   currency: CurrencyConfig;
+  history: HistoryConfig;
+  observability: ObservabilityConfig;
   auth: AuthConfig;
   database: DatabaseConfig;
   supabase: SupabaseConfig;
@@ -208,8 +237,18 @@ export const configuration = (): Configuration => {
       corsOrigins: parseCorsOrigins(env.CORS_ORIGINS, env.NODE_ENV),
       logLevel: env.LOG_LEVEL,
     },
+    observability: {
+      sentryDsn: env.SENTRY_DSN?.trim() || undefined,
+      tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+      environment: env.NODE_ENV,
+    },
+    history: {
+      fullDays: env.HISTORY_FULL_DAYS,
+      keepDays: Math.max(env.HISTORY_KEEP_DAYS, env.HISTORY_FULL_DAYS),
+    },
     auth: {
       apiKeyHeader: env.API_KEY_HEADER.toLowerCase(),
+      totpEncryptionKey: env.TOTP_ENCRYPTION_KEY?.trim() || undefined,
       apiKeys: collectApiKeys(env),
       keyCacheTtlMs: env.API_KEY_CACHE_TTL_MS,
     },

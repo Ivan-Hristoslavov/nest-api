@@ -11,12 +11,17 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { accessLogMiddleware } from './common/middleware/access-log.middleware';
-import { AppConfig, CurrencyConfig } from './config/configuration';
+import { AppConfig, CurrencyConfig, configuration } from './config/configuration';
+import { initObservability } from './common/observability';
 import { convertibleCurrencies, setRatesPerEur } from './products/currency';
 import { NodeEnvironment } from './config/env.validation';
 import { setupSwagger } from './swagger';
 
 async function bootstrap(): Promise<void> {
+  // Before the application, not after: Sentry patches the modules it traces as
+  // they load, so initialising it later leaves half the context missing.
+  initObservability(configuration().observability);
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Buffer startup logs until the app is ready, so nothing is lost when
     // initialization fails (e.g. a bad Supabase connection string).

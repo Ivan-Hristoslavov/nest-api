@@ -37,6 +37,9 @@ A buyer — an electrician, a shop, a distributor — has five wholesale supplie
 - **`CORS_ORIGINS=*` is refused at boot in production.** List the real origins.
 - **The CSP is written out in `main.ts`**, and `script-src` is `'self'` alone — no `'unsafe-inline'`, no `'unsafe-eval'`. That is what makes an injected `<script>` inert on a page that keeps a session token in `localStorage`. It is affordable only because the front end has no inline script left: the stylesheet is built (`npm run build:css`) instead of compiled in the browser by the Tailwind CDN, and the application lives in `public/app.js`. Swagger UI needs inline script, so it gets a relaxed policy on its own path rather than the whole origin losing the header.
 - **Sign-in links are rate limited twice**: per IP by the controller's throttle, and per mailbox in `AuthService`, so a caller with many IPs cannot bury one inbox.
+- **Optional two-factor authentication (TOTP).** This is the answer to the one real weakness in a passwordless design: sign-in proves the mailbox, so whoever holds the mailbox holds the account — and a password would not change that, because a password reset goes through the same mailbox. The secret is the only value in the system that cannot be a digest (codes are computed from it), so it is encrypted with `TOTP_ENCRYPTION_KEY`, held in the environment rather than the database. Set that key or the feature refuses to switch on. Endpoints: `POST /auth/totp/setup`, `/enable`, `/disable`, `/verify`. The algorithm is implemented in `src/auth/totp.ts` and pinned by the RFC 6238 test vectors, which is what makes owning forty lines safer than a dependency in the authentication path.
+- **Sessions are visible and revocable**: `GET /auth/sessions` lists the signed-in devices, `DELETE /auth/sessions/:id` ends one, `POST /auth/sign-out-everywhere` ends them all. The API key is deliberately untouched by all three.
+- **Crashes are reported**, when `SENTRY_DSN` is set. Request bodies, cookies and the `Authorization` / `X-API-KEY` headers are stripped before anything leaves — a customer's supplier list and their negotiated discounts do not belong in a third-party error tracker.
 
 ---
 
@@ -402,6 +405,26 @@ node -e "const c=require('crypto'),b=JSON.stringify({event_id:'evt_'+Date.now(),
 ```
 
 Then POST `/tmp/wh.json` with that value as the `Paddle-Signature` header.
+
+---
+
+## 8a. Price history retention
+
+`price_history` is append-only, and it is the only table with no natural
+ceiling: two thousand watched articles across four suppliers, re-checked
+hourly, is roughly seventy million rows a year for one customer.
+
+Nothing deletes a trend. `HistoryRetentionService` runs nightly and:
+
+1. keeps **every** observation for `HISTORY_FULL_DAYS` (30), because "it moved
+   twice on Tuesday" is a question people actually ask;
+2. thins everything older to **one reading per listing per day**, which draws
+   the same line at a thirtieth of the size;
+3. drops anything past `HISTORY_KEEP_DAYS` (400) — just over a year, so this
+   March can still be compared with last March.
+
+Both passes are batched, because this runs against the database that is
+serving customers.
 
 ---
 

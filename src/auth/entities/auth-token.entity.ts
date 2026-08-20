@@ -13,6 +13,14 @@ export enum AuthTokenKind {
   /** What the browser holds afterwards. Long-lived, revocable, renewable. */
   Session = 'session',
   /**
+   * Issued instead of a session when an account has a second factor.
+   *
+   * Minutes long and single use. It says "the mailbox has been proved, one
+   * thing left" and grants nothing on its own — which is what stops somebody
+   * who has taken over a mailbox from being signed in by that alone.
+   */
+  TwoFactorChallenge = 'two_factor_challenge',
+  /**
    * The first link, which also proves the mailbox exists.
    *
    * Separate from a plain sign-in link because exchanging it does more:

@@ -275,6 +275,37 @@ export class User {
   @Column({ name: 'access_expires_at', type: 'timestamptz', nullable: true })
   accessExpiresAt!: Date | null;
 
+  /**
+   * The TOTP secret, encrypted.
+   *
+   * Never returned by any endpoint and never selected by an ordinary lookup:
+   * the only thing that needs it is the code check on sign-in. `select: false`
+   * means a stray `findOne` cannot leak it into a response by accident, the
+   * way `apiKeyHash` is protected.
+   */
+  @Column({ name: 'totp_secret', type: 'varchar', length: 255, nullable: true, select: false })
+  totpSecret!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'When two-factor authentication was switched on. Null when it is off.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ name: 'totp_confirmed_at', type: 'timestamptz', nullable: true })
+  totpConfirmedAt!: Date | null;
+
+  /**
+   * Digests of the unused recovery codes.
+   *
+   * Hashed, like everything else that is only ever compared — a recovery code
+   * is a password to the account and a leaked list of them in plain text would
+   * be worse than having no second factor at all. Each is removed as it is
+   * spent, so the column doubles as the count of how many are left.
+   */
+  @Column({ name: 'totp_recovery_hashes', type: 'jsonb', nullable: true, select: false })
+  totpRecoveryHashes!: string[] | null;
+
   @ApiProperty({ type: String, format: 'date-time' })
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
@@ -291,6 +322,11 @@ export class User {
   isActive(now: Date = new Date()): boolean {
     if (this.status !== UserStatus.Active) return false;
     return this.accessExpiresAt === null || this.accessExpiresAt > now;
+  }
+
+  /** Whether a second factor is required to sign this account in. */
+  hasTwoFactor(): boolean {
+    return this.totpConfirmedAt !== null;
   }
 
   /** Whether this account is inside its free trial right now. */

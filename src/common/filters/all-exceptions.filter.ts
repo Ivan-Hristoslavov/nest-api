@@ -11,6 +11,7 @@ import { Request } from 'express';
 import { QueryFailedError } from 'typeorm';
 
 import { ErrorResponseDto } from '../dto/error-response.dto';
+import { reportError } from '../observability';
 
 /** PostgreSQL SQLSTATE codes we translate into meaningful HTTP statuses. */
 const PG_ERROR_STATUS: Record<string, { status: HttpStatus; message: string }> = {
@@ -64,6 +65,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      // Sent onward as well as logged. A 500 nobody sees is a customer who
+      // finds the bug before we do, and by then they have already decided
+      // what the product is worth.
+      reportError(exception, {
+        path: body.path,
+        userId: (request as { user?: { id?: string } }).user?.id,
+      });
+
       this.logger.error(
         `${request.method} ${body.path} -> ${status}`,
         exception instanceof Error ? exception.stack : String(exception),

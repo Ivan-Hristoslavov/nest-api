@@ -40,7 +40,11 @@ describe('registration', () => {
     id: 'u1',
     email: 'kupuvach@moiat-magazin.bg',
     status: UserStatus.Pending,
-  } as User;
+    totpConfirmedAt: null,
+    // The fixture is a plain object, so the entity's own methods have to be
+    // supplied: `exchange` asks whether a second factor is owed.
+    hasTwoFactor: () => false,
+  } as unknown as User;
 
   beforeEach(async () => {
     tokens = {

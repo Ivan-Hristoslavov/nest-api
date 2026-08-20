@@ -99,6 +99,8 @@ const ENDPOINTS = {
   billingMe: API_BASE + '/billing/me',
   authSignIn: API_BASE + '/auth/sign-in',
   authSession: API_BASE + '/auth/session',
+  authTotpVerify: API_BASE + '/auth/totp/verify',
+  authSessions: API_BASE + '/auth/sessions',
   authSignOut: API_BASE + '/auth/sign-out',
   stats: API_BASE + '/stats',
   billingRotateKey: API_BASE + '/billing/users/api-key',
@@ -5053,6 +5055,64 @@ $('#signout-button').addEventListener('click', async function () {
   loadProducts();
 });
 
+/**
+ * Asks for the second factor and finishes signing in.
+ *
+ * A prompt rather than a dialog of its own: this is the rarest screen in the
+ * product — only accounts that switched two-factor on ever see it — and a
+ * bespoke modal for it would be a lot of markup nobody looks at. The challenge
+ * lasts five minutes, so a mistyped code can simply be asked for again.
+ */
+async function promptForSecondFactor(challenge) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = window.prompt(
+      translate('Въведете кода от приложението за удостоверяване (или код за възстановяване):'),
+    );
+
+    if (!code) {
+      toast(translate('Входът е прекратен.'), 'info');
+      renderAccount();
+      return;
+    }
+
+    try {
+      const response = await fetch(ENDPOINTS.authTotpVerify, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ challenge: challenge, code: code.trim() }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        setSession(payload);
+        account = payload;
+        renderAccount();
+
+        if (payload.apiKey) {
+          setApiKey(payload.apiKey);
+          renderApiKeyBadge();
+          showIssuedKey(payload.apiKey);
+        } else {
+          toast(translate('Влязохте като') + ' ' + payload.email, 'success');
+        }
+
+        void refreshPlanBar();
+        return;
+      }
+
+      toast(translate(payload.message || 'Кодът не е верен.'), 'error');
+    } catch (error) {
+      toast(failureText(error, 'Входът не успя'), 'error');
+      renderAccount();
+      return;
+    }
+  }
+
+  toast(translate('Твърде много опити. Поискайте нова връзка за вход.'), 'error');
+  renderAccount();
+}
+
 /** Trades `#signin=<token>` for a session, once, at load. */
 (async function consumeSignInLink() {
   const match = /[#&]signin=([^&]+)/.exec(window.location.hash);
@@ -5078,6 +5138,15 @@ $('#signout-button').addEventListener('click', async function () {
     if (!response.ok) {
       toast(payload.message || 'Връзката не е валидна.', 'error');
       renderAccount();
+      return;
+    }
+
+    // An account with a second factor is not signed in yet: what came back is
+    // a challenge, and the six digits finish the job. Handled here rather than
+    // left to fail, because a link that silently stores a null token is a
+    // customer who can never get in.
+    if (payload.twoFactorRequired) {
+      await promptForSecondFactor(payload.challenge);
       return;
     }
 

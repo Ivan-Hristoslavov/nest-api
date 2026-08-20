@@ -28,7 +28,14 @@ describe('AuthService', () => {
   };
   let mail: { sendSignInLink: jest.Mock<Promise<boolean>, [User, string, number]> };
 
-  const account = { id: 'u1', email: 'kupuvach@example.com' } as User;
+  const account = {
+    id: 'u1',
+    email: 'kupuvach@example.com',
+    totpConfirmedAt: null,
+    // The fixture is a plain object, so the entity's own methods have to be
+    // supplied: `exchange` asks whether a second factor is owed.
+    hasTwoFactor: () => false,
+  } as unknown as User;
 
   /** A stored row, with only the fields a given test cares about. */
   const row = (over: Partial<AuthToken>): AuthToken => ({

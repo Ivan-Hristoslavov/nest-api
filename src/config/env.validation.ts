@@ -5,11 +5,13 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUrl,
   Max,
   Min,
+  MinLength,
   validateSync,
 } from 'class-validator';
 
@@ -354,6 +356,73 @@ export class EnvironmentVariables {
   @Min(100)
   @IsOptional()
   SCRAPER_RETRY_BASE_DELAY_MS = 1000;
+
+  /**
+   * The key the TOTP secrets are encrypted with.
+   *
+   * Kept out of the database on purpose: a dump of the table is useless
+   * without it, and that separation is the whole reason a second factor
+   * survives a leak. Without it set, two-factor authentication cannot be
+   * switched on — refusing is the honest answer, storing the secrets in plain
+   * text is not.
+   *
+   * Generate with `openssl rand -base64 32`.
+   */
+  @IsString()
+  @MinLength(16)
+  @IsOptional()
+  TOTP_ENCRYPTION_KEY?: string;
+
+  /**
+   * Where crashes are reported, if anywhere.
+   *
+   * Empty in development and on any deployment that has not been given one,
+   * and the integration stays switched off rather than half-initialised. A
+   * server whose only record of a 500 is a log line nobody is tailing is a
+   * server whose customers find its bugs before it does.
+   */
+  @IsString()
+  @IsOptional()
+  SENTRY_DSN?: string;
+
+  /**
+   * Fraction of requests traced for performance, 0 to 1.
+   *
+   * Zero by default: traces cost money per event and the first thing anybody
+   * needs from this is stack traces on errors, not flame graphs.
+   */
+  @Transform(toNumber)
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  @IsOptional()
+  SENTRY_TRACES_SAMPLE_RATE = 0;
+
+  /**
+   * How long every single observation is kept.
+   *
+   * Inside this window the history is complete, to the check: this is what
+   * "the price moved twice on Tuesday" is answered from. Outside it, one
+   * reading per listing per day is enough to draw the same line.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  HISTORY_FULL_DAYS = 30;
+
+  /**
+   * How long the thinned history is kept before it goes entirely.
+   *
+   * Just over a year by default, so a buyer can still compare this March with
+   * last March — which is the comparison that catches an annual price list
+   * being quietly reissued.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  HISTORY_KEEP_DAYS = 400;
 
   // --- Alerting ------------------------------------------------------------
   @Transform(toBoolean)

@@ -18,6 +18,15 @@ const LINK_TTL_MS = 15 * 60_000;
 const SESSION_TTL_MS = 30 * 24 * 3600_000;
 
 /**
+ * How long there is to produce a second factor.
+ *
+ * Five minutes: long enough to unlock a phone and find the right entry among
+ * thirty, short enough that a challenge left open on a shared computer is not
+ * a way in an hour later.
+ */
+const CHALLENGE_TTL_MS = 5 * 60_000;
+
+/**
  * How many links one address may be sent in an hour, and over what window.
  *
  * The controller already throttles per IP, which stops one machine from
@@ -42,6 +51,29 @@ export interface IssuedSession {
    * also proved somebody reads the mailbox.
    */
   apiKey?: string;
+}
+
+/** One signed-in device, as the account's owner sees it. */
+export interface SessionSummary {
+  id: string;
+  userAgent: string | null;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  expiresAt: Date;
+  /** True for the session making the request, so it is not revoked by accident. */
+  current: boolean;
+}
+
+/**
+ * Handed back when the mailbox is proved but a second factor is still owed.
+ *
+ * The challenge grants nothing by itself: it is a receipt saying which account
+ * is halfway through signing in, and it expires in minutes.
+ */
+export interface TwoFactorRequired {
+  twoFactor: true;
+  challenge: string;
+  expiresAt: Date;
 }
 
 /** Why an exchange failed, in terms the interface can explain. */
@@ -202,7 +234,7 @@ export class AuthService {
   async exchange(
     token: string,
     userAgent?: string,
-  ): Promise<IssuedSession | { failure: ExchangeFailure }> {
+  ): Promise<IssuedSession | TwoFactorRequired | { failure: ExchangeFailure }> {
     const row = await this.tokens.findOne({
       where: [
         { tokenHash: hashToken(token), kind: AuthTokenKind.SignInLink },
@@ -228,6 +260,25 @@ export class AuthService {
       await this.mail.sendApiKey(user, issued.apiKey);
     }
 
+    // An account with a second factor gets a challenge instead of a session.
+    // The key, when this exchange issued one, still goes out: it was earned by
+    // proving the mailbox, and withholding it would strand somebody who
+    // enabled two-factor before their first script ever ran.
+    if (user.hasTwoFactor()) {
+      const challenge = await this.issueChallenge(user, apiKey);
+      this.logger.log(`Second factor owed for ${user.email}`);
+      return challenge;
+    }
+
+    return this.openSession(user, userAgent, apiKey);
+  }
+
+  /** Mints the session itself, once everything owed has been paid. */
+  private async openSession(
+    user: User,
+    userAgent: string | undefined,
+    apiKey: string | undefined,
+  ): Promise<IssuedSession> {
     const session = generateToken('pg_sess');
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
 
@@ -243,6 +294,63 @@ export class AuthService {
 
     this.logger.log(`Session opened for ${user.email}`);
     return { token: session.token, expiresAt, user, apiKey };
+  }
+
+  /**
+   * Records "this account is halfway in" for a few minutes.
+   *
+   * The API key, if this sign-in issued one, rides along on the row rather
+   * than being returned now — it is shown exactly once, and that moment has to
+   * be the response that finally opens the session.
+   */
+  private async issueChallenge(user: User, apiKey?: string): Promise<TwoFactorRequired> {
+    const { token, hash } = generateToken('pg_2fa');
+    const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
+
+    await this.tokens.save(
+      this.tokens.create({
+        userId: user.id,
+        tokenHash: hash,
+        kind: AuthTokenKind.TwoFactorChallenge,
+        expiresAt,
+        // Reused rather than adding a column: this field is only ever read for
+        // sessions, and the key is gone from the row within minutes either way.
+        userAgent: apiKey ? `key:${apiKey}` : null,
+      }),
+    );
+
+    return { twoFactor: true, challenge: token, expiresAt };
+  }
+
+  /**
+   * Spends a challenge, if the code that comes with it is right.
+   *
+   * The challenge is marked used before the session exists, for the same
+   * reason a sign-in link is: raced twice, it must not produce two sessions.
+   * A wrong code leaves the challenge alive so somebody who fat-fingered six
+   * digits does not have to start from their inbox again.
+   */
+  async completeTwoFactor(
+    challengeToken: string,
+    verify: (userId: string) => Promise<boolean>,
+    userAgent?: string,
+  ): Promise<IssuedSession | { failure: ExchangeFailure | 'code' }> {
+    const row = await this.tokens.findOne({
+      where: { tokenHash: hashToken(challengeToken), kind: AuthTokenKind.TwoFactorChallenge },
+    });
+
+    if (!row) return { failure: 'unknown' };
+    if (row.usedAt) return { failure: 'used' };
+    if (row.expiresAt.getTime() < Date.now()) return { failure: 'expired' };
+
+    if (!(await verify(row.userId))) return { failure: 'code' };
+
+    await this.tokens.update({ id: row.id }, { usedAt: new Date() });
+
+    const user = await this.users.findOne(row.userId);
+    const apiKey = row.userAgent?.startsWith('key:') ? row.userAgent.slice(4) : undefined;
+
+    return this.openSession(user, userAgent, apiKey);
   }
 
   /**
@@ -271,6 +379,54 @@ export class AuthService {
   /** Ends every session of an account — after a key rotation, or on request. */
   async signOutEverywhere(userId: string): Promise<void> {
     await this.tokens.delete({ userId, kind: AuthTokenKind.Session });
+  }
+
+  /**
+   * The devices this account is signed in on.
+   *
+   * Without this, "sign out everywhere" is the only answer to a laptop left in
+   * an office, and a customer who suspects one device has no way to look. The
+   * digest is never returned: the current session is identified by comparing
+   * the presented token's digest here, so the browser can say "this one" without
+   * anything being handed back that could sign somebody in.
+   */
+  async listSessions(userId: string, currentToken?: string): Promise<SessionSummary[]> {
+    const rows = await this.tokens.find({
+      where: { userId, kind: AuthTokenKind.Session },
+      order: { lastUsedAt: 'DESC', createdAt: 'DESC' },
+      take: 50,
+    });
+
+    const currentHash = currentToken ? hashToken(currentToken) : null;
+    const now = Date.now();
+
+    return rows
+      .filter((row) => row.expiresAt.getTime() > now)
+      .map((row) => ({
+        id: row.id,
+        userAgent: row.userAgent,
+        createdAt: row.createdAt,
+        lastUsedAt: row.lastUsedAt,
+        expiresAt: row.expiresAt,
+        current: currentHash !== null && row.tokenHash === currentHash,
+      }));
+  }
+
+  /**
+   * Ends one named session.
+   *
+   * Scoped to the owner, so an id guessed or copied from somewhere else
+   * revokes nothing. Returns whether a row was actually removed, which is what
+   * lets the caller answer 404 rather than pretending.
+   */
+  async revokeSession(userId: string, sessionId: string): Promise<boolean> {
+    const result = await this.tokens.delete({
+      id: sessionId,
+      userId,
+      kind: AuthTokenKind.Session,
+    });
+
+    return (result.affected ?? 0) > 0;
   }
 
   /**
