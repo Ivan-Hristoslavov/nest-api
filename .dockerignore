@@ -1,0 +1,19 @@
+# Never into an image: it would bake live credentials into a layer that
+# anyone who can pull the image can read back.
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+coverage
+.git
+.github
+*.log
+
+# Generated during the image build, not copied into it.
+public/styles.css
+
+.DS_Store
+.idea
+.vscode

@@ -4,7 +4,14 @@ import { createTransport, Transporter } from 'nodemailer';
 
 import { Configuration, MailConfig } from '../config/configuration';
 import { codeBlock, dataRows, escapeHtml, noticeBox, paragraph, renderEmail } from './email-layout';
-import { User } from './entities/user.entity';
+import {
+  PLAN_PRODUCT_LIMIT,
+  TRIAL_AI_MATCHES,
+  TRIAL_DAYS,
+  TRIAL_PLAN,
+  User,
+  UserPlan,
+} from './entities/user.entity';
 
 /** Plan names as a customer would recognise them. */
 const PLAN_LABELS: Record<string, string> = {
@@ -111,9 +118,17 @@ export class MailService implements OnModuleInit {
           'warn',
         ),
         dataRows([
-          ['План', plan],
+          [
+            'План',
+            user.isOnTrial() ? `${plan} — пробен, ${user.trialDaysLeft() ?? TRIAL_DAYS} дни` : plan,
+          ],
           ['Следени артикула', String(user.productLimit)],
-          ['AI сравнения', `${user.aiMatchesLimit} на месец`],
+          [
+            'AI сравнения',
+            user.isOnTrial()
+              ? `${user.aiMatchesLimit} за пробния период`
+              : `${user.aiMatchesLimit} на месец`,
+          ],
           ['Доставчици', 'без ограничение'],
         ]),
       ],
@@ -179,13 +194,14 @@ export class MailService implements OnModuleInit {
       supportEmail: this.config.supportEmail,
       body: [
         paragraph(
-          'Потвърдете, че този имейл е ваш, и акаунтът се отваря веднага — с ключ за API-то и безплатния план.',
+          `Потвърдете, че този имейл е ваш, и акаунтът се отваря веднага — с ${TRIAL_DAYS} дни ПРО, без карта и без абонамент.`,
         ),
         dataRows([
-          ['План', 'Безплатен'],
-          ['Следени артикула', String(user.productLimit)],
-          ['AI сравнения', `${user.aiMatchesLimit} на месец`],
+          ['Пробен период', `${TRIAL_DAYS} дни ПРО, без карта`],
+          ['Следени артикула', `${PLAN_PRODUCT_LIMIT[TRIAL_PLAN]} през пробния период`],
+          ['AI сравнения', `${TRIAL_AI_MATCHES} за периода`],
           ['Доставчици', 'без ограничение'],
+          ['След това', `безплатен план, ${PLAN_PRODUCT_LIMIT[UserPlan.Free]} артикула`],
         ]),
         noticeBox(
           `Връзката важи <strong>${minutes} минути</strong> и работи веднъж. Ако не сте се регистрирали вие — не правете нищо и акаунтът никога не се отваря.`,
@@ -220,6 +236,86 @@ export class MailService implements OnModuleInit {
         paragraph('Сравненията не изтичат в края на месеца — платили сте за брой, не за срок.'),
       ],
       cta: { label: 'Към търсенето', url: this.config.appUrl },
+    });
+
+    return this.send(user.email, subject, html, text);
+  }
+
+  /**
+   * The nudge two days before the trial runs out.
+   *
+   * Written around what they will lose rather than what they would buy. A
+   * person two days from the end of a trial does not need the feature list
+   * again — they need to know that the forty articles they entered stop being
+   * watched on Thursday, and that one click keeps them.
+   */
+  async sendTrialEnding(user: User, daysLeft: number, watched: number): Promise<boolean> {
+    const subject = `Остават ${daysLeft} дни от пробния период`;
+    const freeLimit = PLAN_PRODUCT_LIMIT[UserPlan.Free];
+    const parking = Math.max(0, watched - freeLimit);
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader:
+        parking > 0
+          ? `След ${daysLeft} дни спираме да следим ${parking} от артикулите ви.`
+          : 'Данните ви остават. Планът се променя.',
+      heading: `Остават ${daysLeft} дни`,
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          parking > 0
+            ? `В момента следим <strong>${watched} артикула</strong> вместо вас. Безплатният план следи ${freeLimit}, така че след ${daysLeft} дни <strong>${parking}</strong> от тях спират да се проверяват.`
+            : `В момента следим <strong>${watched} артикула</strong> вместо вас — това се събира и в безплатния план, така че нищо няма да спре.`,
+        ),
+        noticeBox(
+          'Нищо не се изтрива. Историята на цените, доставчиците и настройките остават — спрените артикули просто не се проверяват, докато не изберете план.',
+          parking > 0 ? 'warn' : 'info',
+        ),
+        paragraph('Няма нужда да настройвате нищо отново. Ключът ви продължава да работи.'),
+      ],
+      cta: { label: 'Виж плановете', url: `${this.config.appUrl}/#pricing` },
+      footnotes: ['Ако решите да не продължите, не е нужно да правите нищо.'],
+    });
+
+    return this.send(user.email, subject, html, text);
+  }
+
+  /** Says what actually happened when the seven days ran out. */
+  async sendTrialEnded(user: User, watched: number, parked: number): Promise<boolean> {
+    const subject = 'Пробният период приключи';
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader:
+        parked > 0
+          ? `${watched - parked} артикула продължават да се следят, ${parked} са на пауза.`
+          : 'Акаунтът ви продължава на безплатния план.',
+      heading: 'Пробният период приключи',
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          'Акаунтът ви мина на безплатния план. Ключът ви работи, доставчиците ви са там, историята на цените е непокътната.',
+        ),
+        dataRows([
+          ['Следени сега', String(watched - parked)],
+          ['На пауза', String(parked)],
+          ['Доставчици', 'без ограничение'],
+          ['Търсене при доставчици', 'работи както преди'],
+        ]),
+        parked > 0
+          ? noticeBox(
+              `<strong>${parked} артикула</strong> са на пауза — не се изтриват, само не се проверяват. План ги връща обратно с едно натискане.`,
+              'warn',
+            )
+          : paragraph('Всичко, което следите, се събира в безплатния план — нищо не е спряно.'),
+      ],
+      cta: { label: 'Върни всичко обратно', url: `${this.config.appUrl}/#pricing` },
+      footnotes: [
+        'Ако седмицата не ви свърши работа — отговорете на това писмо и ни кажете защо. Четем всяко.',
+      ],
     });
 
     return this.send(user.email, subject, html, text);

@@ -6,6 +6,9 @@ import { GeneratedApiKey, generateApiKey, hashApiKey } from './api-key.util';
 import {
   PLAN_AI_MATCH_LIMIT,
   PLAN_PRODUCT_LIMIT,
+  TRIAL_AI_MATCHES,
+  TRIAL_DAYS,
+  TRIAL_PLAN,
   User,
   UserPlan,
   UserStatus,
@@ -139,7 +142,41 @@ export class UsersService {
   }
 
   /**
-   * Turns a verified registration into a usable free account.
+   * Turns a verified registration into an account, and starts its trial.
+   *
+   * The trial is granted here rather than at registration for the same reason
+   * the key is: until the link is opened, nobody has shown they read the
+   * mailbox, and an unverified address that gets seven days of Pro is seven
+   * days of Pro for anybody with a script.
+   *
+   * Only ever once per account. A second pass — somebody signing in again, an
+   * operator re-running activation — must not restart the clock, or the trial
+   * is unlimited to anyone who notices.
+   */
+  async activateWithTrial(userId: string): Promise<{ user: User; apiKey: string }> {
+    const issued = await this.activateFreeAccount(userId);
+    const user = issued.user;
+
+    // `trialEndsAt` set means it has already been given, whether it is still
+    // running or long over.
+    if (user.trialEndsAt || user.plan !== UserPlan.Free) {
+      return issued;
+    }
+
+    user.plan = TRIAL_PLAN;
+    user.productLimit = PLAN_PRODUCT_LIMIT[TRIAL_PLAN];
+    user.aiMatchesLimit = TRIAL_AI_MATCHES;
+    user.aiPeriodStartedAt = new Date();
+    user.trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 3600_000);
+
+    const saved = await this.usersRepository.save(user);
+    this.logger.log(`Trial started for ${saved.email}, ends ${saved.trialEndsAt?.toISOString()}`);
+
+    return { user: saved, apiKey: issued.apiKey };
+  }
+
+  /**
+   * Turns a verified registration into a usable account.
    *
    * Idempotent in the way that matters: an account that is already active
    * keeps its key rather than having it rotated out from under whatever is
@@ -207,6 +244,18 @@ export class UsersService {
       user.plan = details.plan;
       user.productLimit = PLAN_PRODUCT_LIMIT[details.plan];
       user.aiMatchesLimit = PLAN_AI_MATCH_LIMIT[details.plan];
+      if (user.trialEndsAt) {
+        // Whatever trial was running is over, and well over: they bought. Left
+        // set, the date would have the nightly sweeper downgrade a paying
+        // customer to the free plan on the day their trial would have lapsed.
+        //
+        // The allowance restarts with the purchase rather than carrying the
+        // trial's spend into the first paid month, which would sell somebody a
+        // plan and hand them part of it already used.
+        user.trialEndsAt = null;
+        user.aiMatchesUsed = 0;
+        user.aiPeriodStartedAt = new Date();
+      }
     }
     if (details.customerId !== undefined) user.paddleCustomerId = details.customerId;
     if (details.subscriptionId !== undefined) user.subscriptionId = details.subscriptionId;

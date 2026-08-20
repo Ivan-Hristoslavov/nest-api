@@ -17,6 +17,19 @@ const LINK_TTL_MS = 15 * 60_000;
 /** A session lasts until it is inconvenient rather than until it is unsafe. */
 const SESSION_TTL_MS = 30 * 24 * 3600_000;
 
+/**
+ * How many links one address may be sent in an hour, and over what window.
+ *
+ * The controller already throttles per IP, which stops one machine from
+ * hammering the endpoint. It does not stop the thing this is for: a caller
+ * spread across many addresses aiming every request at *one* mailbox, which
+ * turns a sign-in form into a way to bury somebody's inbox. Four is above what
+ * a confused person needs — request, misplace it, request again — and far
+ * below what a flood needs to be worth mounting.
+ */
+const LINKS_PER_EMAIL = 4;
+const LINK_WINDOW_MS = 3600_000;
+
 export interface IssuedSession {
   token: string;
   expiresAt: Date;
@@ -111,8 +124,52 @@ export class AuthService {
     await this.issueLink(user, AuthTokenKind.SignInLink, appUrl);
   }
 
+  /**
+   * Whether this address has already had its share of links this hour.
+   *
+   * Held in memory rather than in the database: it is a rate limit, not a
+   * record, and the cost of a process restart forgetting one is that somebody
+   * gets a fifth email. Across several instances each keeps its own count, so
+   * the real ceiling is `LINKS_PER_EMAIL × instances` — still bounded, and the
+   * shared counter this would otherwise need (Redis) is not worth adding a
+   * dependency for.
+   */
+  private readonly linksSent = new Map<string, number[]>();
+
+  private mayReceiveLink(email: string): boolean {
+    const key = email.toLowerCase();
+    const now = Date.now();
+    const recent = (this.linksSent.get(key) ?? []).filter((at) => now - at < LINK_WINDOW_MS);
+
+    if (recent.length >= LINKS_PER_EMAIL) {
+      this.linksSent.set(key, recent);
+      return false;
+    }
+
+    recent.push(now);
+    this.linksSent.set(key, recent);
+
+    // Nothing sweeps this map, so it is swept here: any address whose window
+    // has lapsed is dropped whenever the map grows past a size no real
+    // hour of traffic reaches.
+    if (this.linksSent.size > 10_000) {
+      for (const [address, times] of this.linksSent) {
+        if (times.every((at) => now - at >= LINK_WINDOW_MS)) this.linksSent.delete(address);
+      }
+    }
+
+    return true;
+  }
+
   /** Creates a one-time link of either kind and mails it. */
   private async issueLink(user: User, kind: AuthTokenKind, appUrl: string): Promise<void> {
+    if (!this.mayReceiveLink(user.email)) {
+      // Quiet, like every other outcome of this endpoint. Saying "too many"
+      // would confirm the address exists to anyone willing to ask five times.
+      this.logger.warn(`Suppressed a ${kind} link: this address has had its hourly share.`);
+      return;
+    }
+
     const { token, hash } = generateToken('pg_link');
 
     await this.tokens.save(
@@ -165,7 +222,7 @@ export class AuthService {
     // The link that proves the mailbox is also the one that opens the account.
     // Until this moment the row exists but grants nothing.
     if (row.kind === AuthTokenKind.Verification) {
-      const issued = await this.users.activateFreeAccount(user.id);
+      const issued = await this.users.activateWithTrial(user.id);
       user = issued.user;
       apiKey = issued.apiKey;
       await this.mail.sendApiKey(user, issued.apiKey);

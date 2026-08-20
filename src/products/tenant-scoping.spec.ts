@@ -101,7 +101,9 @@ describe('tenant scoping in ProductsService', () => {
 
     await service.assertWithinLimit(owner);
 
-    expect(products.count).toHaveBeenCalledWith({ where: { ownerId } });
+    // Scoped to the account, and to what it is actually watching: a
+    // switched-off article costs nothing to serve and holds no slot.
+    expect(products.count).toHaveBeenCalledWith({ where: { ownerId, isActive: true } });
   });
 
   it('refuses to exceed the plan, naming the plan’s number', async () => {

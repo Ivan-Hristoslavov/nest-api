@@ -92,7 +92,14 @@ export class ProductsService {
    * way in, where the message can name the plan and the number.
    */
   async assertWithinLimit(owner: User, adding = 1): Promise<void> {
-    const used = await this.productsRepository.count({ where: { ownerId: owner.id } });
+    // Only what is actually being watched counts. The bill is the scheduled
+    // re-check, so a switched-off article costs nothing — and the message below
+    // tells people to stop one, which was a lie while this counted every row.
+    // It is also what makes the end of a trial survivable: the articles parked
+    // when the plan shrinks sit there costing nothing and hold no slots.
+    const used = await this.productsRepository.count({
+      where: { ownerId: owner.id, isActive: true },
+    });
 
     if (used + adding > owner.productLimit) {
       throw new ForbiddenException(

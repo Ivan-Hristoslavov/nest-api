@@ -21,7 +21,7 @@ describe('registration', () => {
     findByEmail: jest.Mock<Promise<User | null>, [string]>;
     findOne: jest.Mock<Promise<User>, [string]>;
     createPendingAccount: jest.Mock<Promise<User>, [string, string | undefined]>;
-    activateFreeAccount: jest.Mock<Promise<{ user: User; apiKey: string }>, [string]>;
+    activateWithTrial: jest.Mock<Promise<{ user: User; apiKey: string }>, [string]>;
   };
   let mail: {
     sendVerificationLink: jest.Mock<Promise<boolean>, [User, string, number]>;
@@ -58,7 +58,7 @@ describe('registration', () => {
       createPendingAccount: jest
         .fn<Promise<User>, [string, string | undefined]>()
         .mockResolvedValue(pending),
-      activateFreeAccount: jest
+      activateWithTrial: jest
         .fn<Promise<{ user: User; apiKey: string }>, [string]>()
         .mockResolvedValue({
           user: { ...pending, status: UserStatus.Active } as User,
@@ -90,7 +90,7 @@ describe('registration', () => {
 
     // A pending row and a link. No key, no active account.
     expect(users.createPendingAccount).toHaveBeenCalled();
-    expect(users.activateFreeAccount).not.toHaveBeenCalled();
+    expect(users.activateWithTrial).not.toHaveBeenCalled();
     expect(mail.sendVerificationLink).toHaveBeenCalled();
 
     const stored = tokens.save.mock.calls[0][0];
@@ -138,7 +138,7 @@ describe('registration', () => {
 
     const result = await service.exchange('pg_link_x');
 
-    expect(users.activateFreeAccount).toHaveBeenCalledWith('u1');
+    expect(users.activateWithTrial).toHaveBeenCalledWith('u1');
     expect('apiKey' in result && result.apiKey).toBe('pk_live_new');
     // The key also goes to the mailbox, because the browser shows it once.
     expect(mail.sendApiKey).toHaveBeenCalled();

@@ -167,9 +167,23 @@ function collectApiKeys(env: EnvironmentVariables): string[] {
   return [...new Set(keys)];
 }
 
-function parseCorsOrigins(value: string): string[] | true {
+function parseCorsOrigins(value: string, nodeEnv: NodeEnvironment): string[] | true {
   const trimmed = value.trim();
-  if (trimmed === '*' || trimmed === '') return true;
+
+  if (trimmed === '*' || trimmed === '') {
+    // A wildcard is right for a laptop and wrong for a live deployment: it
+    // invites any page on the internet to drive this API from a visitor's
+    // browser. Refused at boot rather than warned about, because a warning in
+    // a startup log is a warning nobody reads.
+    if (nodeEnv === NodeEnvironment.Production) {
+      throw new Error(
+        'CORS_ORIGINS may not be "*" in production. List the origins that are allowed to call ' +
+          'this API from a browser, e.g. CORS_ORIGINS=https://priceguard.bg,https://www.priceguard.bg',
+      );
+    }
+    return true;
+  }
+
   return trimmed
     .split(',')
     .map((origin) => origin.trim())
@@ -191,7 +205,7 @@ export const configuration = (): Configuration => {
       apiPrefix: env.API_PREFIX.replace(/^\/+|\/+$/g, ''),
       swaggerPath: env.SWAGGER_PATH.replace(/^\/+|\/+$/g, ''),
       swaggerEnabled: env.SWAGGER_ENABLED,
-      corsOrigins: parseCorsOrigins(env.CORS_ORIGINS),
+      corsOrigins: parseCorsOrigins(env.CORS_ORIGINS, env.NODE_ENV),
       logLevel: env.LOG_LEVEL,
     },
     auth: {

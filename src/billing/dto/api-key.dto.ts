@@ -117,6 +117,22 @@ export class MyAccountDto {
 
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   accessExpiresAt!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'End of the free trial, when one is running. Null otherwise.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  trialEndsAt!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Whole days of trial left, rounded up. Null when no trial is running — including when one has already been used.',
+    nullable: true,
+    example: 5,
+  })
+  trialDaysLeft!: number | null;
 }
 
 export class StartCheckoutDto {

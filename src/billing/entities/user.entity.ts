@@ -89,6 +89,31 @@ export function effectiveAiUsage(
   return { used: monthElapsed ? 0 : user.aiMatchesUsed, limit: user.aiMatchesLimit, renews };
 }
 
+/**
+ * The trial: seven days on Pro, no card.
+ *
+ * Seven rather than fourteen because of what the product is. A buyer finds out
+ * whether this saves them money the first morning a supplier moves a price —
+ * which happens within days, not weeks. A fortnight does not produce more
+ * evidence, it produces two weekends of forgetting, and the account that has
+ * gone quiet for eleven days does not come back for the reminder on the
+ * twelfth. Seven days is still two full working weeks' worth of price
+ * movement, and it ends while the reason they signed up is fresh.
+ */
+export const TRIAL_DAYS = 7;
+export const TRIAL_PLAN = UserPlan.Pro;
+
+/**
+ * AI comparisons the trial includes.
+ *
+ * Not Pro's ten thousand. Every one of those is tokens spent on somebody who
+ * has paid nothing, and a trial allowance large enough to run a catalogue
+ * migration through is a trial allowance worth opening mailboxes for. Three
+ * hundred is more than any honest evaluation spends — the deterministic
+ * matcher answers most pairs without the model at all.
+ */
+export const TRIAL_AI_MATCHES = 300;
+
 export const PLAN_AI_MATCH_LIMIT: Record<UserPlan, number> = {
   // Once, not per month — enough to see what the model settles that arithmetic
   // cannot, not enough to be worth opening mailboxes for.
@@ -224,6 +249,23 @@ export class User {
   @Column({ name: 'last_payment_at', type: 'timestamptz', nullable: true })
   lastPaymentAt!: Date | null;
 
+  /**
+   * When the free trial of a paid plan runs out.
+   *
+   * Null for an account that never had one, and cleared the moment a payment
+   * lands — a paying customer is not on trial, and leaving the date behind
+   * would have the sweeper downgrade somebody who has just bought.
+   */
+  @ApiPropertyOptional({
+    description: 'End of the free trial, if one is running.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+  })
+  @Index('idx_users_trial_ends_at')
+  @Column({ name: 'trial_ends_at', type: 'timestamptz', nullable: true })
+  trialEndsAt!: Date | null;
+
   @ApiPropertyOptional({
     description: 'When access lapses if no further payment arrives.',
     type: String,
@@ -249,5 +291,23 @@ export class User {
   isActive(now: Date = new Date()): boolean {
     if (this.status !== UserStatus.Active) return false;
     return this.accessExpiresAt === null || this.accessExpiresAt > now;
+  }
+
+  /** Whether this account is inside its free trial right now. */
+  isOnTrial(now: Date = new Date()): boolean {
+    return this.trialEndsAt !== null && this.trialEndsAt > now;
+  }
+
+  /**
+   * Whole days of trial left, rounded up, or null when there is no trial.
+   *
+   * Rounded up because that is how a person counts: at eighteen hours to go
+   * they have "one day left", not zero. Rounding down would have the banner
+   * say nothing remains while the account is still on Pro.
+   */
+  trialDaysLeft(now: Date = new Date()): number | null {
+    if (!this.trialEndsAt) return null;
+    const remaining = this.trialEndsAt.getTime() - now.getTime();
+    return remaining <= 0 ? 0 : Math.ceil(remaining / (24 * 3600_000));
   }
 }

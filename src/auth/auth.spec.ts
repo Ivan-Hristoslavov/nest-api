@@ -160,6 +160,22 @@ describe('AuthService', () => {
     await expect(service.resolveSession('pg_sess_x')).resolves.toBeNull();
   });
 
+  it('stops one mailbox being buried, however many addresses ask', async () => {
+    // The controller's throttle counts requests per IP, so a caller with a
+    // pool of them is unlimited by it. This counts per mailbox instead.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await service.requestSignInLink('kupuvach@example.com', 'https://app.example');
+    }
+
+    expect(mail.sendSignInLink).toHaveBeenCalledTimes(4);
+
+    await service.requestSignInLink('kupuvach@example.com', 'https://app.example');
+
+    expect(mail.sendSignInLink).toHaveBeenCalledTimes(4);
+    // And nothing was written either — a suppressed link leaves no live token.
+    expect(tokens.save).toHaveBeenCalledTimes(4);
+  });
+
   it('signs out one device without touching the others', async () => {
     await service.signOut('pg_sess_x');
 

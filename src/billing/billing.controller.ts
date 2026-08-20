@@ -253,6 +253,10 @@ export class BillingController {
       apiKeyPrefix: user.apiKeyPrefix,
       apiKeyIssuedAt: user.apiKeyIssuedAt ? user.apiKeyIssuedAt.toISOString() : null,
       accessExpiresAt: user.accessExpiresAt ? user.accessExpiresAt.toISOString() : null,
+      // Only reported while it is running. A finished trial is stored — it is
+      // what stops a second one — but the interface has nothing to say about it.
+      trialEndsAt: user.isOnTrial() ? user.trialEndsAt!.toISOString() : null,
+      trialDaysLeft: user.isOnTrial() ? user.trialDaysLeft() : null,
     };
   }
 
