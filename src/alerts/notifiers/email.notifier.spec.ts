@@ -64,7 +64,7 @@ describe('EmailNotifier', () => {
             // and the mail config the message links back with.
             get: (section: string) =>
               section === 'mail'
-                ? { appUrl: 'https://priceguard.example' }
+                ? { appUrl: 'https://stoclify.example' }
                 : { emailFallbackTo: overrides.fallback },
           },
         },

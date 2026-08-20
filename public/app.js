@@ -1,5 +1,5 @@
 /*
- * PriceGuard — the whole interface.
+ * Stoclify — the whole interface.
  *
  * Split out of index.html so the page can carry a Content-Security-Policy that
  * forbids inline script, which is what stops an injected tag from reading the
@@ -109,7 +109,7 @@ const ENDPOINTS = {
  * markup and never put in a URL — a key in a query string ends up in
  * server logs, browser history and Referer headers.
  */
-const KEY_STORAGE = 'priceguard.apiKey';
+const KEY_STORAGE = 'stoclify.apiKey';
 
 function getApiKey() {
   try {
@@ -141,7 +141,7 @@ function setApiKey(value) {
  * this is handed out again on every sign-in and can be dropped from one
  * device without breaking anybody's integration.
  */
-const SESSION_STORAGE = 'priceguard.session';
+const SESSION_STORAGE = 'stoclify.session';
 
 function getSession() {
   try {
@@ -384,7 +384,7 @@ function renderApiKeyBadge() {
  * Theme
  * ------------------------------------------------------------------ */
 
-const THEME_STORAGE = 'priceguard.theme';
+const THEME_STORAGE = 'stoclify.theme';
 const themeToggle = $('#theme-toggle');
 
 function syncThemeControl() {
@@ -2250,7 +2250,7 @@ $('#expand-all').addEventListener('click', function () {
  * button something you press a dozen times a day. The choice is per
  * browser, which is the same scope as the blur it controls.
  */
-const REVEAL_STORAGE = 'priceguard.reveal';
+const REVEAL_STORAGE = 'stoclify.reveal';
 
 function applyReveal(next, persist) {
   revealed = next;
@@ -2258,7 +2258,12 @@ function applyReveal(next, persist) {
   $('#reveal-icon').className = revealed
     ? 'fa-solid fa-eye-slash text-[12px]'
     : 'fa-solid fa-eye text-[12px]';
-  $('#reveal-label').textContent = revealed ? 'Скрий цени на едро' : 'Покажи цени на едро';
+  // Written in JavaScript rather than in the markup, so the pass i18n.js makes
+  // over the document never sees it — hence the explicit lookup. This was the
+  // one showing "Скрий цени на едро" next to "Monitoring dashboard".
+  $('#reveal-label').textContent = translate(
+    revealed ? 'Скрий цени на едро' : 'Покажи цени на едро',
+  );
 
   if (!persist) return;
   try {
@@ -2606,11 +2611,17 @@ function shopRowHtml(shop) {
 
 function bindShopRows() {
   $$('[data-detect]').forEach(function (button) {
-    button.addEventListener('click', () => openDetectModal(button.dataset.detect));
+    button.addEventListener('click', function () {
+      if (requireAccount()) return;
+      openDetectModal(button.dataset.detect);
+    });
   });
 
   $$('[data-reprobe]').forEach(function (button) {
-    button.addEventListener('click', () => reprobeShop(button.dataset.reprobe, button));
+    button.addEventListener('click', function () {
+      if (requireAccount()) return;
+      reprobeShop(button.dataset.reprobe, button);
+    });
   });
 
   // Switching a shop off keeps its discount and its selectors. It is the
@@ -2668,6 +2679,8 @@ function bindShopRows() {
 
   $$('[data-action="delete-shop"]').forEach(function (button) {
     button.addEventListener('click', async function () {
+      if (requireAccount()) return;
+
       const shop = shops.find((item) => item.id === button.dataset.id);
       if (!shop) return;
 
@@ -5135,6 +5148,14 @@ async function refreshPlanBar() {
     return;
   }
 
+  // Nothing to say, so nothing shown. Without this the bar appeared as a
+  // full-width empty box with a lone "Account" button floating in it —
+  // whenever the account payload came back without the fields it fills.
+  if (!account || !account.email) {
+    bars.forEach((bar) => (bar.hidden = true));
+    return;
+  }
+
   // Counted from what the API returned, not from the table: the table
   // may be holding demo rows for a visitor, and an empty account was
   // reading "9 / 100" because of them.
@@ -6288,6 +6309,12 @@ async function mutate(description, request) {
 }
 
 async function handleAction(action, id) {
+  // Every row action either writes or calls the API, and a visitor can do
+  // neither. One guard here rather than one per action: this is the single
+  // dispatch every edit, delete and re-check button goes through, so nothing
+  // can be added later that quietly slips past it.
+  if (requireAccount()) return;
+
   if (action === 'refresh-product') {
     toast('Проверявам всички складове…', 'info');
     await mutate('Проверката', () =>
@@ -6572,7 +6599,7 @@ $('#export-csv').addEventListener('click', function () {
   const stamp = new Date().toISOString().slice(0, 10);
 
   link.href = url;
-  link.download = 'priceguard-sravnenie-' + stamp + '.csv';
+  link.download = 'stoclify-sravnenie-' + stamp + '.csv';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

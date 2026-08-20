@@ -1,5 +1,5 @@
 /**
- * The frame every message from PriceGuard arrives in.
+ * The frame every message from Stoclify arrives in.
  *
  * Email is not a browser. Flexbox, grid and external stylesheets are ignored
  * or mangled by enough clients that the only reliable layout is nested tables
@@ -156,7 +156,7 @@ export function renderEmail(options: EmailOptions): { html: string; text: string
           <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid ${LINE};border-radius:16px;overflow:hidden">
             <tr>
               <td style="padding:18px 28px;background:${INK}">
-                <span style="font-family:${FONT};font-size:16px;font-weight:700;color:#ffffff;letter-spacing:-0.01em">PriceGuard</span>
+                <span style="font-family:${FONT};font-size:16px;font-weight:700;color:#ffffff;letter-spacing:-0.01em">Stoclify</span>
                 <span style="font-family:${FONT};font-size:13px;color:#94a3b8"> · цените на вашите доставчици</span>
               </td>
             </tr>
@@ -210,7 +210,7 @@ export function renderEmail(options: EmailOptions): { html: string; text: string
 }
 
 function hostOf(url: string): string {
-  if (!url) return 'priceguard';
+  if (!url) return 'stoclify';
 
   try {
     return new URL(url).host;

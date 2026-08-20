@@ -22,7 +22,7 @@
 (function () {
   'use strict';
 
-  var STORAGE = 'priceguard.lang';
+  var STORAGE = 'stoclify.lang';
 
   /** The language the markup itself is written in. */
   var SOURCE = 'bg';
@@ -36,6 +36,8 @@
   var LANGUAGES = [
     { code: 'bg', label: 'Български', short: 'BG' },
     { code: 'en', label: 'English', short: 'EN' },
+    { code: 'ro', label: 'Română', short: 'RO' },
+    { code: 'el', label: 'Ελληνικά', short: 'EL' },
   ];
 
   var dictionary = null;
@@ -226,16 +228,70 @@
       });
   }
 
-  /** Shows which language is active on every switcher on the page. */
+  /**
+   * Builds the language menu and marks the active entry.
+   *
+   * Rendered from `LANGUAGES` rather than written out in the markup, because
+   * four languages as a row of pills is a row of noise and there will be more
+   * than four. Adding one is an entry in that list and nothing else.
+   */
   function markSwitcher() {
-    var buttons = document.querySelectorAll('[data-lang]');
+    var label = document.querySelector('[data-lang-current]');
+    var active = LANGUAGES.filter(function (language) {
+      return language.code === current;
+    })[0];
 
-    Array.prototype.forEach.call(buttons, function (button) {
-      var active = button.dataset.lang === current;
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-      button.classList.toggle('tab-active', active);
-      button.classList.toggle('text-slate-200', active);
-      button.classList.toggle('text-slate-500', !active);
+    if (label && active) label.textContent = active.short;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-lang-list]'), function (list) {
+      list.innerHTML = LANGUAGES.map(function (language) {
+        var selected = language.code === current;
+        return (
+          '<button type="button" role="menuitem" data-lang="' +
+          language.code +
+          '" lang="' +
+          language.code +
+          '" class="flex w-full items-center gap-2 px-3 py-2 text-left text-[12.5px] transition hover:bg-white/5 ' +
+          (selected ? 'font-semibold text-accent-600 dark:text-accent-300' : 'text-slate-300') +
+          '">' +
+          '<span class="w-6 shrink-0 text-[10.5px] font-semibold text-slate-500">' +
+          language.short +
+          '</span>' +
+          language.label +
+          (selected ? '<i class="fa-solid fa-check ml-auto text-[10px]"></i>' : '') +
+          '</button>'
+        );
+      }).join('');
+    });
+  }
+
+  /** Opens and closes the menu, and closes it on any click outside. */
+  function bindLanguageMenu() {
+    document.addEventListener('click', function (event) {
+      var toggle = event.target.closest('[data-lang-toggle]');
+      var menu = document.querySelector('[data-lang-menu]');
+      if (!menu) return;
+
+      var list = menu.querySelector('[data-lang-list]');
+      var button = menu.querySelector('[data-lang-toggle]');
+
+      if (toggle) {
+        var opening = list.hidden;
+        list.hidden = !opening;
+        button.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        return;
+      }
+
+      if (!event.target.closest('[data-lang-list]')) {
+        list.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      var list = document.querySelector('[data-lang-list]');
+      if (list) list.hidden = true;
     });
   }
 
@@ -275,6 +331,8 @@
     var button = event.target.closest('[data-lang]');
     if (button) setLanguage(button.dataset.lang);
   });
+
+  bindLanguageMenu();
 
   window.PG_I18N = {
     languages: LANGUAGES,

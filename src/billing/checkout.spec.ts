@@ -22,7 +22,7 @@ describe('CheckoutService', () => {
             get: (section: string) => {
               if (section === 'checkout') return sections.checkout ?? { links: {} };
               if (section === 'stripe') return sections.stripe ?? { prices: {} };
-              return { appUrl: 'https://priceguard.example' };
+              return { appUrl: 'https://stoclify.example' };
             },
           },
         },

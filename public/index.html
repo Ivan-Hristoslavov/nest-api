@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PriceGuard — цените на вашите доставчици, на едно място</title>
+    <title>Stoclify — цените на вашите доставчици, на едно място</title>
     <meta
       name="description"
       content="Сравнявайте цените при вашите доставчици на едро — включително тези без сайт — за отделен артикул или за цяла поръчка. Известия при поскъпване. 7 дни ПРО безплатно, без карта."
@@ -12,7 +12,7 @@
 
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="bg_BG" />
-    <meta property="og:site_name" content="PriceGuard" />
+    <meta property="og:site_name" content="Stoclify" />
     <meta property="og:title" content="Спрете да обикаляте складовете всяка сутрин" />
     <meta
       property="og:description"
@@ -56,9 +56,13 @@
           <span
             class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25 transition group-hover:bg-accent-500/20"
           >
-            <i class="fa-solid fa-shield-halved text-[15px] leading-none text-accent-500"></i>
+<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="h-[18px] w-[18px] text-accent-500">
+              <rect x="2.5" y="15" width="19" height="4.6" rx="1.6" fill="currentColor" opacity="0.4" />
+              <rect x="4.9" y="9.7" width="14.2" height="4.6" rx="1.6" fill="currentColor" opacity="0.68" />
+              <rect x="7.3" y="4.4" width="9.4" height="4.6" rx="1.6" fill="currentColor" />
+            </svg>
           </span>
-          <span class="text-[16px] font-bold tracking-tight text-slate-200">PriceGuard</span>
+          <span class="text-[16px] font-bold tracking-tight text-slate-200">Stoclify</span>
         </button>
 
         <!-- Two navigations, never both.
@@ -146,81 +150,96 @@
           </button>
         </nav>
 
-        <div class="ml-auto flex items-center gap-2 md:ml-0">
-          <!-- Two languages, both written in their own — a picker that lists
-               "Английски" is no use to the person who needs it. -->
-          <div
-            class="hidden items-center rounded-lg border border-white/8 bg-ink-850 p-0.5 sm:flex"
-            role="group"
-            aria-label="Език / Language"
-          >
+        <!-- Two groups, not five loose controls.
+             Everything here used to sit in one row at the same weight: two
+             language pills, a theme switch, a key button, an account button
+             and a call to action, so nothing looked more important than
+             anything else. Preferences are small and quiet on the left of the
+             divider; what you came to *do* is on the right of it. -->
+        <div class="ml-auto flex items-center gap-1.5 md:ml-0">
+          <div class="hidden items-center gap-1 sm:flex">
+            <!-- One button, not one per language: four of them as pills is a
+                 row of noise, and there will be more. -->
+            <div class="relative" data-lang-menu>
+              <button
+                type="button"
+                data-lang-toggle
+                aria-haspopup="true"
+                aria-expanded="false"
+                class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-slate-400 transition hover:bg-white/5 hover:text-slate-200"
+                title="Език / Language"
+              >
+                <i class="fa-solid fa-globe text-[12px]"></i>
+                <span data-lang-current>BG</span>
+                <i class="fa-solid fa-chevron-down text-[8px] opacity-60"></i>
+              </button>
+              <div
+                data-lang-list
+                hidden
+                class="absolute right-0 top-full z-50 mt-1.5 w-40 overflow-hidden rounded-xl border border-white/10 bg-ink-900 py-1 shadow-panel"
+                role="menu"
+              ></div>
+            </div>
+
             <button
               type="button"
-              data-lang="bg"
-              lang="bg"
-              class="rounded-md px-2 py-1 text-[11.5px] font-semibold text-slate-500 transition hover:text-slate-200"
+              id="theme-toggle"
+              class="theme-toggle"
+              role="switch"
+              aria-checked="false"
+              aria-label="Смени между светла и тъмна тема"
+              title="Светла / тъмна тема"
             >
-              BG
+              <span class="theme-toggle__thumb">
+                <i class="fa-solid fa-sun theme-toggle__icon theme-toggle__sun"></i>
+                <i class="fa-solid fa-moon theme-toggle__icon theme-toggle__moon"></i>
+              </span>
             </button>
+
+            <!-- Icon only. It matters to the handful of people wiring up a
+                 script and to nobody else, and as a labelled button it drew
+                 the eye away from the one thing on this bar that sells. -->
             <button
               type="button"
-              data-lang="en"
-              lang="en"
-              class="rounded-md px-2 py-1 text-[11.5px] font-semibold text-slate-500 transition hover:text-slate-200"
+              id="api-key-button"
+              class="hidden h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-slate-200 sm:grid"
+              title="API ключ за тази сесия"
+              aria-label="API ключ за тази сесия"
             >
-              EN
+              <i class="fa-solid fa-key text-[12px]"></i>
+              <span id="api-key-label" class="sr-only">Няма ключ</span>
             </button>
           </div>
-          <button
-            type="button"
-            id="theme-toggle"
-            class="theme-toggle"
-            role="switch"
-            aria-checked="false"
-            aria-label="Смени между светла и тъмна тема"
-            title="Светла / тъмна тема"
-          >
-            <span class="theme-toggle__thumb">
-              <i class="fa-solid fa-sun theme-toggle__icon theme-toggle__sun"></i>
-              <i class="fa-solid fa-moon theme-toggle__icon theme-toggle__moon"></i>
-            </span>
-          </button>
-          <button
-            type="button"
-            id="api-key-button"
-            class="hidden items-center gap-2 rounded-lg border border-white/8 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-400 transition hover:border-white/15 hover:text-slate-200 sm:flex"
-            title="API ключ за тази сесия"
-          >
-            <i class="fa-solid fa-key text-[11px]"></i>
-            <span id="api-key-label">Няма ключ</span>
-          </button>
+
+          <span class="mx-1 hidden h-5 w-px bg-white/10 sm:block"></span>
+
           <!-- Shown to whoever is signed in; the sign-in button takes its
                place otherwise. One of the two is always visible. -->
           <button
             type="button"
             id="account-button"
             hidden
-            class="items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[12px] font-medium text-accent-600 transition hover:bg-accent-500/20 dark:text-accent-300 sm:flex"
+            class="max-w-[180px] items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[12px] font-medium text-accent-600 transition hover:bg-accent-500/20 dark:text-accent-300 sm:flex"
             title="Вашият акаунт"
           >
-            <i class="fa-solid fa-circle-user text-[11px]"></i>
-            <span id="account-label"></span>
+            <i class="fa-solid fa-circle-user shrink-0 text-[11px]"></i>
+            <span id="account-label" class="truncate"></span>
           </button>
           <button
             type="button"
             id="signin-button"
-            class="hidden items-center gap-2 rounded-lg border border-white/8 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-white/15 hover:text-slate-100 sm:flex"
+            class="hidden items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-300 transition hover:bg-white/5 hover:text-slate-100 sm:flex"
           >
-            <i class="fa-solid fa-right-to-bracket text-[11px]"></i>
             Вход
           </button>
           <button
             type="button"
-            data-view="dashboard"
+            data-view="catalogue"
             data-guest-only
-            class="nav-link rounded-lg bg-accent-500 px-3.5 py-2 text-[13px] font-semibold text-white transition hover:bg-accent-600"
+            class="nav-link inline-flex items-center gap-2 rounded-lg bg-accent-500 px-3.5 py-2 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600"
           >
-            Демо табло
+            <i class="fa-solid fa-magnifying-glass-dollar text-[11px]"></i>
+            Пробвай търсенето
           </button>
         </div>
       </div>
@@ -309,7 +328,7 @@
 
               <p class="mx-auto mt-7 max-w-2xl text-[17px] leading-relaxed text-slate-400">
                 Влизате в пет портала на едро, сравнявате ръчно, записвате в Excel — и до обяд
-                цените вече са други. PriceGuard прави тази обиколка вместо вас
+                цените вече са други. Stoclify прави тази обиколка вместо вас
                 <span class="font-semibold text-slate-200">на всеки час</span>, разпознава един и
                 същ артикул, както и да го е кръстил доставчикът, и ви казва само едно:
                 <span class="font-semibold text-slate-200">къде да купите днес и колко
@@ -610,7 +629,7 @@
               </div>
               <div class="rounded-2xl border border-accent-500/30 bg-accent-500/[0.06] p-5 text-left">
                 <span class="text-[11.5px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">
-                  С PriceGuard
+                  С Stoclify
                 </span>
                 <p class="mt-2 text-[14px] leading-relaxed text-slate-300">
                   Отваряте едно табло. Виждате кой склад е най-евтин днес и колко печелите от
@@ -1327,7 +1346,7 @@
             <section>
               <h2 class="text-[16px] font-semibold text-slate-200">1. Кой предоставя услугата</h2>
               <p class="mt-2">
-                PriceGuard („услугата") се предоставя от
+                Stoclify („услугата") се предоставя от
                 <span data-company="name">[ФИРМА]</span>, ЕИК
                 <span data-company="eik">[ЕИК]</span>, със седалище и адрес на управление
                 <span data-company="address">[АДРЕС]</span>, наричано по-нататък „ние".
@@ -2171,7 +2190,7 @@
         <div class="flex flex-col gap-1.5">
           <div class="flex items-center gap-2.5">
             <i class="fa-solid fa-shield-halved text-accent-500/70"></i>
-            <span>PriceGuard — сравнение на цени при вашите доставчици</span>
+            <span>Stoclify — сравнение на цени при вашите доставчици</span>
           </div>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700">
             <span data-company="name">[ФИРМА]</span>

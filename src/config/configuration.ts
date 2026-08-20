@@ -178,7 +178,7 @@ function parseCorsOrigins(value: string, nodeEnv: NodeEnvironment): string[] | t
     if (nodeEnv === NodeEnvironment.Production) {
       throw new Error(
         'CORS_ORIGINS may not be "*" in production. List the origins that are allowed to call ' +
-          'this API from a browser, e.g. CORS_ORIGINS=https://priceguard.bg,https://www.priceguard.bg',
+          'this API from a browser, e.g. CORS_ORIGINS=https://stoclify.bg,https://www.stoclify.bg',
       );
     }
     return true;

@@ -13,7 +13,7 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   return SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('PriceGuard API')
+      .setTitle('Stoclify API')
       .setDescription(
         [
           'Сравнение на цени при вашите доставчици — същите данни, които виждате в таблото.',
@@ -90,6 +90,6 @@ export function setupSwagger(app: INestApplication, config: AppConfig): void {
       // customer needs them, and alphabetical order would open the docs on
       // "Alerts" — a thing you cannot receive until three other calls worked.
     },
-    customSiteTitle: 'PriceGuard API — документация',
+    customSiteTitle: 'Stoclify API — документация',
   });
 }

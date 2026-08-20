@@ -271,7 +271,7 @@ export class EnvironmentVariables {
   @IsOptional()
   SMTP_PASSWORD?: string;
 
-  /** Sender address, e.g. "PriceGuard <billing@example.com>". */
+  /** Sender address, e.g. "Stoclify <billing@example.com>". */
   @IsString()
   @IsOptional()
   SMTP_FROM?: string;

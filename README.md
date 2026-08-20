@@ -493,11 +493,11 @@ Bulgarian.
 ## 13. Deployment
 
 ```bash
-docker build -t priceguard .
+docker build -t stoclify .
 ```
 
 ```bash
-docker run --env-file .env -p 3000:3000 priceguard
+docker run --env-file .env -p 3000:3000 stoclify
 ```
 
 The image is two-stage: the build stage compiles TypeScript and generates the

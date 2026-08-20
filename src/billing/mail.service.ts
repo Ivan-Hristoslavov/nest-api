@@ -94,9 +94,7 @@ export class MailService implements OnModuleInit {
    */
   async sendApiKey(user: User, apiKey: string, replaced = false): Promise<boolean> {
     const plan = PLAN_LABELS[user.plan] ?? user.plan;
-    const subject = replaced
-      ? 'Новият ви ключ за PriceGuard'
-      : 'Готово — ето ключа ви за PriceGuard';
+    const subject = replaced ? 'Новият ви ключ за Stoclify' : 'Готово — ето ключа ви за Stoclify';
 
     const { html, text } = renderEmail({
       title: subject,
@@ -150,7 +148,7 @@ export class MailService implements OnModuleInit {
    * and that ignoring it is enough.
    */
   async sendSignInLink(user: User, url: string, minutes: number): Promise<boolean> {
-    const subject = 'Вход в PriceGuard';
+    const subject = 'Вход в Stoclify';
 
     const { html, text } = renderEmail({
       title: subject,
@@ -184,7 +182,7 @@ export class MailService implements OnModuleInit {
    * what happens when they click, not assume they remember asking.
    */
   async sendVerificationLink(user: User, url: string, minutes: number): Promise<boolean> {
-    const subject = 'Потвърдете имейла си за PriceGuard';
+    const subject = 'Потвърдете имейла си за Stoclify';
 
     const { html, text } = renderEmail({
       title: subject,
@@ -323,7 +321,7 @@ export class MailService implements OnModuleInit {
 
   /** Tells a customer their subscription has lapsed and the key has stopped. */
   async sendAccessExpired(user: User, reason: string): Promise<boolean> {
-    const subject = 'Достъпът ви до PriceGuard е спрян';
+    const subject = 'Достъпът ви до Stoclify е спрян';
 
     const { html, text } = renderEmail({
       title: subject,
