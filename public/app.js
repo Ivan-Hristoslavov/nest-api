@@ -20,6 +20,38 @@ function translate(text) {
   return window.PG_I18N ? window.PG_I18N.t(text) : text;
 }
 
+/**
+ * Whether anybody is actually signed in.
+ *
+ * Asked in several places — the demo search, the demo supplier list, the
+ * guards on the buttons that write — and they must all agree, or the
+ * interface ends up half in demo and half in a real account.
+ */
+function isIdentified() {
+  return Boolean(getSession() || getApiKey());
+}
+
+/**
+ * Stops a visitor walking into a request that cannot succeed.
+ *
+ * The demo deliberately looks like the real thing, which is the point and
+ * also the risk: somebody browsing it will press "Add a product", and until
+ * now that fired a request, got a 401 and reported a failure — making the
+ * product look broken at the exact moment it was being evaluated. There is
+ * nothing broken; they simply have no account yet, so say that and offer one.
+ *
+ * @returns true when the caller should stop.
+ */
+function requireAccount() {
+  if (isIdentified()) return false;
+
+  $('#signup-form').classList.remove('hidden');
+  $('#signup-done').classList.add('hidden');
+  $('#signup-status').classList.add('hidden');
+  openModal('signup-modal');
+  return true;
+}
+
 /** Fills `{n}`-style holes in a translated pattern. */
 function formatMessage(pattern, values) {
   return translate(pattern).replace(/\{(\w+)\}/g, function (whole, name) {
@@ -581,7 +613,7 @@ $('#key-form').addEventListener('submit', async function (event) {
     // The key may still be right while the server is down; store it and
     // say exactly that rather than blaming the key.
     setApiKey(candidate);
-    showKeyStatus('API-то не отговори (' + error.message + '). Ключът е запазен.', 'info');
+    showKeyStatus(failureText(error, 'API-то не отговори — ключът е запазен'), 'info');
   } finally {
     $('#key-save-spinner').classList.add('hidden');
     $('#key-save-icon').classList.remove('hidden');
@@ -2306,6 +2338,33 @@ function isHardBlocked(status) {
 async function loadShops() {
   const list = $('#shops-list');
 
+  // A visitor has no suppliers and no key, so every one of these three
+  // requests is a guaranteed 401. Show what the panel is *for* instead of
+  // reporting the failure of a request that was never going to work.
+  if (!isIdentified()) {
+    shops = DEMO_SHOPS.map(function (shop) {
+      return {
+        id: 'demo-' + shop.host,
+        name: shop.name,
+        host: shop.host,
+        discountPercent: shop.discount,
+        isActive: true,
+        // `searchUrlTemplate` is what `liveStatusFor` actually reads. Without
+        // it every demo supplier renders as "живото търсене не е настроено",
+        // which is the opposite of the point being made.
+        searchUrlTemplate: 'https://' + shop.host + '/search?q={q}',
+        searchMethod: 'live',
+        searchSummary: 'търсачка на магазина',
+        lastError: null,
+      };
+    });
+    $('#shops-empty').classList.add('hidden');
+    $('#shops-head').classList.remove('hidden');
+    $('#shops-head').classList.add('grid');
+    list.innerHTML = shops.map(shopRowHtml).join('');
+    return;
+  }
+
   try {
     // Both lists at once: a shop row cannot say whether it is searchable
     // without the providers list, and fetching it separately made the
@@ -2325,9 +2384,9 @@ async function loadShops() {
   } catch (error) {
     shops = [];
     list.innerHTML =
-      '<p class="px-5 py-6 text-[13px] text-slate-500">Няма връзка с API-то' +
-      (getApiKey() ? '' : ' — задайте API ключ') +
-      '.</p>';
+      '<p class="px-5 py-6 text-[13px] text-slate-500">' +
+      translate('Няма връзка с API-то. Опитайте пак след малко.') +
+      '</p>';
     $('#shops-empty').classList.add('hidden');
     return;
   }
@@ -2391,7 +2450,7 @@ function renderProvidersStrip() {
         await loadShops();
       } catch (error) {
         button.disabled = false;
-        toast('Неуспешно: ' + error.message, 'error');
+        toast(failureText(error, 'Неуспешно'), 'error');
       }
     });
   });
@@ -2582,7 +2641,7 @@ function bindShopRows() {
         await loadShops();
       } catch (error) {
         button.disabled = false;
-        toast('Не се смени: ' + error.message, 'error');
+        toast(failureText(error, 'Не се смени'), 'error');
       }
     });
   });
@@ -2602,7 +2661,7 @@ function bindShopRows() {
         toast('Отстъпката е записана. Търсенето вече смята с нея.', 'success');
         await loadShops();
       } catch (error) {
-        toast('Отстъпката не се запази: ' + error.message, 'error');
+        toast(failureText(error, 'Отстъпката не се запази'), 'error');
       }
     });
   });
@@ -2630,7 +2689,7 @@ function bindShopRows() {
         toast('Доставчикът е премахнат.', 'success');
         await loadShops();
       } catch (error) {
-        toast('Неуспешно: ' + error.message, 'error');
+        toast(failureText(error, 'Неуспешно'), 'error');
       }
     });
   });
@@ -2661,7 +2720,7 @@ async function reprobeShop(shopId, button) {
   } catch (error) {
     button.disabled = false;
     button.innerHTML = original;
-    toast('Проверката не успя: ' + error.message, 'error');
+    toast(failureText(error, 'Проверката не успя'), 'error');
   }
 }
 
@@ -2832,13 +2891,14 @@ $('#detect-save').addEventListener('click', async function () {
     await loadShops();
   } catch (error) {
     button.disabled = false;
-    showDetectStatus('Не се запази: ' + error.message, 'error');
+    showDetectStatus(failureText(error, 'Не се запази'), 'error');
   }
 });
 
 /* --- Add supplier --------------------------------------------------- */
 
 $('#add-shop').addEventListener('click', function () {
+  if (requireAccount()) return;
   $('#shop-form').reset();
   $('#shop-no-website').checked = false;
   $('#shop-status').classList.add('hidden');
@@ -2897,7 +2957,7 @@ $('#shop-form').addEventListener('submit', async function (event) {
 
     await probeNewShop(shop);
   } catch (error) {
-    toast('Неуспешно: ' + error.message, 'error');
+    toast(failureText(error, 'Неуспешно'), 'error');
   }
 });
 
@@ -2933,7 +2993,7 @@ async function probeNewShop(shop) {
   } catch (error) {
     // The shop is added either way; only the verdict is missing, and the
     // row's own button can be used to try again.
-    toast('Добавен, но проверката не мина: ' + error.message, 'info');
+    toast(failureText(error, 'Добавен, но проверката не мина'), 'info');
   } finally {
     await loadShops();
   }
@@ -3886,6 +3946,264 @@ const SPEC_LABELS = {
   connector: 'Конектор', protection: 'Защита', curve: 'Характеристика',
 };
 
+/* ------------------------------------------------------------------ *
+ * The search, for somebody who has not signed up yet
+ *
+ * The landing page invites a visitor to "see it search", and the search is
+ * scoped to an account: it asks *your* suppliers and ranks by *your*
+ * negotiated discount. An anonymous caller has no suppliers, so the endpoint
+ * answered 401 and the second button on the front page led to a screen with
+ * three error messages on it. That is the worst possible first click.
+ *
+ * So a visitor gets a scripted search over a sample catalogue instead. It is
+ * replayed through `handleSearchEvent`, the same function the real stream
+ * feeds, which matters more than it looks: a second renderer would drift from
+ * the first within a month, and this way the demo cannot show a layout the
+ * product does not actually produce. The staging is kept too — the query is
+ * read, suppliers answer one by one, matching runs last — because that
+ * sequence is the most persuasive thing here and a demo that skips to the
+ * answer throws it away.
+ *
+ * Every price below is invented, and the panel says so.
+ * ------------------------------------------------------------------ */
+
+const DEMO_SHOPS = [
+  { host: 'electro-sklad.example', name: 'Електро Склад', discount: 12 },
+  { host: 'kabel-pro.example', name: 'Кабел Про', discount: 8 },
+  { host: 'tehno-depo.example', name: 'Техно Депо', discount: 0 },
+  { host: 'svetlina.example', name: 'Светлина Трейд', discount: 5 },
+];
+
+/**
+ * What the sample catalogue contains.
+ *
+ * Two articles, because two is enough to show the thing that matters: the
+ * same article named four different ways, ranked by what you pay rather than
+ * what the label says. `keywords` are matched after the same homoglyph and
+ * borrowed-term folding the real matcher uses, so "лед" finds the LED bulb.
+ */
+const DEMO_CATALOGUE = [
+  {
+    keywords: ['крушка', 'лампа', 'led', 'лед', 'e27', 'bulb', 'lamp'],
+    groupKey: 'bulb-12w',
+    groupLabel: 'LED крушка E27 12W 4000K',
+    understood: {
+      category: 'led-bulb',
+      measurements: [
+        { unit: 'W', value: 12 },
+        { unit: 'K', value: 4000 },
+      ],
+      specs: { socket: 'E27' },
+    },
+    offers: [
+      {
+        shop: 'svetlina.example', price: 2.29,
+        title: 'LED лампа E27 12W 4000K неутрална светлина',
+        band: 'certain', confidence: 0.97,
+        explanation: 'Мощност, фасунга и цветна температура съвпадат.',
+        reasons: [
+          { agrees: true, label: 'Мощност', left: '12W', right: '12W' },
+          { agrees: true, label: 'Фасунга', left: 'E27', right: 'E27' },
+          { agrees: true, label: 'Цветна температура', left: '4000K', right: '4000K' },
+        ],
+      },
+      {
+        shop: 'electro-sklad.example', price: 2.63,
+        title: 'Крушка LED 12W E27 840 матирана',
+        band: 'high', confidence: 0.91,
+        explanation: '„840“ е записът на производителя за 4000K.',
+        reasons: [
+          { agrees: true, label: 'Мощност', left: '12W', right: '12W' },
+          { agrees: true, label: 'Фасунга', left: 'E27', right: 'E27' },
+          { agrees: true, label: 'Цветна температура', left: '4000K', right: '840' },
+        ],
+      },
+      {
+        shop: 'tehno-depo.example', price: 2.45,
+        title: 'LED bulb E27 12W neutralweiss',
+        band: 'high', confidence: 0.89,
+        explanation: '„neutralweiss“ означава 4000K.',
+        reasons: [
+          { agrees: true, label: 'Мощност', left: '12W', right: '12W' },
+          { agrees: true, label: 'Цветна температура', left: '4000K', right: 'neutralweiss' },
+        ],
+      },
+      {
+        shop: 'kabel-pro.example', price: 6.90,
+        title: 'Стойка за лампа Philips E27',
+        band: 'weak', confidence: 0.42,
+        explanation: 'Аксесоар, не самата лампа.',
+        reasons: [{ agrees: false, label: 'Вид: стойка, не крушка' }],
+      },
+    ],
+  },
+  {
+    keywords: ['кабел', 'свт', 'cable', 'провод', 'жило'],
+    groupKey: 'cable-3x25',
+    groupLabel: 'Кабел СВТ 3x2.5 мм²',
+    understood: {
+      category: 'cable',
+      measurements: [{ unit: 'MM2', value: 2.5 }],
+      specs: { cross_section: '3x2.5' },
+    },
+    offers: [
+      {
+        shop: 'electro-sklad.example', price: 4.68,
+        title: 'Кабел СВТ 3x2.5 мм² бял',
+        band: 'certain', confidence: 0.96,
+        explanation: 'Сечението и броят жила съвпадат.',
+        reasons: [{ agrees: true, label: 'Сечение', left: '3x2.5', right: '3x2.5' }],
+      },
+      {
+        shop: 'kabel-pro.example', price: 4.73,
+        title: 'ПВВ-МБ1 3х2,5 (СВТ) кабел',
+        band: 'high', confidence: 0.9,
+        explanation: 'Същото сечение, друго търговско име.',
+        reasons: [{ agrees: true, label: 'Сечение', left: '3x2.5', right: '3х2,5' }],
+      },
+      {
+        shop: 'tehno-depo.example', price: 4.6,
+        title: 'Кабел СВТ 3x2.5 — руло 100 м',
+        band: 'possible', confidence: 0.78,
+        explanation: 'Руло, не метър — цената не е сравнима директно.',
+        reasons: [{ agrees: false, label: 'Количество: руло 100 м' }],
+      },
+      {
+        shop: 'svetlina.example', price: 5.12,
+        title: 'Кабел СВТ 3x1.5 мм²',
+        band: 'weak', confidence: 0.35,
+        explanation: 'Различно сечение — 3x1.5 не е 3x2.5.',
+        reasons: [{ agrees: false, label: 'Сечение', left: '3x2.5', right: '3x1.5' }],
+      },
+    ],
+  },
+];
+
+/** Folds the query the way the real matcher does before comparing keywords. */
+function demoNormalise(text) {
+  const aliases = { лед: 'led', олед: 'oled', тв: 'tv' };
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[\p{L}]+/gu, (word) => aliases[word] || word);
+}
+
+function demoEntryFor(query) {
+  const folded = demoNormalise(query);
+  return (
+    DEMO_CATALOGUE.find((entry) => entry.keywords.some((word) => folded.indexOf(word) !== -1)) ||
+    null
+  );
+}
+
+/** Turns one scripted offer into the shape `renderCatalogueResults` expects. */
+function demoHit(entry, offer) {
+  const shop = DEMO_SHOPS.find((candidate) => candidate.host === offer.shop);
+  const effective = Number((offer.price * (1 - shop.discount / 100)).toFixed(2));
+
+  return {
+    host: shop.host,
+    shopName: shop.name,
+    // `name`, not `title`, and `listedPrice`, not `price`: these are the
+    // field names the real payload uses, and the demo is fed to the real
+    // renderer. Getting them wrong is silent — the row simply comes out
+    // blank — so they are worth stating rather than guessing.
+    name: offer.title,
+    url: '',
+    listedPrice: offer.price,
+    listedCurrency: 'EUR',
+    effectivePrice: effective,
+    effectiveCurrency: 'EUR',
+    discountPercent: shop.discount,
+    inStock: true,
+    matched: true,
+    priceSource: 'live',
+    recordedAt: null,
+    groupKey: entry.groupKey,
+    groupLabel: entry.groupLabel,
+    match: {
+      band: offer.band,
+      confidence: offer.confidence,
+      explanation: offer.explanation,
+      reasons: offer.reasons,
+    },
+  };
+}
+
+const pause = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+/**
+ * Replays a search for a visitor with no account.
+ *
+ * Paced rather than instant, for the same reason the real one streams: the
+ * staging is the demonstration. The delays are short enough not to feel like
+ * a hang and long enough for each step to be read.
+ */
+async function runDemoSearch(query) {
+  const entry = demoEntryFor(query);
+  const results = $('#catalogue-results');
+
+  if (!entry) {
+    $('#live-results').innerHTML = '';
+    results.innerHTML =
+      '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-10 text-center shadow-panel">' +
+      '<i class="fa-solid fa-flask mb-3 block text-2xl text-slate-700"></i>' +
+      '<p class="text-[13.5px] text-slate-400">' +
+      translate('Примерният каталог съдържа само крушки и кабели.') +
+      '</p><p class="mt-1.5 text-[12.5px] text-slate-500">' +
+      translate('Влезте, за да търсите при вашите доставчици — там е целият им асортимент.') +
+      '</p>' +
+      '<button type="button" data-signup class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+      translate('Започни 7 дни безплатно') +
+      '</button></div>';
+    return;
+  }
+
+  handleSearchEvent({ type: 'understood', understood: entry.understood, shops: DEMO_SHOPS.length }, query);
+
+  for (const shop of DEMO_SHOPS) {
+    await pause(260 + Math.random() * 220);
+    const count = entry.offers.filter((offer) => offer.shop === shop.host).length;
+    handleSearchEvent(
+      { type: 'shop', name: shop.name, ok: true, count: count, durationMs: 700 + Math.random() * 900 },
+      query,
+    );
+  }
+
+  await pause(320);
+  handleSearchEvent({ type: 'matching', candidates: entry.offers.length }, query);
+
+  await pause(520);
+  handleSearchEvent({ type: 'ai', comparisons: 2, model: 'claude' }, query);
+
+  await pause(240);
+  handleSearchEvent(
+    {
+      type: 'result',
+      hits: entry.offers.map((offer) => demoHit(entry, offer)),
+      matching: { used: true, comparisons: 2 },
+      durationMs: 3400,
+      shops: DEMO_SHOPS.map((shop) => ({
+        name: shop.name,
+        ok: true,
+        count: entry.offers.filter((offer) => offer.shop === shop.host).length,
+      })),
+    },
+    query,
+  );
+
+  demoNotice($('#catalogue-results'));
+}
+
+/** Says plainly that what is on screen is invented. */
+function demoNotice(container) {
+  const note = document.createElement('p');
+  note.className = 'mt-3 text-center text-[12px] text-slate-500';
+  note.textContent = translate(
+    'Примерни данни и измислени доставчици. Влезте, за да питате вашите.',
+  );
+  container.appendChild(note);
+}
+
 async function searchCatalogue() {
   const query = $('#catalogue-query').value.trim();
   const results = $('#catalogue-results');
@@ -3899,6 +4217,19 @@ async function searchCatalogue() {
   $('#catalogue-spinner').classList.remove('hidden');
   results.innerHTML = '';
   aiShownUntil = 0;
+
+  // Nobody signed in means no suppliers to ask, so there is nothing for the
+  // real endpoint to answer. The visitor came from a button that promised to
+  // show them a search; they get one.
+  if (!isIdentified()) {
+    try {
+      await runDemoSearch(query);
+    } finally {
+      $('#catalogue-spinner').classList.add('hidden');
+    }
+    return;
+  }
+
   live.innerHTML =
     '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
     '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>Разчитам заявката…</div>';
@@ -3949,11 +4280,78 @@ async function searchCatalogue() {
     }
   } catch (error) {
     live.innerHTML = '';
-    results.innerHTML =
-      '<p class="text-[13px] text-red-400">Търсенето не успя: ' + escapeHtml(error.message) + '</p>';
+    results.innerHTML = failureHtml(error, 'Търсенето не успя');
   } finally {
     $('#catalogue-spinner').classList.add('hidden');
   }
+}
+
+/**
+ * A failed request, said in words rather than in status codes.
+ *
+ * "HTTP 401" is a fact about a protocol, not about anything the reader did or
+ * can fix. An expired session is the overwhelmingly common cause and has an
+ * obvious remedy, so it gets its own sentence and a button.
+ */
+/**
+ * The same translation from status code to sentence, for a toast.
+ *
+ * "Неуспешно: HTTP 401" tells a buyer nothing they can act on. Which of the
+ * handful of things actually went wrong is knowable, and each one has a
+ * different next step, so each one gets said.
+ */
+function failureText(error, prefix) {
+  const status = Number(String(error && error.message).replace(/\D+/g, ''));
+
+  if (status === 401 || status === 403) return translate('Сесията е изтекла. Влезте отново.');
+  if (status === 429) return translate('Твърде много заявки. Изчакайте минута.');
+  if (status === 404) return translate('Това вече не съществува. Опреснете страницата.');
+  if (status >= 500) return translate('Проблем при нас. Опитайте пак след малко.');
+
+  // A message from the server rather than a status line: those are written
+  // for the person reading them and are better than anything generic here.
+  //
+  // Translated too. The API answers in Bulgarian — it has no idea which
+  // language the browser is in — and because the dictionary is keyed by the
+  // Bulgarian string, the same lookup that handles the page handles the
+  // server's sentences, with the Bulgarian showing through for any that have
+  // not been translated yet.
+  const detail = String((error && error.message) || '');
+  const useful = detail && !/^HTTP \d+$/.test(detail) ? ' — ' + translate(detail) : '';
+
+  return translate(prefix) + useful;
+}
+
+function failureHtml(error, prefix) {
+  const status = Number(String(error && error.message).replace(/\D+/g, ''));
+
+  if (status === 401 || status === 403) {
+    return (
+      '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-8 text-center shadow-panel">' +
+      '<p class="text-[13.5px] text-slate-300">' +
+      translate('Сесията е изтекла. Влезте отново, за да продължите.') +
+      '</p>' +
+      '<button type="button" data-signin class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+      translate('Вход') +
+      '</button></div>'
+    );
+  }
+
+  if (status === 429) {
+    return (
+      '<p class="text-[13px] text-amber-400">' +
+      translate('Твърде много заявки. Изчакайте минута и опитайте пак.') +
+      '</p>'
+    );
+  }
+
+  return (
+    '<p class="text-[13px] text-red-400">' +
+    escapeHtml(translate(prefix)) +
+    '. ' +
+    translate('Опитайте пак след малко.') +
+    '</p>'
+  );
 }
 
 /** Until when the AI stage stays on screen, so it is not missed. */
@@ -4072,6 +4470,11 @@ async function priceBasket() {
     return;
   }
 
+  if (!isIdentified()) {
+    box.innerHTML = demoBasketHtml(lines);
+    return;
+  }
+
   $('#basket-spinner').classList.remove('hidden');
   box.innerHTML =
     '<p class="text-[13px] text-slate-500">Питам доставчиците за ' +
@@ -4090,11 +4493,58 @@ async function priceBasket() {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     renderBasket(await response.json());
   } catch (error) {
-    box.innerHTML =
-      '<p class="text-[13px] text-red-400">Не успя: ' + escapeHtml(error.message) + '</p>';
+    box.innerHTML = failureHtml(error, 'Остойностяването не успя');
   } finally {
     $('#basket-spinner').classList.add('hidden');
   }
+}
+
+/**
+ * The order, priced, for somebody with no suppliers yet.
+ *
+ * Deliberately not a fake of `renderBasket` — inventing a full supplier
+ * breakdown would be a lot of fiction to maintain, and the one number that
+ * sells this is the comparison at the top: everything from one supplier
+ * against the order split across the cheapest. So that is what it shows,
+ * built from the lines the visitor actually typed, and it says it is a
+ * sample.
+ */
+function demoBasketHtml(lines) {
+  const count = lines.reduce((total, line) => total + line.quantity, 0);
+  // A plausible average line price, so the figures move with what was typed
+  // rather than sitting at a constant nobody believes.
+  const single = Number((count * 3.9).toFixed(2));
+  const split = Number((single * 0.883).toFixed(2));
+
+  return (
+    '<div class="grid gap-3 sm:grid-cols-2">' +
+    '<div class="rounded-xl border border-white/8 bg-ink-850 px-4 py-3.5">' +
+    '<p class="text-[11.5px] uppercase tracking-wide text-slate-500">' +
+    translate('Всичко от един доставчик') +
+    '</p><p class="num mt-1 text-2xl font-bold text-slate-200">' +
+    single.toFixed(2) +
+    ' <span class="text-[13px] font-normal text-slate-500">EUR</span></p>' +
+    '<p class="mt-0.5 text-[12px] text-slate-400">' +
+    translate('Електро Склад') +
+    '</p></div>' +
+    '<div class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3.5">' +
+    '<p class="text-[11.5px] uppercase tracking-wide text-emerald-400/80">' +
+    translate('Разделена по най-евтиния') +
+    '</p><p class="num mt-1 text-2xl font-bold text-emerald-400">' +
+    split.toFixed(2) +
+    ' <span class="text-[13px] font-normal text-emerald-400/70">EUR</span></p>' +
+    '<p class="mt-0.5 text-[12px] text-slate-400">' +
+    translate('Електро Склад') +
+    ', ' +
+    translate('Кабел Про') +
+    '</p></div></div>' +
+    '<p class="mt-3 rounded-xl border border-white/8 bg-ink-900 px-4 py-3 text-[12.5px] text-slate-400">' +
+    translate('Примерна сметка. Влезте, за да остойностите поръчката при вашите доставчици и с вашите отстъпки.') +
+    '</p>' +
+    '<button type="button" data-signup class="mt-3 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+    translate('Започни 7 дни безплатно') +
+    '</button>'
+  );
 }
 
 function renderBasket(result) {
@@ -4268,7 +4718,7 @@ async function startCheckout(plan, button) {
   } catch (error) {
     button.disabled = false;
     button.innerHTML = original;
-    toast('Плащането не се отвори: ' + error.message, 'error');
+    toast(failureText(error, 'Плащането не се отвори'), 'error');
   }
 }
 
@@ -4527,7 +4977,7 @@ $('#signin-form').addEventListener('submit', async function (event) {
     });
 
     if (response.status === 429) {
-      showSignInStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+      showSignInStatus(translate('Твърде много опити. Опитайте пак след малко.'), 'error');
       return;
     }
     if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -4537,7 +4987,7 @@ $('#signin-form').addEventListener('submit', async function (event) {
     $('#signin-form').classList.add('hidden');
     $('#signin-sent').classList.remove('hidden');
   } catch (error) {
-    showSignInStatus('Не се получи: ' + error.message, 'error');
+    showSignInStatus(failureText(error, 'Не се получи'), 'error');
   } finally {
     $('#signin-spinner').classList.add('hidden');
   }
@@ -4604,7 +5054,7 @@ $('#signout-button').addEventListener('click', async function () {
 
     switchView('dashboard');
   } catch (error) {
-    toast('Входът не успя: ' + error.message, 'error');
+    toast(failureText(error, 'Входът не успя'), 'error');
     renderAccount();
   }
 })();
@@ -4653,11 +5103,20 @@ function showIssuedKey(apiKey) {
  * that just spent three comparisons — and a figure that only refreshes
  * on sign-in is wrong for most of the time somebody is looking at it.
  */
+/** The demo banner is the exact inverse of being signed in. */
+function refreshDemoBanner() {
+  const demo = !isIdentified();
+  $$('[data-demo-banner]').forEach(function (banner) {
+    banner.hidden = !demo;
+  });
+}
+
 async function refreshPlanBar() {
   const bars = $$('[data-plan-bar]');
+  refreshDemoBanner();
   if (bars.length === 0) return;
 
-  const identified = Boolean(getSession() || getApiKey());
+  const identified = isIdentified();
 
   if (!identified) {
     bars.forEach((bar) => (bar.hidden = true));
@@ -4822,16 +5281,23 @@ function meterHtml(label, used, limit, options) {
  * Free signup
  * ------------------------------------------------------------------ */
 
-$$('[data-signup]').forEach(function (button) {
-  button.addEventListener('click', function () {
+// Delegated rather than bound per element: several of these buttons are
+// rendered long after boot — inside a failed search, inside the demo — and a
+// one-off pass over the document at startup never sees them.
+document.addEventListener('click', function (event) {
+  if (event.target.closest('[data-signup]')) {
     // Reset to the form: the dialog may still be showing a key from a
     // previous account, and that key must not be attributed to this one.
     $('#signup-form').classList.remove('hidden');
     $('#signup-done').classList.add('hidden');
     $('#signup-status').classList.add('hidden');
     openModal('signup-modal');
-  });
+    return;
+  }
+
+  if (event.target.closest('[data-signin]')) openSignIn();
 });
+
 
 function showSignupStatus(message, tone) {
   const element = $('#signup-status');
@@ -4858,7 +5324,7 @@ $('#signup-form').addEventListener('submit', async function (event) {
   }
 
   $('#signup-spinner').classList.remove('hidden');
-  showSignupStatus('Създаваме акаунта…', 'info');
+  showSignupStatus(translate('Създаваме акаунта…'), 'info');
 
   try {
     const response = await fetch(ENDPOINTS.authRegister, {
@@ -4872,11 +5338,11 @@ $('#signup-form').addEventListener('submit', async function (event) {
     if (response.status === 400) {
       // Worth spelling out: a throwaway address is something the person
       // can fix by using their real one.
-      showSignupStatus(payload.message || 'Този имейл не става.', 'error');
+      showSignupStatus(translate(payload.message || 'Този имейл не става.'), 'error');
       return;
     }
     if (response.status === 429) {
-      showSignupStatus('Твърде много опити. Опитайте пак след малко.', 'error');
+      showSignupStatus(translate('Твърде много опити. Опитайте пак след малко.'), 'error');
       return;
     }
     if (!response.ok) {
@@ -4889,7 +5355,7 @@ $('#signup-form').addEventListener('submit', async function (event) {
     $('#signup-form').classList.add('hidden');
     $('#signup-done').classList.remove('hidden');
   } catch (error) {
-    showSignupStatus('Не се получи: ' + error.message, 'error');
+    showSignupStatus(failureText(error, 'Не се получи'), 'error');
   } finally {
     $('#signup-spinner').classList.add('hidden');
   }
@@ -4988,8 +5454,8 @@ async function loadOperatorPanel() {
     users = await response.json();
   } catch (error) {
     list.innerHTML =
-      '<p class="px-5 py-10 text-center text-[13px] text-red-400">Не се зареди: ' +
-      escapeHtml(error.message) +
+      '<p class="px-5 py-10 text-center text-[13px] text-red-400">' +
+      escapeHtml(failureText(error, 'Не се зареди')) +
       '</p>';
     return;
   }
@@ -5132,7 +5598,7 @@ async function reissueKey(email) {
 
     await loadOperatorPanel();
   } catch (error) {
-    toast('Ключът не се издаде: ' + error.message, 'error');
+    toast(failureText(error, 'Ключът не се издаде'), 'error');
   }
 }
 
@@ -5212,10 +5678,7 @@ $('#supplier-form').addEventListener('submit', async function (event) {
       loadProducts();
     }, 800);
   } catch (error) {
-    showSupplierStatus(
-      (editing ? 'Не бе обновен: ' : 'Не бе добавен: ') + error.message,
-      'error',
-    );
+    showSupplierStatus(failureText(error, editing ? 'Не бе обновен' : 'Не бе добавен'), 'error');
   } finally {
     $('#supplier-spinner').classList.add('hidden');
     $('#supplier-icon').classList.remove('hidden');
@@ -5645,6 +6108,7 @@ $('#discovery-query').addEventListener('keydown', function (event) {
 });
 
 $('#add-product').addEventListener('click', function () {
+  if (requireAccount()) return;
   $('#product-form').reset();
   $('#product-status').classList.add('hidden');
   $('#url-preview').innerHTML = '';
@@ -6024,6 +6488,7 @@ function openSupplierEditor(product, supplier) {
 /* --- CSV export ---------------------------------------------------- */
 
 $('#export-csv').addEventListener('click', function () {
+  if (requireAccount()) return;
   const header = [
     'Продукт',
     'SKU',
@@ -6168,6 +6633,7 @@ $('#build-stamp').textContent = 'build ' + document.lastModified;
  * and it costs one small same-origin fetch on a page that has already loaded.
  */
 function boot() {
+  refreshDemoBanner();
   renderApiKeyBadge();
   // Decides which navigation the header shows, so it runs before the first
   // view is opened rather than after the reader has seen the wrong one.

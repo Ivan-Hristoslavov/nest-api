@@ -150,12 +150,13 @@ async function bootstrap(): Promise<void> {
     index: ['index.html'],
     maxAge: isProduction ? '1h' : 0,
     setHeaders: (response: ServerResponse, path: string) => {
-      // The UI is one file with its JavaScript inlined, so a cached copy is a
-      // cached *application*. `max-age=0` still permits a browser to answer
-      // from its in-memory cache without revalidating, which silently keeps
-      // old code running after an edit. Outside production, forbid storing it
-      // at all — the file is 130 KB on localhost, the cost is nil.
-      if (!isProduction && path.endsWith('.html')) {
+      // A cached copy of any of these is a cached *application*. `max-age=0`
+      // still permits a browser to answer from its in-memory cache without
+      // revalidating, which silently keeps old code running after an edit —
+      // and now that the interface lives in app.js rather than inside the
+      // HTML, the rule has to cover the script and the stylesheet too, or a
+      // developer edits app.js and reloads onto the previous version.
+      if (!isProduction && /\.(html|js|css|json)$/.test(path)) {
         response.setHeader('Cache-Control', 'no-store, must-revalidate');
         response.setHeader('Pragma', 'no-cache');
         response.setHeader('Expires', '0');
