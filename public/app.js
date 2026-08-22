@@ -7032,6 +7032,12 @@ $('#signout-everywhere').addEventListener('click', async function () {
 // to answer "is the browser running the current file".
 $('#build-stamp').textContent = 'build ' + document.lastModified;
 
+// The copyright year, from the clock rather than from a literal somebody has
+// to remember to change every January.
+$$('[data-year]').forEach(function (element) {
+  element.textContent = String(new Date().getFullYear());
+});
+
 /**
  * The first render.
  *

@@ -2200,45 +2200,191 @@
     <!-- ================================================================== -->
     <!-- FOOTER                                                              -->
     <!-- ================================================================== -->
-    <footer class="border-t border-white/5 bg-ink-950">
-      <div
-        class="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-[12.5px] text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-8"
-      >
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center gap-2.5">
-            <i class="fa-solid fa-shield-halved text-accent-500/70"></i>
-            <span>Stoclify — сравнение на цени при вашите доставчици</span>
-          </div>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-700">
-            <span data-company="name">[ФИРМА]</span>
-            <span aria-hidden="true">·</span>
-            <span>ЕИК <span data-company="eik">[ЕИК]</span></span>
-            <span aria-hidden="true">·</span>
+    <!-- ================================================================== -->
+    <!-- FOOTER                                                              -->
+    <!--                                                                     -->
+    <!-- Columns rather than one long line of links at one size. The old one  -->
+    <!-- ran the brand, the company details and six destinations together in  -->
+    <!-- a single grey row, so nothing in it could be found by looking — and  -->
+    <!-- the legal pages, which are the ones somebody comes down here for,    -->
+    <!-- sat between "Разпознаване" and a build stamp.                        -->
+    <!--                                                                     -->
+    <!-- Every link goes somewhere real. No social accounts that do not       -->
+    <!-- exist, no newsletter nobody sends.                                   -->
+    <!-- ================================================================== -->
+    <footer class="border-t border-white/8 bg-ink-950">
+      <div class="mx-auto max-w-7xl px-5 py-14 sm:px-8">
+        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
+          <!-- Who this is -->
+          <div>
+            <div class="flex items-center gap-2.5">
+              <span
+                class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-500/12 ring-1 ring-accent-500/25"
+              >
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="h-[18px] w-[18px] text-accent-500">
+                  <rect x="2.5" y="15" width="19" height="4.6" rx="1.6" fill="currentColor" opacity="0.4" />
+                  <rect x="4.9" y="9.7" width="14.2" height="4.6" rx="1.6" fill="currentColor" opacity="0.68" />
+                  <rect x="7.3" y="4.4" width="9.4" height="4.6" rx="1.6" fill="currentColor" />
+                </svg>
+              </span>
+              <span class="text-[16px] font-bold tracking-tight text-slate-200">Stoclify</span>
+            </div>
+            <p class="mt-4 max-w-xs text-[13px] leading-relaxed text-slate-500">
+              Цените на всичките ви доставчици на едно място — включително на този, който няма
+              сайт. Едно табло вместо пет портала всяка сутрин.
+            </p>
             <a
               data-contact-email
               href="mailto:"
-              class="transition hover:text-slate-400"
-              ><span data-company="email">[ИМЕЙЛ]</span></a
+              class="mt-5 inline-flex items-center gap-2 text-[13px] font-medium text-slate-400 transition hover:text-accent-500"
             >
+              <i class="fa-regular fa-envelope text-[12px]"></i>
+              <span data-contact-email-label data-company="email">[ИМЕЙЛ]</span>
+            </a>
+          </div>
+
+          <!-- Продукт -->
+          <div>
+            <p class="text-[11.5px] font-semibold uppercase tracking-wider text-slate-500">
+              Продукт
+            </p>
+            <ul class="mt-4 space-y-2.5 text-[13px]">
+              <li>
+                <button
+                  type="button"
+                  data-view="landing"
+                  data-scroll="how"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Как работи
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="landing"
+                  data-scroll="matching"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Разпознаване на артикули
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="landing"
+                  data-scroll="pricing"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Цени
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="catalogue"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Пробвай търсенето
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <!-- За разработчици -->
+          <div>
+            <p class="text-[11.5px] font-semibold uppercase tracking-wider text-slate-500">
+              За разработчици
+            </p>
+            <ul class="mt-4 space-y-2.5 text-[13px]">
+              <li>
+                <a
+                  href="/api/docs"
+                  target="_blank"
+                  rel="noopener"
+                  class="inline-flex items-center gap-1.5 text-slate-400 transition hover:text-slate-200"
+                >
+                  API документация
+                  <i class="fa-solid fa-arrow-up-right-from-square text-[9px] opacity-50"></i>
+                </a>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="landing"
+                  data-scroll="api"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Примери
+                </button>
+              </li>
+              <li>
+                <a
+                  href="/health"
+                  target="_blank"
+                  rel="noopener"
+                  class="inline-flex items-center gap-1.5 text-slate-400 transition hover:text-slate-200"
+                >
+                  Статус на системата
+                  <i class="fa-solid fa-arrow-up-right-from-square text-[9px] opacity-50"></i>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Правни -->
+          <div>
+            <p class="text-[11.5px] font-semibold uppercase tracking-wider text-slate-500">
+              Правни
+            </p>
+            <ul class="mt-4 space-y-2.5 text-[13px]">
+              <li>
+                <button
+                  type="button"
+                  data-view="terms"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Общи условия
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="privacy"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Поверителност
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  data-view="gdpr"
+                  class="nav-link text-slate-400 transition hover:text-slate-200"
+                >
+                  Обработка на данни (GDPR)
+                </button>
+              </li>
+            </ul>
           </div>
         </div>
-        <div class="flex flex-wrap items-center gap-5">
-          <button type="button" data-view="terms" class="nav-link transition hover:text-slate-400">
-            Общи условия
-          </button>
-          <button type="button" data-view="privacy" class="nav-link transition hover:text-slate-400">
-            Поверителност
-          </button>
-          <button type="button" data-view="gdpr" class="nav-link transition hover:text-slate-400">
-            Обработка на данни (GDPR)
-          </button>
-          <a href="/health" target="_blank" rel="noopener" class="transition hover:text-slate-400">
-            Статус на системата
-          </a>
-          <a href="/api/docs" target="_blank" rel="noopener" class="transition hover:text-slate-400">
-            API документация
-          </a>
-          <span id="build-stamp" class="font-mono text-slate-700"></span>
+
+        <!-- The legally required particulars, on their own line where a
+             regulator and a cautious buyer both expect to find them. -->
+        <div
+          class="mt-12 flex flex-col gap-3 border-t border-white/8 pt-6 text-[12px] text-slate-600 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span data-company="name">[ФИРМА]</span>
+            <span aria-hidden="true" class="text-slate-700">·</span>
+            <span>ЕИК <span data-company="eik">[ЕИК]</span></span>
+            <span aria-hidden="true" class="text-slate-700">·</span>
+            <span data-company="address">[АДРЕС]</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>© <span data-year></span> Stoclify</span>
+            <span id="build-stamp" class="font-mono text-slate-700"></span>
+          </div>
         </div>
       </div>
     </footer>
