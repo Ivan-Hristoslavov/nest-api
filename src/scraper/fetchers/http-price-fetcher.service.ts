@@ -65,6 +65,16 @@ export class HttpPriceFetcherService implements PriceSource {
   private readonly config: ScraperConfig;
   private readonly client: AxiosInstance;
 
+  /**
+   * In-flight and recently-completed fetches, by URL.
+   *
+   * Keyed on the URL rather than on the listing, because the whole point is
+   * that different customers' listings pointing at the same page share one
+   * request. Promises rather than results, so a second caller arriving while
+   * the first is still waiting joins it instead of starting a second trip.
+   */
+  private readonly sharedFetches = new Map<string, Promise<PriceObservation>>();
+
   constructor(
     private readonly parser: PriceParserService,
     private readonly robots: RobotsService,
@@ -88,12 +98,71 @@ export class HttpPriceFetcherService implements PriceSource {
     });
   }
 
+  /**
+   * One page, fetched once, however many customers are watching it.
+   *
+   * Five hundred buyers watching the same cable at the same shop used to be
+   * five hundred requests an hour for one page, because the sweep walks rows
+   * and every customer owns their own. The request count scaled with customers
+   * rather than with articles, which is the difference between a service a
+   * supplier tolerates and one it blocks — and the more popular an article got,
+   * the worse it became, which is exactly backwards.
+   *
+   * The observation is shared, not the record: every customer still gets their
+   * own history row, their own alert and their own discount applied. Only the
+   * trip to the shop is pooled.
+   */
   async fetch(target: FetchTarget): Promise<PriceObservation> {
+    // Keyed on how the page will be *read*, not only on its address. Two
+    // customers can point at one URL with different selectors — one reading the
+    // retail price, one the trade price — and handing the second customer the
+    // first one's number would be a wrong price presented with total
+    // confidence, which is the one thing this product cannot do.
+    const key = [target.url, target.selector ?? '', target.attribute ?? ''].join('\u0000');
+
+    const shared = this.sharedFetches.get(key);
+    if (shared) return shared;
+
+    const inFlight = this.beginFetch(target);
+
+    if (this.config.sharedFetchMs > 0) {
+      this.sharedFetches.set(key, inFlight);
+
+      // Held for the configured window on success so a later customer in the
+      // same sweep reuses it, and dropped at once on failure — a shop that was
+      // briefly down must not be remembered as down for half an hour.
+      void inFlight.then(
+        () => {
+          setTimeout(() => this.sharedFetches.delete(key), this.config.sharedFetchMs).unref?.();
+        },
+        () => this.sharedFetches.delete(key),
+      );
+    }
+
+    return inFlight;
+  }
+
+  private async beginFetch(target: FetchTarget): Promise<PriceObservation> {
     if (this.config.respectRobots) {
       const allowed = await this.robots.isAllowed(target.url, this.config.userAgent);
       if (!allowed) {
         throw new RobotsDisallowedError(target.url);
       }
+    }
+
+    // Volume, not rate. The gap below keeps us polite second to second; this
+    // keeps the day's total to something a site owner would not notice.
+    if (!this.rateLimiter.claim(target.host, this.config.hostDailyBudget)) {
+      this.logger.warn(
+        `Daily budget for ${target.host} is spent (${this.config.hostDailyBudget}); skipping until tomorrow.`,
+      );
+      throw new PriceFetchError(
+        `Дневният лимит заявки към ${target.host} е достигнат. Проверката продължава утре.`,
+        target.url,
+        // Retryable: nothing is wrong with the listing, we are simply being
+        // careful, and the next sweep should try it again.
+        true,
+      );
     }
 
     const politeGap = await this.politeGapFor(target.url);

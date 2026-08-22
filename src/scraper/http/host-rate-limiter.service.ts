@@ -14,6 +14,21 @@ export class HostRateLimiterService {
   private readonly queues = new Map<string, Promise<void>>();
 
   /**
+   * Per host: how many requests today, and which day that is.
+   *
+   * The gap above controls *rate*, which is what keeps a burst polite. This
+   * controls *volume*, which is what a site's protection actually counts:
+   * spacing six requests a second a second apart is still half a million
+   * requests a day from one address, and no amount of politeness makes that
+   * look like a browser.
+   *
+   * Held in memory. A restart forgets the count, which at worst spends one
+   * extra day's budget on the day of a deploy — cheaper than a table and a
+   * write on every fetch.
+   */
+  private readonly spend = new Map<string, { day: string; count: number }>();
+
+  /**
    * Runs `task` no sooner than `minGapMs` after the previous task for `host`.
    * Tasks for the same host never overlap; different hosts are independent.
    */
@@ -37,6 +52,36 @@ export class HostRateLimiterService {
     );
 
     return run;
+  }
+
+  /**
+   * Claims one request against a host's daily budget.
+   *
+   * @returns false when today's allowance is gone, and the caller should skip
+   * rather than wait — a listing checked tomorrow instead of now is a price
+   * one day old, which is survivable; being blocked is not.
+   */
+  claim(host: string, dailyBudget: number): boolean {
+    if (dailyBudget <= 0) return true;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const current = this.spend.get(host);
+
+    if (!current || current.day !== today) {
+      this.spend.set(host, { day: today, count: 1 });
+      return true;
+    }
+
+    if (current.count >= dailyBudget) return false;
+
+    current.count += 1;
+    return true;
+  }
+
+  /** What has been spent on a host today. For diagnostics and the tests. */
+  spentToday(host: string): number {
+    const current = this.spend.get(host);
+    return current && current.day === new Date().toISOString().slice(0, 10) ? current.count : 0;
   }
 
   /** Number of hosts currently tracked. Used by tests and diagnostics. */

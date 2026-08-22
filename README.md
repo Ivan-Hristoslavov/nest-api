@@ -326,6 +326,42 @@ A model may raise confidence but never past 0.94: the bands above are reserved f
 
 ---
 
+## 6b. Being tolerable to the suppliers
+
+The scraper reads other companies' websites, so the question is not whether it
+*can* but whether they will let it carry on. Three separate mechanisms, because
+they answer different questions:
+
+| Mechanism | Answers |
+| --- | --- |
+| Per-host serialisation + `SCRAPER_MIN_DELAY_MS` | How *fast* — never two overlapping requests to one shop, a second apart by default |
+| `robots.txt`, including `Crawl-delay` | What the shop itself asks for. It always wins when it asks for more |
+| `SCRAPER_HOST_DAILY_BUDGET` | How *many* — a hard ceiling per shop per day |
+| `SCRAPER_SHARED_FETCH_MS` | How many *times over* — one page fetched once, however many customers watch it |
+
+The last one is the one that decides whether this scales. The sweep walks
+listing rows and every customer owns their own, so five hundred buyers watching
+the same cable at the same shop used to be five hundred requests an hour for
+one page: the request count scaled with **customers** rather than with
+**articles**, and the more popular an article became the worse it got. The
+share is keyed on the URL *and* the selector, so two customers reading
+different prices off the same page still each get their own — handing one
+customer another's number would be a wrong price presented with total
+confidence, which is the one thing this product cannot do.
+
+Rough arithmetic, and worth doing before advertising: 500 customers × 100
+articles × 4 suppliers is 200,000 listings. Hourly, that is ~55 requests a
+second spread over perhaps 30 Bulgarian shops — about 2 a second at each, day
+and night, from one address. That gets blocked, and deserves to. With sharing,
+the same load collapses to the number of *distinct* pages.
+
+The best protection is still not technical. A supplier who understands that
+being compared sends them orders usually has no objection; one conversation
+with the five that matter is worth more than any setting, and if one says no it
+is much better to know before their traffic goes up.
+
+---
+
 ## 7. Alerting
 
 `price_drop`, `price_rise`, `undercut`, `all_time_low`, `out_of_stock`, `scrape_failing`.

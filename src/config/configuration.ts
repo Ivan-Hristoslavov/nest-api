@@ -70,6 +70,10 @@ export interface ScraperConfig {
   respectRobots: boolean;
   maxRetries: number;
   retryBaseDelayMs: number;
+  /** Hard ceiling on requests to one supplier per day. 0 disables it. */
+  hostDailyBudget: number;
+  /** How long a fetched page is reused across customers. 0 disables sharing. */
+  sharedFetchMs: number;
 }
 
 export interface AlertsConfig {
@@ -318,6 +322,8 @@ export const configuration = (): Configuration => {
       respectRobots: env.SCRAPER_RESPECT_ROBOTS,
       maxRetries: env.SCRAPER_MAX_RETRIES,
       retryBaseDelayMs: env.SCRAPER_RETRY_BASE_DELAY_MS,
+      hostDailyBudget: env.SCRAPER_HOST_DAILY_BUDGET,
+      sharedFetchMs: env.SCRAPER_SHARED_FETCH_MS,
     },
     alerts: {
       enabled: env.ALERTS_ENABLED,

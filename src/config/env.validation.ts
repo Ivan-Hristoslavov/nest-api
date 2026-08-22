@@ -321,7 +321,7 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(0)
   @IsOptional()
-  SCRAPER_MIN_DELAY_MS = 150;
+  SCRAPER_MIN_DELAY_MS = 1000;
 
   @Transform(toNumber)
   @IsInt()
@@ -397,6 +397,44 @@ export class EnvironmentVariables {
   @Max(1)
   @IsOptional()
   SENTRY_TRACES_SAMPLE_RATE = 0;
+
+  /**
+   * The most requests one supplier's site may receive from us in a day.
+   *
+   * The per-host gap controls *rate*, which is what stops a burst. This
+   * controls *volume*, which is what a WAF actually counts: nothing before it
+   * stopped the sweep making six requests a second to one shop around the
+   * clock, and half a million requests a day from one address gets blocked
+   * however politely they are spaced.
+   *
+   * Two thousand is generous for a supplier whose catalogue anybody is
+   * genuinely watching, and far below the threshold at which a site owner
+   * notices us at all. Listings that do not fit wait for tomorrow rather than
+   * failing — being a day late on a price is survivable, being blocked is not.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  SCRAPER_HOST_DAILY_BUDGET = 2000;
+
+  /**
+   * How long a fetched page may be reused for another customer.
+   *
+   * Two customers watching the same article at the same shop is one page, not
+   * two. Without this the request count scales with customers rather than with
+   * articles, which is the difference between a service a supplier tolerates
+   * and one it blocks.
+   *
+   * Thirty minutes: under the default hourly check interval, so nobody's data
+   * goes stale, and long enough that customers checked in different batches of
+   * the same sweep still share.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  SCRAPER_SHARED_FETCH_MS = 1_800_000;
 
   /**
    * How long every single observation is kept.
