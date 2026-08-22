@@ -185,6 +185,29 @@ export class Shop {
   currency!: string;
 
   @ApiProperty({ description: 'Inactive shops are left out of every search.', example: true })
+  /**
+   * Where an order request is sent.
+   *
+   * Empty for most suppliers, and that is fine — the order can still be built
+   * and printed. Ordering by email is how this market actually works: there is
+   * no API behind a wholesale counter, there is a person who reads the inbox.
+   */
+  @ApiPropertyOptional({
+    description: 'Address order requests are sent to. Null means orders can be built but not sent.',
+    nullable: true,
+    example: 'orders@supplier.bg',
+  })
+  @Column({ name: 'order_email', type: 'varchar', length: 320, nullable: true })
+  orderEmail!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Who to address the order to, when the supplier named somebody.',
+    nullable: true,
+    example: 'Отдел продажби',
+  })
+  @Column({ name: 'order_contact', type: 'varchar', length: 160, nullable: true })
+  orderContact!: string | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive!: boolean;
 

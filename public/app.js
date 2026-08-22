@@ -4878,6 +4878,29 @@ const COMPANY = {
   const hasAnything = stats.shops > 0 || stats.products > 0;
   if (!hasAnything) return;
 
+  // Shown only once they argue for the product rather than against it.
+  //
+  // "8 следени артикула" is a true number that says "nobody uses this", and a
+  // visitor reads it as exactly that. The honest options are to earn a bigger
+  // number or to say something else; inflating it is not one, because the whole
+  // product is a promise about the accuracy of numbers on a screen — and the
+  // first person to sign up and find eight articles has learnt what our figures
+  // are worth.
+  //
+  // Below the threshold the strip stays hidden and the page makes its case with
+  // what it does rather than with how much of it has been done so far.
+  const MEANINGFUL = { shops: 20, products: 250, movements: 1000 };
+
+  const worthShowing =
+    stats.shops >= MEANINGFUL.shops &&
+    stats.products >= MEANINGFUL.products &&
+    stats.priceMovements >= MEANINGFUL.movements;
+
+  if (!worthShowing) {
+    strip.hidden = true;
+    return;
+  }
+
   $('#live-shops').textContent = formatCount(stats.shops);
   $('#live-products').textContent = formatCount(stats.products);
   $('#live-movements').textContent = formatCount(stats.priceMovements);

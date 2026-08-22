@@ -18,6 +18,7 @@ import { Configuration, configuration } from './config/configuration';
 import { buildTypeOrmOptions } from './database/typeorm-options.factory';
 import { HealthModule } from './health/health.module';
 import { MatchingModule } from './matching/matching.module';
+import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { ScraperModule } from './scraper/scraper.module';
 import { StatsModule } from './stats/stats.module';
@@ -66,6 +67,7 @@ import { StatsModule } from './stats/stats.module';
     // guard, which resolves sessions through the token this binds.
     AuthModule,
     ProductsModule,
+    OrdersModule,
     AlertsModule,
     ScraperModule,
     DiscoveryModule,

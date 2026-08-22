@@ -319,6 +319,77 @@ export class MailService implements OnModuleInit {
     return this.send(user.email, subject, html, text);
   }
 
+  /**
+   * Sends one order request to a supplier.
+   *
+   * Three details matter more than the layout.
+   *
+   * `replyTo` is the buyer, not us. The supplier's answer — "we have it, but
+   * only in 100m drums" — has to reach the person who can decide, and a reply
+   * that lands in our inbox is a delay and a game of telephone.
+   *
+   * The message says whose order it is in the first line. We are the tool that
+   * worked out where to send it; presenting it as ours would put us between
+   * two companies in a commercial transaction, which is a different business
+   * with different liabilities.
+   *
+   * And the prices are labelled as *read from the supplier's own site*, with a
+   * request to confirm. They are what the buyer saw, not what either party has
+   * agreed, and saying so is what stops a stale figure becoming a dispute.
+   */
+  async sendOrderRequest(options: {
+    to: string;
+    replyTo: string;
+    buyerName: string;
+    orderNumber: number;
+    currency: string;
+    total: number;
+    note: string | null;
+    contact: string | null;
+    lines: Array<{
+      query: string;
+      matchedName: string | null;
+      quantity: number;
+      unitPrice: number;
+      lineTotal: number;
+    }>;
+  }): Promise<boolean> {
+    const subject = `Заявка за поръчка №${options.orderNumber} от ${options.buyerName}`;
+    const money = (value: number) => `${value.toFixed(2)} ${options.currency}`;
+
+    const { html, text } = renderEmail({
+      title: subject,
+      preheader: `${options.lines.length} позиции на стойност ${money(options.total)}.`,
+      heading: `Заявка за поръчка №${options.orderNumber}`,
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: [
+        paragraph(
+          `${options.contact ? escapeHtml(options.contact) + ', з' : 'З'}дравейте. Това е заявка за поръчка от <strong>${escapeHtml(options.buyerName)}</strong>. Отговорете на това писмо, за да потвърдите наличност и срок — отговорът отива директно при тях.`,
+        ),
+        dataRows(
+          options.lines.map((line) => [
+            escapeHtml(line.query) +
+              (line.matchedName
+                ? ` <span style="opacity:.7">(${escapeHtml(line.matchedName)})</span>`
+                : ''),
+            `${line.quantity} × ${money(line.unitPrice)} = <strong>${money(line.lineTotal)}</strong>`,
+          ]),
+        ),
+        paragraph(`<strong>Общо: ${money(options.total)}</strong>`),
+        options.note ? noticeBox(`Бележка от клиента: ${escapeHtml(options.note)}`) : paragraph(''),
+        noticeBox(
+          'Цените в тази заявка са прочетени от вашия сайт и са ориентировъчни. Обвързваща е цената, която потвърдите вие.',
+        ),
+      ],
+      footnotes: [
+        `Заявката е изпратена през Stoclify от името на ${options.buyerName}. Stoclify не е страна по сделката и не обработва плащания.`,
+      ],
+    });
+
+    return this.send(options.to, subject, html, text, options.replyTo);
+  }
+
   /** Tells a customer their subscription has lapsed and the key has stopped. */
   async sendAccessExpired(user: User, reason: string): Promise<boolean> {
     const subject = 'Достъпът ви до Stoclify е спрян';
@@ -355,14 +426,29 @@ export class MailService implements OnModuleInit {
     return this.send(to, subject, html, text);
   }
 
-  private async send(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  private async send(
+    to: string,
+    subject: string,
+    html: string,
+    text: string,
+    replyTo?: string,
+  ): Promise<boolean> {
     if (!this.transporter) {
       this.logger.warn(`Email is off — "${subject}" for ${to} was not sent.`);
       return false;
     }
 
     try {
-      await this.transporter.sendMail({ from: this.config.from, to, subject, html, text });
+      await this.transporter.sendMail({
+        from: this.config.from,
+        to,
+        subject,
+        html,
+        text,
+        // Set only for mail sent *on somebody's behalf*: an order request must
+        // be answered to the buyer, not to us.
+        ...(replyTo ? { replyTo } : {}),
+      });
       this.logger.log(`Sent "${subject}" to ${to}`);
       return true;
     } catch (error) {

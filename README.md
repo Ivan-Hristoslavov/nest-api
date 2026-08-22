@@ -362,6 +362,43 @@ is much better to know before their traffic goes up.
 
 ---
 
+## 6c. Ordering
+
+The comparison answers "where should I buy this today". Without the next
+sentence the buyer copies that answer into an email by hand — the same forty
+minutes the front page promises to give back, moved to the afternoon.
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| POST | `/api/v1/orders` | Draft one order for one supplier, numbered within your account |
+| GET | `/api/v1/orders` | Your orders, newest first |
+| POST | `/api/v1/orders/:id/send` | Email it to the supplier |
+| PATCH | `/api/v1/orders/:id/status` | Mark it confirmed or cancelled |
+| DELETE | `/api/v1/orders/:id` | Discard a draft |
+
+**This is not a marketplace, on purpose.** No money moves through it, nothing
+is reserved, and the email goes out from the buyer's company with their address
+in `Reply-To` — the supplier's answer reaches the person who can decide, not
+us. Standing between two companies in a commercial transaction is a different
+business with different liabilities, and it is not this one. The message says
+whose order it is in the first line and labels the prices as *read from the
+supplier's own site, please confirm*, because that is exactly what they are.
+
+Three details worth keeping:
+
+- **One order per supplier.** A basket split across three warehouses is three
+  orders, because that is three deliveries and three invoices.
+- **The supplier's name and address are copied onto the order, not joined.**
+  Renaming a supplier next year must not rewrite what last year's order said.
+- **Only `draft` and `sent` are known to the system.** Confirmed and cancelled
+  happen in a phone call we never see, so the buyer marks them. A status
+  guessed at would be worse than no status.
+
+Requires `order_email` on the supplier. Without one the order still builds — it
+just cannot be sent from here.
+
+---
+
 ## 7. Alerting
 
 `price_drop`, `price_rise`, `undercut`, `all_time_low`, `out_of_stock`, `scrape_failing`.
