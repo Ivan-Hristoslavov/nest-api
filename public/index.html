@@ -935,20 +935,23 @@
               </button>
             </div>
 
-            <div class="mt-10 grid items-start gap-6 lg:grid-cols-3">
+            <!-- `items-stretch`, not `items-start`: the three cards have to be
+                 the same height before anything inside them can line up, and
+                 the buttons below rely on it. -->
+            <div class="mt-10 grid items-stretch gap-6 lg:grid-cols-3">
               <!-- Занаят -->
               <article
                 class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
               >
-                <h3 class="text-[15px] font-semibold text-slate-200">Занаят</h3>
-                <p class="mt-1.5 text-[13px] text-slate-500">
+                <h3 class="text-[20px] font-bold tracking-tight text-slate-200">Занаят</h3>
+                <p class="mt-2 min-h-[38px] text-[13px] leading-relaxed text-slate-500">
                   За електротехник или малък обект.
                 </p>
                 <div class="mt-6 flex items-baseline gap-1.5">
                   <span class="num text-5xl font-extrabold tracking-tight text-slate-200">€19</span>
                   <span class="text-[14px] text-slate-500">/месец</span>
                 </div>
-                <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
+                <ul class="mt-7 flex-1 space-y-3 text-[14px] text-slate-300">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">100 следени артикула</strong></span>
@@ -987,24 +990,29 @@
                 </button>
               </article>
 
-              <!-- Магазин -->
+              <!-- Магазин. Raised by a negative top margin and given head room
+                   for its badge — but deliberately *without* `h-full`. Pinning
+                   the height to the row would keep the raise and take it off
+                   the bottom, which is what left this card's button sitting
+                   above the other two; letting the grid stretch it instead
+                   makes it taller at the top and level at the foot. -->
               <article
-                class="relative flex h-full flex-col rounded-2xl border border-accent-500/40 bg-ink-850 p-7 shadow-glow lg:-mt-4 lg:pb-9 lg:pt-9"
+                class="relative flex flex-col rounded-2xl border border-accent-500/40 bg-ink-850 p-7 shadow-glow lg:-mt-4 lg:pt-9"
               >
                 <span
                   class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-accent-500 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-ink-950"
                 >
                   Най-избиран
                 </span>
-                <h3 class="text-[15px] font-semibold text-slate-200">Магазин</h3>
-                <p class="mt-1.5 text-[13px] text-slate-400">
+                <h3 class="text-[20px] font-bold tracking-tight text-slate-200">Магазин</h3>
+                <p class="mt-2 min-h-[38px] text-[13px] leading-relaxed text-slate-400">
                   За магазин с постоянни поръчки.
                 </p>
                 <div class="mt-6 flex items-baseline gap-1.5">
                   <span class="num text-5xl font-extrabold tracking-tight text-slate-200">€49</span>
                   <span class="text-[14px] text-slate-400">/месец</span>
                 </div>
-                <ul class="mt-7 space-y-3 text-[14px] text-slate-200">
+                <ul class="mt-7 flex-1 space-y-3 text-[14px] text-slate-200">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">500 следени артикула</strong></span>
@@ -1037,7 +1045,7 @@
                 <button
                   type="button"
                   data-checkout="pro"
-                  class="mt-8 w-full rounded-xl bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
+                  class="mt-8 w-full rounded-xl border border-transparent bg-accent-500 px-5 py-3 text-[14px] font-semibold text-ink-950 transition hover:bg-accent-400"
                 >
                   Вземи плана
                 </button>
@@ -1047,15 +1055,15 @@
               <article
                 class="flex h-full flex-col rounded-2xl border border-white/8 bg-ink-900 p-7 shadow-panel"
               >
-                <h3 class="text-[15px] font-semibold text-slate-200">Верига</h3>
-                <p class="mt-1.5 text-[13px] text-slate-500">
+                <h3 class="text-[20px] font-bold tracking-tight text-slate-200">Верига</h3>
+                <p class="mt-2 min-h-[38px] text-[13px] leading-relaxed text-slate-500">
                   За няколко обекта или дистрибутор.
                 </p>
                 <div class="mt-6 flex items-baseline gap-1.5">
                   <span class="num text-5xl font-extrabold tracking-tight text-slate-200">€99</span>
                   <span class="text-[14px] text-slate-500">/месец</span>
                 </div>
-                <ul class="mt-7 space-y-3 text-[14px] text-slate-300">
+                <ul class="mt-7 flex-1 space-y-3 text-[14px] text-slate-300">
                   <li class="flex gap-3">
                     <i class="fa-solid fa-check mt-1 text-[12px] text-accent-400"></i>
                     <span><strong class="font-semibold text-slate-200">2 000 следени артикула</strong></span>
