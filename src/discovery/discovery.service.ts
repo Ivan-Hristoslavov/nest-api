@@ -1007,7 +1007,7 @@ export class DiscoveryService {
       };
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'непозната грешка';
-      this.logger.warn(`Търсенето в ${provider.host} се провали: ${reason}`);
+      this.logger.warn(`Search at ${provider.host} failed: ${reason}`);
       return this.failure(provider, reason, startedAt, url);
     }
   }

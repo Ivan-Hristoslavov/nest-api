@@ -327,7 +327,7 @@ export class CompetitorsService {
     const competitor = await this.competitorsRepository.findOne({ where: { id: competitorId } });
 
     if (!competitor) {
-      this.logger.warn(`Складът ${competitorId} е изчезнал по време на проверката — пропуснат.`);
+      this.logger.warn(`Listing ${competitorId} disappeared mid-sweep — skipped.`);
       return {
         productId: '',
         productName: '',

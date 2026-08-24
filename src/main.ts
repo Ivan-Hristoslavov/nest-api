@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ServerResponse } from 'node:http';
+import { setDefaultResultOrder } from 'node:dns';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -20,6 +21,21 @@ import { SeoService } from './seo/seo.service';
 import { setupSwagger } from './swagger';
 
 async function bootstrap(): Promise<void> {
+  // Prefer IPv4 when a name resolves to both.
+  //
+  // `smtp.gmail.com` publishes an A record and a AAAA record, and Node picks
+  // whichever the resolver lists first — often the AAAA one. A host with no
+  // route out over IPv6, which is the default on most container platforms,
+  // then fails with `ENETUNREACH 2a00:1450:…:465` for a server that answers
+  // perfectly well over IPv4. It cost a signup: the verification email timed
+  // out, so the account existed and its owner never heard about it.
+  //
+  // Set for the process rather than for the mailer, because the scraper
+  // reaches out to arbitrary hosts and would hit exactly the same wall. This
+  // is a preference, not a restriction — a name with only a AAAA record is
+  // still used.
+  setDefaultResultOrder('ipv4first');
+
   // Before the application, not after: Sentry patches the modules it traces as
   // they load, so initialising it later leaves half the context missing.
   initObservability(configuration().observability);

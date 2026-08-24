@@ -232,7 +232,7 @@ async function seed(): Promise<void> {
       // CASCADE). TypeORM refuses `delete({})` as a guard against wiping a
       // table by accident, so the intent is stated explicitly.
       const { affected } = await products.createQueryBuilder().delete().where('1 = 1').execute();
-      logger.warn(`--reset: изтрити ${affected ?? 0} продукта с всичките им данни.`);
+      logger.warn(`--reset: deleted ${affected ?? 0} products and everything hanging off them.`);
     }
 
     let created = 0;
@@ -317,7 +317,7 @@ async function seed(): Promise<void> {
     logger.log(
       `Готово: ${created} нови продукта, ${updated} обновени, ${listingsAdded} нови склада, ${total} общо.`,
     );
-    logger.log('Пуснете POST /api/v1/scraper/run, за да се прочетат реалните цени.');
+    logger.log('Run POST /api/v1/scraper/run to read the real prices.');
   } finally {
     await dataSource.destroy();
   }
