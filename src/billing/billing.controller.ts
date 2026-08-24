@@ -11,6 +11,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -51,6 +52,7 @@ import {
   RotateApiKeyDto,
   StartCheckoutDto,
 } from './dto/api-key.dto';
+import { AdjustUserDto } from './dto/adjust-user.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
 import { User, UserPlan, effectiveAiUsage } from './entities/user.entity';
@@ -367,6 +369,30 @@ export class BillingController {
       replacedPreviousKey: false,
       emailed: issuedNow,
     };
+  }
+
+  @ApiKeyAuth()
+  @UseGuards(AdminGuard)
+  @Patch('users/:id')
+  @ApiOperation({
+    summary: 'Change an account by hand (operator only)',
+    description:
+      'Status, plan and tracked-article limit. Everything here is normally decided by a payment; this is for when a payment is not going to decide it — a bank transfer, a lapse worth overlooking, a week of extra headroom.\n\nOnly what you send is touched. Every change is logged with what it was before, because six months later somebody will ask why this account is on this plan.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOkResponse({ type: User })
+  @ApiNotFoundResponse({ description: 'No account with this id.', type: ErrorResponseDto })
+  async adjustUser(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: AdjustUserDto,
+  ): Promise<User> {
+    const user = await this.usersService.adjust(id, dto);
+
+    // A suspended account must stop working now, not when the guard's cache
+    // happens to expire.
+    this.revocations.revokeCachedKeys(`account ${id} adjusted by an operator`);
+
+    return user;
   }
 
   @ApiKeyAuth()

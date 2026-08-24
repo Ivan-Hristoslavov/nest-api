@@ -108,6 +108,9 @@ const ENDPOINTS = {
   authSignOut: API_BASE + '/auth/sign-out',
   stats: API_BASE + '/stats',
   billingRotateKey: API_BASE + '/billing/users/api-key',
+  billingMailHealth: API_BASE + '/billing/mail/health',
+  matchingHealth: API_BASE + '/matching/health',
+  scraperStatus: API_BASE + '/scraper/status',
 };
 
 /**
@@ -5630,7 +5633,91 @@ async function detectOperator() {
   }
 }
 
+/**
+ * The four things that are either working or not.
+ *
+ * Each has had an endpoint for a while and nothing ever showed them together,
+ * so "is the service healthy" meant four separate requests and remembering
+ * what normal looks like for each. A tile is green when the answer is the one
+ * you want and amber when it is not — never red, because none of these being
+ * off is an emergency on its own, and a screen that cries wolf gets ignored.
+ *
+ * Failures are reported as "unknown" rather than as "broken": an endpoint that
+ * did not answer tells you about the request, not about the thing.
+ */
+async function loadOperatorHealth() {
+  const strip = $('#operator-health');
+  if (!strip) return;
+
+  const ask = async (url) => {
+    try {
+      const response = await fetch(url, { headers: authHeaders() });
+      return response.ok ? await response.json() : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const [health, mail, matching, scraper] = await Promise.all([
+    ask('/health'),
+    ask(ENDPOINTS.billingMailHealth),
+    ask(ENDPOINTS.matchingHealth),
+    ask(ENDPOINTS.scraperStatus),
+  ]);
+
+  const tile = (label, value, ok, detail) =>
+    '<div class="bg-ink-900 px-4 py-3.5">' +
+    '<div class="flex items-center gap-2">' +
+    '<span class="h-1.5 w-1.5 shrink-0 rounded-full ' +
+    (ok ? 'bg-emerald-400' : 'bg-amber-400') +
+    '"></span>' +
+    '<span class="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">' +
+    escapeHtml(label) +
+    '</span></div>' +
+    '<p class="mt-1.5 text-[13.5px] font-medium ' +
+    (ok ? 'text-slate-200' : 'text-amber-300') +
+    '">' +
+    escapeHtml(value) +
+    '</p>' +
+    (detail
+      ? '<p class="mt-0.5 truncate text-[11px] text-slate-500" title="' +
+        escapeHtml(detail) +
+        '">' +
+        escapeHtml(detail) +
+        '</p>'
+      : '') +
+    '</div>';
+
+  strip.innerHTML =
+    tile(
+      'База',
+      health ? (health.database.status === 'up' ? 'работи' : 'не отговаря') : 'неизвестно',
+      Boolean(health && health.database.status === 'up'),
+      health ? health.database.latencyMs + ' ms' : '',
+    ) +
+    tile(
+      'Поща',
+      mail ? (mail.ok ? 'работи' : 'не работи') : 'неизвестно',
+      Boolean(mail && mail.ok),
+      mail ? mail.detail : '',
+    ) +
+    tile(
+      'AI съпоставяне',
+      matching ? (matching.enabled ? 'включено' : 'изключено') : 'неизвестно',
+      Boolean(matching && matching.enabled),
+      matching && matching.model ? matching.model : 'без ключ — само по спецификации',
+    ) +
+    tile(
+      'Обиколка',
+      scraper && scraper.lastRunAt ? formatRelative(scraper.lastRunAt) : 'още не е минала',
+      Boolean(scraper && scraper.lastRunAt),
+      scraper && scraper.enabled ? 'по график' : 'спряна',
+    );
+}
+
 async function loadOperatorPanel() {
+  void loadOperatorHealth();
+
   const list = $('#operator-list');
   list.innerHTML =
     '<p class="px-5 py-8 text-center text-[13px] text-slate-500">Зареждам…</p>';
@@ -5687,11 +5774,44 @@ async function loadOperatorPanel() {
         '">' +
         status.label +
         '</span></td>' +
-        '<td class="px-3 py-3 text-[12.5px] text-slate-300">' +
-        escapeHtml(PLAN_LABELS[user.plan] || user.plan) +
-        '</td>' +
-        '<td class="num px-3 py-3 text-right text-[12.5px] text-slate-400">' +
+        // Editable in place rather than behind a dialog: this is a table an
+        // operator scans and corrects, and a modal per row is a modal too many.
+        '<td class="px-3 py-3">' +
+        '<select data-plan="' +
+        escapeHtml(user.id) +
+        '" class="rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-[12.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none">' +
+        ['free', 'starter', 'pro', 'business']
+          .map(
+            (value) =>
+              '<option value="' +
+              value +
+              '"' +
+              (user.plan === value ? ' selected' : '') +
+              '>' +
+              escapeHtml(PLAN_LABELS[value] || value) +
+              '</option>',
+          )
+          .join('') +
+        '</select></td>' +
+        '<td class="px-3 py-3 text-right">' +
+        '<input type="number" min="0" max="100000" data-limit="' +
+        escapeHtml(user.id) +
+        '" value="' +
         user.productLimit +
+        '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-right text-[12.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none" />' +
+        '</td>' +
+        // What they are actually spending, next to what they are allowed.
+        // A limit on its own says what we sold; this says whether it fits.
+        '<td class="num px-3 py-3 text-right text-[12.5px]">' +
+        '<span class="' +
+        (user.aiMatchesUsed >= user.aiMatchesLimit ? 'text-amber-400' : 'text-slate-400') +
+        '">' +
+        user.aiMatchesUsed +
+        ' / ' +
+        user.aiMatchesLimit +
+        '</span></td>' +
+        '<td class="px-3 py-3 text-[11.5px] text-slate-500">' +
+        escapeHtml(user.locale ? user.locale.toUpperCase() : '—') +
         '</td>' +
         '<td class="px-3 py-3">' +
         (user.apiKeyPrefix
@@ -5706,11 +5826,25 @@ async function loadOperatorPanel() {
         ) +
         '</td>' +
         '<td class="py-3 pl-3 pr-5 text-right">' +
+        '<span class="inline-flex items-center gap-1.5">' +
+        '<button type="button" data-suspend="' +
+        escapeHtml(user.id) +
+        '" data-suspended="' +
+        (user.status === 'suspended' ? '1' : '') +
+        '" title="' +
+        (user.status === 'suspended' ? 'Възстанови достъпа' : 'Спри достъпа') +
+        '" class="grid h-7 w-7 place-items-center rounded-lg border border-white/10 bg-ink-850 transition ' +
+        (user.status === 'suspended'
+          ? 'text-emerald-400 hover:border-emerald-500/40'
+          : 'text-slate-400 hover:border-red-500/40 hover:text-red-400') +
+        '"><i class="fa-solid fa-' +
+        (user.status === 'suspended' ? 'play' : 'ban') +
+        ' text-[10px]"></i></button>' +
         '<button type="button" data-reissue="' +
         escapeHtml(user.email) +
         '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-amber-500/40 hover:text-amber-300">' +
         '<i class="fa-solid fa-key text-[10px]"></i>Нов ключ</button>' +
-        '</td></tr>'
+        '</span></td></tr>'
       );
     })
     .join('');
@@ -5722,6 +5856,8 @@ async function loadOperatorPanel() {
     '<th class="px-3 py-2.5 font-semibold">Състояние</th>' +
     '<th class="px-3 py-2.5 font-semibold">План</th>' +
     '<th class="px-3 py-2.5 text-right font-semibold">Лимит</th>' +
+    '<th class="px-3 py-2.5 text-right font-semibold">AI</th>' +
+    '<th class="px-3 py-2.5 font-semibold">Език</th>' +
     '<th class="px-3 py-2.5 font-semibold">Ключ</th>' +
     '<th class="px-3 py-2.5 font-semibold">Ползван</th>' +
     '<th class="py-2.5 pl-3 pr-5"></th>' +
@@ -5732,6 +5868,68 @@ async function loadOperatorPanel() {
   $$('[data-reissue]').forEach(function (button) {
     button.addEventListener('click', () => reissueKey(button.dataset.reissue));
   });
+  $$('[data-suspend]').forEach(function (button) {
+    button.addEventListener('click', () =>
+      toggleSuspension(button.dataset.suspend, Boolean(button.dataset.suspended)),
+    );
+  });
+  // Committed on change, not on a save button: a select that has already
+  // moved and a number that has already been typed are the operator's answer,
+  // and a row that needs confirming twice gets confirmed once and forgotten.
+  $$('[data-plan]').forEach(function (select) {
+    select.addEventListener('change', () =>
+      patchUser(select.dataset.plan, { plan: select.value }, 'Планът не се смени'),
+    );
+  });
+  $$('[data-limit]').forEach(function (input) {
+    input.addEventListener('change', function () {
+      const value = Number(input.value);
+      if (!Number.isFinite(value) || value < 0) return;
+      void patchUser(input.dataset.limit, { productLimit: value }, 'Лимитът не се смени');
+    });
+  });
+}
+
+/** Sends one operator change and reloads the list from the server. */
+async function patchUser(id, changes, failure) {
+  try {
+    const response = await fetch(ENDPOINTS.billingUsers + '/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(changes),
+    });
+
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    await loadOperatorPanel();
+    return true;
+  } catch (error) {
+    toast(failureText(error, failure), 'error');
+    return false;
+  }
+}
+
+/**
+ * Stops or restores an account.
+ *
+ * Suspension is the one operator action with an immediate outward effect —
+ * the customer's integration stops on the next request — so it asks first and
+ * says so. Restoring does not, because nothing breaks by being allowed back.
+ */
+async function toggleSuspension(id, suspended) {
+  if (suspended) {
+    await patchUser(id, { status: 'active' }, 'Достъпът не беше възстановен');
+    return;
+  }
+
+  const confirmed = await confirmDialog(
+    'Спиране на достъп',
+    'Ключът на този клиент спира да работи веднага. Ако има работеща интеграция, тя ще спре. Данните остават — това не е изтриване.',
+    'Спри достъпа',
+  );
+  if (!confirmed) return;
+
+  await patchUser(id, { status: 'suspended' }, 'Достъпът не беше спрян');
 }
 
 /**

@@ -1678,7 +1678,16 @@
             </button>
           </div>
 
-          <div class="mt-8 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
+          <!-- The four things that are either working or not, in one place.
+               Each has had an endpoint of its own for a while; nothing put
+               them side by side, so "is the service healthy" meant four
+               separate curls and remembering what normal looks like. -->
+          <div
+            id="operator-health"
+            class="mt-8 grid gap-px overflow-hidden rounded-2xl border border-white/8 bg-white/5 sm:grid-cols-2 lg:grid-cols-4"
+          ></div>
+
+          <div class="mt-6 overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">
             <div id="operator-list"></div>
           </div>
 

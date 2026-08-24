@@ -359,6 +359,46 @@ export class UsersService {
   }
 
   /**
+   * Changes an account by hand.
+   *
+   * The operator screen reads; this is what lets it act. Everything here is
+   * something a webhook would normally decide, and sometimes a webhook is not
+   * going to: a customer who paid by bank transfer, one whose subscription
+   * lapsed for a reason we agreed to overlook, one who needs a bigger
+   * allowance for a week.
+   *
+   * Only the three fields worth touching. Plan and limit are separate on
+   * purpose — raising somebody's articles for a month is not the same as
+   * moving them onto a plan they are not paying for, and conflating them
+   * would make the generous version of the first look like the second in
+   * every report afterwards.
+   */
+  async adjust(
+    id: string,
+    changes: { status?: UserStatus; plan?: UserPlan; productLimit?: number },
+  ): Promise<User> {
+    const user = await this.findOne(id);
+    const before = { status: user.status, plan: user.plan, productLimit: user.productLimit };
+
+    if (changes.status) user.status = changes.status;
+    if (changes.plan) user.plan = changes.plan;
+    if (changes.productLimit !== undefined) user.productLimit = changes.productLimit;
+
+    const saved = await this.usersRepository.save(user);
+
+    // Written down because it is the one change to an account that no payment
+    // explains, and six months later somebody will ask why this customer is
+    // on this plan.
+    this.logger.warn(
+      `Operator adjusted ${saved.id} (${redactEmail(saved.email)}): ` +
+        `status ${before.status}→${saved.status}, plan ${before.plan}→${saved.plan}, ` +
+        `limit ${before.productLimit}→${saved.productLimit}`,
+    );
+
+    return saved;
+  }
+
+  /**
    * Records that a key was just used.
    *
    * Fire-and-forget and deliberately not awaited by the guard: last-seen is
