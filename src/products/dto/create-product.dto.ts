@@ -1,3 +1,4 @@
+import { IsPublicHttpUrl } from '../../common/validators/public-url.validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -101,6 +102,7 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({ description: 'Product image.', format: 'uri' })
   @IsUrl(URL_OPTIONS)
+  @IsPublicHttpUrl()
   @MaxLength(2048)
   @IsOptional()
   imageUrl?: string;
@@ -126,6 +128,7 @@ export class CreateProductDto {
     example: 'https://shop.example.com/products/sony-wh-1000xm5',
   })
   @IsUrl(URL_OPTIONS)
+  @IsPublicHttpUrl()
   @MaxLength(2048)
   targetUrl!: string;
 
@@ -135,6 +138,7 @@ export class CreateProductDto {
     example: 'https://competitor.example.com/audio/sony-wh-1000xm5',
   })
   @IsUrl(URL_OPTIONS)
+  @IsPublicHttpUrl()
   @MaxLength(2048)
   competitorUrl!: string;
 

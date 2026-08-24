@@ -133,6 +133,56 @@ describe('ranking', () => {
     });
   });
 
+  describe('page furniture', () => {
+    // homefinishing.bg returned its become-a-partner link at the top of every
+    // search, whatever was typed: no price, no relation to the query, and a
+    // 0% match sitting in a table whose whole job is comparing prices.
+    it('drops a promo tile that has neither a price nor anything to do with the query', () => {
+      const hits = rank(
+        [
+          offer({ title: 'Станете партньор', price: null }),
+          offer({ title: 'LED ЛАМПА 5,5W E27 4000K', price: 1.08 }),
+        ],
+        'EUR',
+        60,
+        'лед лампа',
+      );
+
+      expect(hits.map((hit) => hit.name)).toEqual(['LED ЛАМПА 5,5W E27 4000K']);
+    });
+
+    it('keeps a real article whose price would not parse', () => {
+      // The shop stocks it and the link works. Dropping it would claim the
+      // supplier does not carry something it does.
+      const hits = rank([offer({ title: 'LED лампа 12W', price: null })], 'EUR', 60, 'led лампа');
+
+      expect(hits).toHaveLength(1);
+      expect(hits[0].effectivePrice).toBeNull();
+    });
+
+    it('keeps an unrelated result that at least has a price', () => {
+      // That is the shop's search being generous, not furniture — and a price
+      // is something the buyer can act on.
+      const hits = rank([offer({ title: 'Суши сет PORTATA', price: 29.32 })], 'EUR', 60, 'лед лампа');
+
+      expect(hits).toHaveLength(1);
+    });
+
+    it('drops the shop’s unpriced guesses, which are noise in a price table', () => {
+      const hits = rank(
+        [
+          offer({ title: 'Оборудвана ъглова кухня VANIA', price: null }),
+          offer({ title: 'LED крушка E27', price: 2.1 }),
+        ],
+        'EUR',
+        60,
+        'лед крушка',
+      );
+
+      expect(hits.map((hit) => hit.name)).toEqual(['LED крушка E27']);
+    });
+  });
+
   describe('fuzzy shop results', () => {
     // homefinishing.bg, verified 2026-08: searching "СВТ" returns
     // "САТ.НИКЕЛ", "Суши сет" and a picture light — none of which contains

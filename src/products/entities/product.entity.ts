@@ -31,6 +31,15 @@ import { PriceHistory } from './price-history.entity';
 @Index('idx_products_owner', ['ownerId'])
 @Index('idx_products_brand', ['brand'])
 @Index('idx_products_category', ['category'])
+// One SKU per account, not one SKU in the world. Declared here as well as
+// in the migration because TypeORM compares the schema against the
+// entities: while `sku` carried a bare `unique: true`, `schema:log`
+// proposed dropping this index and adding a global constraint, which would
+// have stopped a second customer from using a SKU the first one had.
+@Index('idx_products_owner_sku', ['ownerId', 'sku'], {
+  unique: true,
+  where: '"sku" IS NOT NULL',
+})
 export class Product {
   @ApiProperty({
     description: 'Primary key.',
@@ -65,7 +74,7 @@ export class Product {
     maxLength: 64,
     example: 'SKU-WH1000XM5-BLK',
   })
-  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  @Column({ type: 'varchar', length: 64, nullable: true })
   sku!: string | null;
 
   @ApiPropertyOptional({

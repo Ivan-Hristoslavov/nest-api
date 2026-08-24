@@ -7,6 +7,8 @@ import { SearchCache } from '../discovery/entities/search-cache.entity';
 import { AuthToken } from '../auth/entities/auth-token.entity';
 import { MatchCache } from '../matching/entities/match-cache.entity';
 import { ManualPrice } from '../shops/entities/manual-price.entity';
+import { Order } from '../orders/entities/order.entity';
+import { OrderLine } from '../orders/entities/order-line.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { DatabaseConfig } from '../config/configuration';
 import { Competitor } from '../products/entities/competitor.entity';
@@ -53,6 +55,16 @@ export function buildTypeOrmOptions(config: DatabaseConfig): TypeOrmModuleOption
       SearchCache,
       MatchCache,
       AuthToken,
+      // Listed here, not just in `OrdersModule`'s `forFeature`.
+      //
+      // `forFeature` records an entity for `autoLoadEntities`, which is off —
+      // so the repository was injectable, the routes mapped at boot and every
+      // call to one of them threw `EntityMetadataNotFoundError` on its first
+      // query. This list is also the CLI's whole view of the schema: an entity
+      // missing from it is a table `migration:generate` believes nobody wants,
+      // and proposes dropping.
+      Order,
+      OrderLine,
     ],
     migrations: [`${__dirname}/migrations/*.{ts,js}`],
     migrationsTableName: 'typeorm_migrations',

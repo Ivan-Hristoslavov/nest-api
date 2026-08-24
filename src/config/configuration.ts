@@ -16,6 +16,15 @@ export interface AppConfig {
   swaggerEnabled: boolean;
   corsOrigins: string[] | true;
   logLevel: string;
+  /**
+   * The origin this site is reached at, without a trailing slash.
+   *
+   * Every absolute URL a crawler is given — the canonical link, the language
+   * alternates, the sitemap, the structured data — is built from this. Left at
+   * localhost it is still correct, just useless, which is the right failure:
+   * a guessed production domain would put a wrong canonical on every page.
+   */
+  publicUrl: string;
 }
 
 export interface AuthConfig {
@@ -240,6 +249,7 @@ export const configuration = (): Configuration => {
       swaggerEnabled: env.SWAGGER_ENABLED,
       corsOrigins: parseCorsOrigins(env.CORS_ORIGINS, env.NODE_ENV),
       logLevel: env.LOG_LEVEL,
+      publicUrl: env.APP_PUBLIC_URL.replace(/\/+$/, ''),
     },
     observability: {
       sentryDsn: env.SENTRY_DSN?.trim() || undefined,

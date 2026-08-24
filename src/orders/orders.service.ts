@@ -1,6 +1,7 @@
+import { redactEmail } from '../common/redact';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, MoreThan, Repository } from 'typeorm';
 
 import { User } from '../billing/entities/user.entity';
 import { Shop } from '../shops/entities/shop.entity';
@@ -38,6 +39,9 @@ export interface DraftOrder {
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
+
+  /** Order emails one account may send in a rolling 24 hours. */
+  private static readonly MAX_SENDS_PER_DAY = 50;
 
   constructor(
     @InjectRepository(Order) private readonly orders: Repository<Order>,
@@ -102,7 +106,7 @@ export class OrdersService {
       });
 
       const saved = await orders.save(order);
-      this.logger.log(`Order #${saved.number} drafted for ${owner.email} at ${shop.name}`);
+      this.logger.log(`Order #${saved.number} drafted for ${redactEmail(owner.email)} at ${shop.name}`);
 
       return saved;
     });
@@ -120,6 +124,37 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Няма такава поръчка.');
 
     return order;
+  }
+
+  /**
+   * Refuses to keep sending once an account has sent a day's worth.
+   *
+   * The order email goes to an address the customer typed, from our server,
+   * carrying whatever note they wrote. That is the shape of a mail relay, and
+   * the only thing that had been standing in front of it was the global rate
+   * limiter — which is about requests per minute, not about how much mail one
+   * account can push through us in a day.
+   *
+   * The number is far above what a buyer does: placing fifty orders in a day
+   * is a busy week's work. Somebody who genuinely hits it is somebody worth
+   * talking to before the sending domain's reputation is spent for them.
+   *
+   * @throws BadRequestException when the day's allowance is gone.
+   */
+  async assertWithinDailySendLimit(ownerId: string): Promise<void> {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sent = await this.orders.count({ where: { ownerId, sentAt: MoreThan(since) } });
+
+    if (sent >= OrdersService.MAX_SENDS_PER_DAY) {
+      this.logger.warn(
+        `Account ${ownerId} reached the daily order-email limit (${sent} in 24h).`,
+      );
+
+      throw new BadRequestException(
+        `Изпратихте ${sent} поръчки за последните 24 часа, което е дневният лимит. ` +
+          'Поръчката остава запазена — изпратете я утре или ни пишете.',
+      );
+    }
   }
 
   /** Records that it went out. Called only after the mail was accepted. */

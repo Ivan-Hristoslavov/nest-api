@@ -4,6 +4,7 @@ import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 
 import { Configuration, ScraperConfig } from '../../config/configuration';
 import { decodeHtml } from '../http/html-decoder';
+import { guardedAgents } from '../http/address-guard';
 import { HostRateLimiterService } from '../http/host-rate-limiter.service';
 import { RobotsService } from '../http/robots.service';
 import { PriceParserService } from '../parsers/price-parser.service';
@@ -86,6 +87,11 @@ export class HttpPriceFetcherService implements PriceSource {
     this.client = axios.create({
       timeout: this.config.timeoutMs,
       maxRedirects: 5,
+      // Every address here was typed by a customer. The agents refuse to
+      // open a connection to this server's own network, and they do it per
+      // connection — so each hop of a redirect is checked too.
+      ...guardedAgents(),
+
       // Never throw on status: the code below decides what is retryable.
       validateStatus: () => true,
       maxContentLength: MAX_BODY_BYTES,

@@ -1,3 +1,4 @@
+import { IsPublicHttpUrl } from '../../common/validators/public-url.validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -37,6 +38,7 @@ export class CreateCompetitorDto {
     example: 'https://competitor-a.example.com/audio/sony-wh-1000xm5',
   })
   @IsUrl(URL_OPTIONS)
+  @IsPublicHttpUrl()
   @MaxLength(2048)
   url!: string;
 

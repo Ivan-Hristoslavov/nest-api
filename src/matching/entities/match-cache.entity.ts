@@ -14,6 +14,8 @@ import { NumericColumnTransformer } from '../../common/transformers/numeric-colu
  */
 @Entity('ai_match_cache')
 @Index('idx_ai_match_cache_fingerprint', ['fingerprint'], { unique: true })
+// Cache eviction reads by age.
+@Index('idx_ai_match_cache_created', ['createdAt'])
 export class MatchCache {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

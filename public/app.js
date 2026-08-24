@@ -111,6 +111,33 @@ const ENDPOINTS = {
 };
 
 /**
+ * What is on sale, asked once.
+ *
+ * Two separate parts of the page need this — the plan buttons and the offer of
+ * more comparisons — and each used to fetch it for itself, so every visit
+ * opened the same request twice. The promise is kept rather than the answer,
+ * so callers that arrive while the first request is still in flight wait for
+ * it instead of starting a second.
+ *
+ * A server that cannot be reached is reported as "not selling" rather than as
+ * an error: this runs on a page somebody may only be reading.
+ */
+let billingPlansPromise = null;
+
+function billingPlans() {
+  if (!billingPlansPromise) {
+    billingPlansPromise = fetch(ENDPOINTS.billingPlans, {
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null)
+      .then((payload) => payload || { enabled: false, plans: [], topUpUrl: null });
+  }
+
+  return billingPlansPromise;
+}
+
+/**
  * The API key is held in localStorage only. It is never written into the
  * markup and never put in a URL — a key in a query string ends up in
  * server logs, browser history and Referer headers.
@@ -2694,7 +2721,7 @@ function bindShopRows() {
       const confirmed = await confirmDialog(
         'Премахване на доставчик',
         'Ще премахна „' +
-          shop.name +
+          escapeHtml(shop.name) +
           '" от търсенето. Следените продукти оттам остават — те се пазят отделно.',
         'Премахни',
       );
@@ -3686,13 +3713,24 @@ function renderCatalogueResults(hits, query, matching) {
         '</span></span></td>' +
         (showSupplier
           ? '<td class="px-3 py-3 text-[12px] text-slate-400">' +
-            '<a href="' +
-            escapeHtml(hit.url) +
-            '" target="_blank" rel="noopener noreferrer" class="block truncate font-medium text-slate-300 transition hover:text-accent-500 hover:underline" title="Отвори в ' +
-            escapeHtml(hit.host) +
-            '">' +
-            escapeHtml(hit.shopName) +
-            '</a>' +
+            // A supplier without a page is a name, not a link. This cell used
+            // to write the anchor either way, and an empty href is not an
+            // inert link — the browser resolves it against the current page,
+            // so every offer that arrived without a URL sent the buyer back to
+            // the address they were already on.
+            (hit.url
+              ? '<a href="' +
+                escapeHtml(hit.url) +
+                '" target="_blank" rel="noopener noreferrer" class="block truncate font-medium text-slate-300 transition hover:text-accent-500 hover:underline" title="Отвори в ' +
+                escapeHtml(hit.host) +
+                '">' +
+                escapeHtml(hit.shopName) +
+                '</a>'
+              : '<span class="block truncate font-medium text-slate-300" title="' +
+                escapeHtml(hit.shopName) +
+                '">' +
+                escapeHtml(hit.shopName) +
+                '</span>') +
             '<span class="block truncate font-mono text-[10.5px] text-slate-500">' +
             escapeHtml(hit.host) +
             '</span>' +
@@ -3757,15 +3795,20 @@ function renderCatalogueResults(hits, query, matching) {
     })
     .join('');
 
-  const columns =
-    '<col class="w-[' +
-    (anyDiscount ? '42%' : '48%') +
-    ']" />' +
-    '<col class="w-[16%]" />' +
-    (anyDiscount ? '<col class="w-[10%]" />' : '') +
-    '<col class="w-[16%]" />' +
-    '<col class="w-[8%]" />' +
-    '<col class="w-[12%]" />';
+  /* Written out whole, one string per layout, because Tailwind finds classes
+     by reading this file as text. Built up as `'w-[' + percent + ']'` the name
+     never appears in the source, so no rule was ever generated and the
+     colgroup did nothing: the table fell back to sizing by content, which is
+     why article names truncated to "LED лампа E27 12W 40…" while availability,
+     which never holds more than "наличен", sprawled across the right.
+
+     Everything a row knows is already printed on it, so there is nothing to
+     add in that space. It goes to the two columns that carry words. */
+  const columns = anyDiscount
+    ? '<col class="w-[40%]" /><col class="w-[18%]" /><col class="w-[9%]" />' +
+      '<col class="w-[15%]" /><col class="w-[9%]" /><col class="w-[9%]" />'
+    : '<col class="w-[46%]" /><col class="w-[20%]" />' +
+      '<col class="w-[16%]" /><col class="w-[9%]" /><col class="w-[9%]" />';
 
   const range =
     singleGroup && priced.length > 1
@@ -4784,14 +4827,7 @@ async function startCheckout(plan, button) {
   const buttons = $$('[data-checkout]');
   if (!buttons.length) return;
 
-  let available = { enabled: false, plans: [] };
-  try {
-    const response = await fetch(ENDPOINTS.billingPlans, { headers: { Accept: 'application/json' } });
-    if (response.ok) available = await response.json();
-  } catch (error) {
-    // Unreachable server: treat as not selling rather than as an error
-    // on a page somebody is only reading.
-  }
+  const available = await billingPlans();
 
   buttons.forEach(function (button) {
     const plan = button.dataset.checkout;
@@ -4878,6 +4914,18 @@ const COMPANY = {
   const hasAnything = stats.shops > 0 || stats.products > 0;
   if (!hasAnything) return;
 
+  // Liveness is a different question from volume, so it is answered before the
+  // thresholds below. The badge only claims that something checked a price and
+  // says when; that is true of a catalogue too small to print counters for, and
+  // gating it on their size left the page silent about a check it had just run.
+  if (stats.lastCheckAt) {
+    // Composed from two pieces, so it cannot be looked up whole: the label goes
+    // through the dictionary and the relative time is built by `timeAgo`.
+    $('#hero-live-text').textContent =
+      translate('Последна проверка') + ' ' + timeAgo(stats.lastCheckAt);
+    $('#hero-live').hidden = false;
+  }
+
   // Shown only once they argue for the product rather than against it.
   //
   // "8 следени артикула" is a true number that says "nobody uses this", and a
@@ -4907,14 +4955,6 @@ const COMPANY = {
   $('#live-success').textContent =
     stats.successRate === null ? '—' : stats.successRate.toFixed(1) + '%';
   strip.hidden = false;
-
-  if (stats.lastCheckAt) {
-    // Composed from two pieces, so it cannot be looked up whole: the label goes
-    // through the dictionary and the relative time is built by `timeAgo`.
-    $('#hero-live-text').textContent =
-      translate('Последна проверка') + ' ' + timeAgo(stats.lastCheckAt);
-    $('#hero-live').hidden = false;
-  }
 })();
 
 function formatCount(value) {
@@ -4966,34 +5006,32 @@ function renderAccount() {
   // A key pasted by hand is also somebody working, not browsing.
   const identified = signedIn || Boolean(getApiKey());
 
+  // Who you are is written to the `hidden` attribute and nowhere else.
+  //
+  // These elements also carry a breakpoint pair — `hidden md:flex`, `hidden
+  // sm:flex` — which is what keeps the desktop bar off a phone, where the
+  // mobile tab row below does the same job. Toggling the `hidden` class for
+  // signed-in/signed-out state stripped that floor away as a side effect: the
+  // guest nav came back as a plain block on a 375px screen, the buttons stacked
+  // over the logo, and the header scrolled sideways. The two questions look
+  // alike and are not the same one, so they no longer share a mechanism.
   $$('[data-nav="guest"]').forEach(function (nav) {
     nav.hidden = identified;
-    nav.classList.toggle('hidden', identified);
-    nav.classList.toggle('md:flex', !identified);
   });
   $$('[data-nav="app"]').forEach(function (nav) {
     nav.hidden = !identified;
-    nav.classList.toggle('hidden', !identified);
-    nav.classList.toggle('md:flex', identified);
   });
   $$('[data-guest-only]').forEach(function (element) {
     element.hidden = identified;
-    element.classList.toggle('hidden', identified);
   });
   $$('[data-app-only]').forEach(function (element) {
     element.hidden = !identified;
-    element.classList.toggle('hidden', !identified);
   });
 
   void refreshPlanBar();
 
   $('#signin-button').hidden = signedIn;
-  $('#signin-button').classList.toggle('hidden', signedIn);
-  $('#signin-button').classList.toggle('sm:flex', !signedIn);
-
   $('#account-button').hidden = !signedIn;
-  $('#account-button').classList.toggle('hidden', !signedIn);
-  $('#account-button').classList.toggle('sm:flex', signedIn);
 
   if (signedIn) {
     const label = (account && account.email) || session.email || 'акаунт';
@@ -5003,8 +5041,10 @@ function renderAccount() {
   // The key badge is for people driving the API by hand. Once there is a
   // session it is noise, and worse, it implies the key is what is being
   // used when it is not.
-  $('#api-key-button').classList.toggle('hidden', signedIn);
-  $('#api-key-button').classList.toggle('sm:flex', !signedIn);
+  // `sm:grid`, not `sm:flex`: the key icon is centred with `place-items-center`,
+  // which needs a grid. The old line added a flex class the button was never
+  // written for.
+  $('#api-key-button').hidden = signedIn;
 }
 
 function showSignInStatus(message, tone) {
@@ -5351,15 +5391,7 @@ const PLAN_NAMES = { free: 'Безплатен', starter: 'Занаят', pro: '
 let topUpUrl = null;
 
 (async function loadTopUpOffer() {
-  try {
-    const response = await fetch(ENDPOINTS.billingPlans, { headers: { Accept: 'application/json' } });
-    if (!response.ok) return;
-
-    const payload = await response.json();
-    topUpUrl = payload.topUpUrl || null;
-  } catch (error) {
-    /* nothing on offer is the safe assumption */
-  }
+  topUpUrl = (await billingPlans()).topUpUrl || null;
 })();
 
 $$('[data-plan-manage]').forEach(function (button) {

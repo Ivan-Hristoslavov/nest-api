@@ -40,7 +40,9 @@ export class ManualPrice {
   shopId!: string;
 
   @ManyToOne(() => Shop, { onDelete: 'CASCADE', nullable: false })
-  @JoinColumn({ name: 'shop_id' })
+  // Named to match the migration. Without it TypeORM proposes dropping the
+  // constraint and re-adding it under a generated name on every schema:log.
+  @JoinColumn({ name: 'shop_id', foreignKeyConstraintName: 'fk_manual_prices_shop' })
   shop?: Shop;
 
   @ApiProperty({

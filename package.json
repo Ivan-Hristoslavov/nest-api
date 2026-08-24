@@ -9,7 +9,8 @@
     "node": ">=20.11.0"
   },
   "scripts": {
-    "build:css": "tailwindcss -i src/styles/input.css -o public/styles.css --minify",
+    "build:icons": "node scripts/build-icons.js",
+    "build:css": "npm run build:icons && tailwindcss -i src/styles/input.css -o public/styles.css --minify",
     "watch:css": "tailwindcss -i src/styles/input.css -o public/styles.css --watch",
     "prebuild": "npm run build:css",
     "build": "nest build",
@@ -41,7 +42,7 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^6.0.0",
-    "@nestjs/swagger": "^11.0.3",
+    "@nestjs/swagger": "^11.4.7",
     "@nestjs/throttler": "^6.4.0",
     "@nestjs/typeorm": "^11.0.0",
     "@sentry/node": "^8.55.2",
@@ -49,6 +50,7 @@
     "cheerio": "^1.2.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "compression": "^1.8.1",
     "cron": "^4.3.0",
     "dotenv": "^16.4.7",
     "helmet": "^8.0.0",
@@ -64,9 +66,11 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
+    "@fortawesome/fontawesome-free": "^6.5.2",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.7",

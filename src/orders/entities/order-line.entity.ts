@@ -24,7 +24,7 @@ export class OrderLine {
   orderId!: string;
 
   @ManyToOne(() => Order, (order) => order.lines, { onDelete: 'CASCADE', nullable: false })
-  @JoinColumn({ name: 'order_id' })
+  @JoinColumn({ name: 'order_id', foreignKeyConstraintName: 'fk_order_lines_order' })
   order?: Order;
 
   /**

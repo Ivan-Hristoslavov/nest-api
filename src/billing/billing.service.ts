@@ -1,3 +1,4 @@
+import { redactEmail } from '../common/redact';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -81,6 +82,7 @@ export class BillingService {
   private readonly logger = new Logger(BillingService.name);
 
   private readonly topUpPacks: Record<string, number>;
+  private readonly planByPriceId: Record<string, UserPlan>;
 
   constructor(
     @InjectRepository(BillingEvent)
@@ -90,6 +92,16 @@ export class BillingService {
     configService: ConfigService<Configuration, true>,
   ) {
     this.topUpPacks = configService.get('checkout', { infer: true }).topUpPacks;
+
+    // Price id -> plan, inverted once at boot. Stripe names neither the plan
+    // nor the product in a webhook payload, so without this the only thing
+    // identifying what was bought is the price the buyer was charged.
+    const prices = configService.get('stripe', { infer: true })?.prices ?? {};
+    this.planByPriceId = Object.fromEntries(
+      Object.entries(prices)
+        .filter(([, priceId]) => Boolean(priceId))
+        .map(([plan, priceId]) => [priceId as string, plan as UserPlan]),
+    );
   }
 
   /**
@@ -326,7 +338,7 @@ export class BillingService {
     await this.finish(record, true, `Credited ${count} AI comparisons`, credited.id);
     await this.mail.sendTopUpReceipt(credited, count);
 
-    this.logger.log(`Top-up: ${count} comparisons for ${credited.email}`);
+    this.logger.log(`Top-up: ${count} comparisons for ${redactEmail(credited.email)}`);
 
     return {
       received: true,
@@ -394,6 +406,10 @@ export class BillingService {
       this.string(attributes.user_name) ??
       this.string(customData.name);
 
+    // Computed once: it identifies the plan as well as separating a top-up
+    // from a subscription.
+    const priceIds = this.priceIdsFrom(data, attributes);
+
     return {
       eventId,
       eventType,
@@ -413,8 +429,12 @@ export class BillingService {
         this.string(attributes.order_id) ??
         this.string(data.id) ??
         null,
-      plan: this.planFrom(attributes, data),
-      priceIds: this.priceIdsFrom(data, attributes),
+      // The price is the fallback, and the more trustworthy of the two: a
+      // label can be renamed in a dashboard, an id cannot. Without either,
+      // `activate` falls back to the cheapest plan — so a Stripe payload
+      // carrying neither would upgrade a customer who paid €99 to Занаят.
+      plan: this.planFrom(attributes, data) ?? this.planFromPriceIds(priceIds),
+      priceIds,
       expiresAt: this.dateFrom(
         this.string(data.next_billed_at) ??
           this.string(attributes.renews_at) ??
@@ -469,6 +489,16 @@ export class BillingService {
   }
 
   /** Maps a product/variant name onto a plan, defaulting to Starter. */
+  /** The plan a payment's price ids belong to, from `STRIPE_*_PRICE_ID`. */
+  private planFromPriceIds(priceIds: string[]): UserPlan | null {
+    for (const id of priceIds) {
+      const plan = this.planByPriceId[id];
+      if (plan) return plan;
+    }
+
+    return null;
+  }
+
   private planFrom(
     attributes: Record<string, unknown>,
     data: Record<string, unknown>,
@@ -477,6 +507,9 @@ export class BillingService {
       this.string(attributes.variant_name) ??
       this.string(attributes.product_name) ??
       this.string(data.plan) ??
+      // Stripe names neither: a Checkout Session carries whatever metadata the
+      // payment link was created with, and ours is created carrying the plan.
+      this.string(this.record(data.metadata).plan) ??
       ''
     ).toLowerCase();
 

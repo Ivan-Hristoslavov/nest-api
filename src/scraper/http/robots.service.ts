@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { assertResolvesPublicly } from './address-guard';
+
 interface RobotsRules {
   /** Path prefixes the agent must not fetch. */
   disallow: string[];
@@ -24,9 +26,20 @@ interface RobotsRules {
 @Injectable()
 export class RobotsService {
   private readonly logger = new Logger(RobotsService.name);
+  /**
+   * One entry per origin, and origins are chosen by customers.
+   *
+   * The TTL below was read but never acted on: a stale entry was replaced when
+   * the same origin came round again, and otherwise sat there for the life of
+   * the process. A catalogue spread over thousands of hosts grew this map and
+   * never shrank it.
+   */
   private readonly cache = new Map<string, RobotsRules>();
 
   private static readonly CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+  /** Above this, the least recently written entries are dropped. */
+  private static readonly MAX_ENTRIES = 5_000;
   private static readonly FETCH_TIMEOUT_MS = 5000;
 
   /** Rules used when robots.txt is missing or unreachable. */
@@ -78,12 +91,47 @@ export class RobotsService {
     }
 
     const rules = await this.fetchRules(origin, userAgent);
+
+    this.prune();
     this.cache.set(origin, rules);
+
     return rules;
+  }
+
+  /**
+   * Drops what has expired, then the oldest if the map is still too big.
+   *
+   * A `Map` iterates in insertion order, so the first keys are the least
+   * recently written — which is the right thing to lose when a single sweep
+   * has touched more hosts than anyone will look at again.
+   */
+  private prune(): void {
+    const now = Date.now();
+
+    for (const [origin, rules] of this.cache) {
+      if (now - rules.fetchedAt >= RobotsService.CACHE_TTL_MS) this.cache.delete(origin);
+    }
+
+    if (this.cache.size < RobotsService.MAX_ENTRIES) return;
+
+    const excess = this.cache.size - RobotsService.MAX_ENTRIES + 1;
+    let dropped = 0;
+
+    for (const origin of this.cache.keys()) {
+      if (dropped >= excess) break;
+      this.cache.delete(origin);
+      dropped += 1;
+    }
   }
 
   private async fetchRules(origin: string, userAgent: string): Promise<RobotsRules> {
     try {
+      // The page fetch goes through a guarded agent; this one uses `fetch` and
+      // would otherwise be the one request in the service that still opens
+      // whatever a customer's hostname resolves to. Resolved and checked here
+      // rather than trusted, for the same reason as everywhere else.
+      await assertResolvesPublicly(origin);
+
       const response = await fetch(`${origin}/robots.txt`, {
         signal: AbortSignal.timeout(RobotsService.FETCH_TIMEOUT_MS),
         headers: { 'user-agent': userAgent, accept: 'text/plain' },

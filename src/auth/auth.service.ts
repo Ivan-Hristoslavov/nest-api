@@ -1,3 +1,4 @@
+import { redactEmail } from '../common/redact';
 import { createHash, randomBytes } from 'node:crypto';
 
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
@@ -222,7 +223,7 @@ export class AuthService {
       await this.mail.sendSignInLink(user, url, minutes);
     }
 
-    this.logger.log(`${kind} link sent to ${user.email}`);
+    this.logger.log(`${kind} link sent to ${redactEmail(user.email)}`);
   }
 
   /**
@@ -266,7 +267,7 @@ export class AuthService {
     // enabled two-factor before their first script ever ran.
     if (user.hasTwoFactor()) {
       const challenge = await this.issueChallenge(user, apiKey);
-      this.logger.log(`Second factor owed for ${user.email}`);
+      this.logger.log(`Second factor owed for ${redactEmail(user.email)}`);
       return challenge;
     }
 
@@ -292,7 +293,7 @@ export class AuthService {
       }),
     );
 
-    this.logger.log(`Session opened for ${user.email}`);
+    this.logger.log(`Session opened for ${redactEmail(user.email)}`);
     return { token: session.token, expiresAt, user, apiKey };
   }
 

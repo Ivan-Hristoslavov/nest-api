@@ -108,6 +108,11 @@ export class OrdersController {
       );
     }
 
+    // Checked before the mail is built, not after: the limit exists to stop
+    // this endpoint being used as a mail relay, and a message that was
+    // rendered and then thrown away has already cost the work.
+    await this.orders.assertWithinDailySendLimit(owner.id);
+
     const delivered = await this.mail.sendOrderRequest({
       to: order.shopEmail,
       // The buyer, deliberately. An answer that lands in our inbox is a delay

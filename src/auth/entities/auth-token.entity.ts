@@ -45,6 +45,8 @@ export enum AuthTokenKind {
 @Entity('auth_tokens')
 @Index('idx_auth_tokens_hash', ['tokenHash'], { unique: true })
 @Index('idx_auth_tokens_user', ['userId'])
+// The nightly sweep deletes by expiry, not by user.
+@Index('idx_auth_tokens_expiry', ['expiresAt'])
 export class AuthToken {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

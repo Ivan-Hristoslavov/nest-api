@@ -21,6 +21,7 @@ import { MatchingModule } from './matching/matching.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
 import { ScraperModule } from './scraper/scraper.module';
+import { SeoModule } from './seo/seo.module';
 import { StatsModule } from './stats/stats.module';
 
 @Module({
@@ -75,6 +76,7 @@ import { StatsModule } from './stats/stats.module';
     ShopsModule,
     AnalyticsModule,
     StatsModule,
+    SeoModule,
     HealthModule,
   ],
   providers: [

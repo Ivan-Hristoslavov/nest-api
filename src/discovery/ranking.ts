@@ -216,6 +216,30 @@ export function toHit(offer: RankableOffer, target: string, words: string[] = []
 }
 
 /**
+ * Is this a thing the shop sells, or part of its page?
+ *
+ * A shop's search page carries more than results: a banner offering a trade
+ * account, a "compare selected" box, a newsletter tile. Whatever selector
+ * reads the results reads those too, and they arrive looking like offers.
+ * `homefinishing.bg` returned "Станете партньор" — its become-a-partner link —
+ * at the top of every single search, whatever was typed.
+ *
+ * Two things are true of that tile and of no real listing: it carries no
+ * price, and it has nothing to do with what was asked. Either alone is
+ * innocent. A product whose price failed to parse still deserves its place —
+ * the shop stocks it, the link works, and dropping it would misreport
+ * coverage, which is why {@link rank} keeps those at the end. And a result
+ * that matches nothing is just the shop's search being generous, which is
+ * worth showing when it has a price to show.
+ *
+ * Both together mean nobody can buy it, and nothing about it answers the
+ * question. That is furniture.
+ */
+function isListing(hit: RankedHit): boolean {
+  return hit.listedPrice !== null || hit.matched;
+}
+
+/**
  * Cheapest first, kinds of article kept together.
  *
  * Offers with no readable price keep their place at the end rather than being
@@ -224,7 +248,7 @@ export function toHit(offer: RankableOffer, target: string, words: string[] = []
  */
 export function rank(offers: RankableOffer[], target = 'EUR', limit = 60, query = ''): RankedHit[] {
   const words = queryWords(query);
-  const hits = offers.map((offer) => toHit(offer, target, words));
+  const hits = offers.map((offer) => toHit(offer, target, words)).filter(isListing);
 
   const byPrice = (a: RankedHit, b: RankedHit): number => {
     if (a.effectivePrice === null) return 1;

@@ -30,6 +30,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { redactEmail } from '../common/redact';
 import { RawBodyRequest } from '@nestjs/common';
 import { Request } from 'express';
 
@@ -395,7 +396,7 @@ export class BillingController {
     // minute is not erased.
     this.revocations.revokeCachedKeys(`account ${id} erased`);
 
-    this.logger.warn(`Operator erased account ${id} (${email}) on request.`);
+    this.logger.warn(`Operator erased account ${id} (${redactEmail(email)}) on request.`);
   }
 
   private async issue(

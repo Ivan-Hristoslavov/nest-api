@@ -14,6 +14,18 @@ export class HostRateLimiterService {
   private readonly queues = new Map<string, Promise<void>>();
 
   /**
+   * Both maps are keyed by host, and the set of hosts is chosen by customers.
+   *
+   * Nothing bounded them: every hostname anybody ever pointed a listing at
+   * stayed in memory for the life of the process, and the plan sells
+   * "unlimited suppliers". A queue whose chain has settled is holding a
+   * resolved promise nobody will ever await again, and yesterday's spend row
+   * answers no question at all — so both are dropped once they stop meaning
+   * anything.
+   */
+  private static readonly MAX_TRACKED_HOSTS = 5_000;
+
+  /**
    * Per host: how many requests today, and which day that is.
    *
    * The gap above controls *rate*, which is what keeps a burst polite. This
@@ -43,13 +55,19 @@ export class HostRateLimiterService {
     });
 
     // The queue tracks completion only; a failed task must not poison the chain.
-    this.queues.set(
-      host,
-      run.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
     );
+
+    this.queues.set(host, settled);
+
+    // Dropped once the chain behind it has settled, unless a later caller has
+    // already replaced it — that one is still someone's queue. This is what
+    // keeps the map the size of the sweep rather than the size of history.
+    void settled.then(() => {
+      if (this.queues.get(host) === settled) this.queues.delete(host);
+    });
 
     return run;
   }
@@ -68,6 +86,7 @@ export class HostRateLimiterService {
     const current = this.spend.get(host);
 
     if (!current || current.day !== today) {
+      this.pruneSpend(today);
       this.spend.set(host, { day: today, count: 1 });
       return true;
     }
@@ -87,6 +106,31 @@ export class HostRateLimiterService {
   /** Number of hosts currently tracked. Used by tests and diagnostics. */
   get trackedHosts(): number {
     return this.queues.size;
+  }
+
+  /**
+   * Forgets hosts whose last request was on an earlier day.
+   *
+   * Runs only when a host is seen for the first time today, so the cost falls
+   * on the first sweep after midnight rather than on every request. The cap is
+   * the backstop for the pathological case — thousands of distinct hosts
+   * inside a single day — where the oldest rows go first.
+   */
+  private pruneSpend(today: string): void {
+    for (const [host, entry] of this.spend) {
+      if (entry.day !== today) this.spend.delete(host);
+    }
+
+    if (this.spend.size <= HostRateLimiterService.MAX_TRACKED_HOSTS) return;
+
+    const excess = this.spend.size - HostRateLimiterService.MAX_TRACKED_HOSTS;
+    let dropped = 0;
+
+    for (const host of this.spend.keys()) {
+      if (dropped >= excess) break;
+      this.spend.delete(host);
+      dropped += 1;
+    }
   }
 
   private sleep(ms: number): Promise<void> {

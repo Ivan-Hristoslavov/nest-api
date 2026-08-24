@@ -151,6 +151,25 @@
   }
 
   /**
+   * The language asked for in the address, if any.
+   *
+   * `?lang=en` exists so a language has an address. Without one there is
+   * nothing to put in a link to a colleague, nothing for `hreflang` to point
+   * at, and nothing for a search engine to index in any language but the
+   * source — the choice lived in localStorage, where no one else could see it.
+   */
+  function requested() {
+    try {
+      var value = new URLSearchParams(window.location.search).get('lang');
+      if (!value) return null;
+      var code = String(value).slice(0, 2).toLowerCase();
+      return supports(code) ? code : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * The language to start in.
    *
    * A stored choice always wins. Failing that the browser's own preference
@@ -158,6 +177,12 @@
    * met with Bulgarian and no obvious way out.
    */
   function preferred() {
+    // An address wins over a past choice: following a link to `?lang=el` and
+    // being shown Bulgarian because of a click three weeks ago is a bug to
+    // whoever sent the link.
+    var asked = requested();
+    if (asked) return asked;
+
     var choice = stored();
     if (choice && supports(choice)) return choice;
 
@@ -188,7 +213,17 @@
       /* private mode: the choice lasts for this page only */
     }
 
-    window.location.reload();
+    // The source language is the bare address, every other one carries its
+    // code. That keeps one canonical URL per language instead of two spellings
+    // of the Bulgarian page competing with each other.
+    var url = new URL(window.location.href);
+    if (code === SOURCE) {
+      url.searchParams.delete('lang');
+    } else {
+      url.searchParams.set('lang', code);
+    }
+
+    window.location.href = url.toString();
   }
 
   /**

@@ -1,3 +1,4 @@
+import { guardedAgents } from '../scraper/http/address-guard';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
@@ -66,6 +67,11 @@ export class SearchDetectorService {
     this.client = axios.create({
       timeout: Math.max(this.config.timeoutMs, 10000),
       maxRedirects: 5,
+      // Every address here was typed by a customer. The agents refuse to
+      // open a connection to this server's own network, and they do it per
+      // connection — so each hop of a redirect is checked too.
+      ...guardedAgents(),
+
       validateStatus: () => true,
       decompress: true,
       responseType: 'arraybuffer',

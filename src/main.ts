@@ -3,9 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ServerResponse } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import compression from 'compression';
 import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 
@@ -15,6 +16,7 @@ import { AppConfig, CurrencyConfig, configuration } from './config/configuration
 import { initObservability } from './common/observability';
 import { convertibleCurrencies, setRatesPerEur } from './products/currency';
 import { NodeEnvironment } from './config/env.validation';
+import { SeoService } from './seo/seo.service';
 import { setupSwagger } from './swagger';
 
 async function bootstrap(): Promise<void> {
@@ -48,6 +50,16 @@ async function bootstrap(): Promise<void> {
   // reject before any interceptor would run.
   app.use(accessLogMiddleware());
 
+  // The interface is a 270 KB script, a 37 KB stylesheet and a translation
+  // dictionary per language, all of them text and all of them compressing to
+  // roughly a quarter of that. Uncompressed they were the single largest cost
+  // of opening the page, paid again on every visit.
+  //
+  // `threshold` leaves small JSON replies alone: below about a kilobyte the
+  // gzip header costs more than the compression saves, and every price lookup
+  // this API answers is smaller than that.
+  app.use(compression({ threshold: 1024 }));
+
   // --- Security ------------------------------------------------------------
   // The policy is written out rather than left to helmet's defaults, because
   // those defaults are `script-src 'self'` with no room for the Swagger page,
@@ -72,16 +84,14 @@ async function bootstrap(): Promise<void> {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        // Styles still need 'unsafe-inline': Font Awesome and a handful of
-        // `style="..."` attributes in the markup rely on it, and unlike a
-        // script an injected stylesheet cannot read a token.
-        styleSrc: [
-          "'self'",
-          "'unsafe-inline'",
-          'https://fonts.googleapis.com',
-          'https://cdnjs.cloudflare.com',
-        ],
-        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
+        // Styles still need 'unsafe-inline' for the handful of `style="..."`
+        // attributes in the markup; unlike a script, an injected stylesheet
+        // cannot read a token.
+        //
+        // cdnjs is gone from both lists: the icons are a generated stylesheet
+        // served from here, so there is no third party left to allow.
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        fontSrc: ["'self'", 'data:'],
         // Product photos come from the supplier's own domain, which is any
         // domain — that is the product. Restricted to https so a downgraded
         // image cannot be used to strip the page's transport security.
@@ -149,6 +159,41 @@ async function bootstrap(): Promise<void> {
     );
   }
 
+  // The head a crawler reads is assembled here, not written into the file.
+  //
+  // `index.html` is one static page, so the canonical link, the language
+  // alternates and the structured data all depend on the domain the app is
+  // deployed at — which the file cannot know. Registered before the static
+  // handler because that handler answers `/` and would otherwise send the
+  // untouched file.
+  //
+  // Read once and cached: the HTML is 130 KB and this runs on every visit. In
+  // development the cache is skipped, so editing the markup does not require a
+  // restart to see the change.
+  const seo = app.get(SeoService);
+  const indexPath = join(process.cwd(), 'public', 'index.html');
+  const indexCache = new Map<string, string>();
+
+  app.use((request: Request, response: Response, next: NextFunction) => {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return next();
+    if (request.path !== '/' && request.path !== '/index.html') return next();
+    if (!existsSync(indexPath)) return next();
+
+    const asked = typeof request.query.lang === 'string' ? request.query.lang : null;
+    const key = asked ?? '';
+
+    let html = isProduction ? indexCache.get(key) : undefined;
+    if (html === undefined) {
+      html = readFileSync(indexPath, 'utf8').replace(
+        '</head>',
+        `${seo.headTags(asked)}\n  </head>`,
+      );
+      if (isProduction) indexCache.set(key, html);
+    }
+
+    response.type('html').send(html);
+  });
+
   // `public/` is served from the project root rather than `__dirname`, so the
   // same path works whether the app runs from `src` (ts-node) or `dist`.
   app.useStaticAssets(join(process.cwd(), 'public'), {
@@ -171,8 +216,11 @@ async function bootstrap(): Promise<void> {
 
   // --- Routing -------------------------------------------------------------
   // `/health` stays outside the version prefix so uptime probes keep working
-  // across future API versions.
-  app.setGlobalPrefix(appConfig.apiPrefix, { exclude: ['health'] });
+  // across future API versions; the two crawler files are outside it because
+  // no crawler asks for `/api/v1/robots.txt`.
+  app.setGlobalPrefix(appConfig.apiPrefix, {
+    exclude: ['health', 'robots.txt', 'sitemap.xml'],
+  });
 
   // --- Request handling ----------------------------------------------------
   app.useGlobalPipes(

@@ -29,6 +29,8 @@ import { DiscoveredProductDto } from '../dto/discovery.dto';
  */
 @Entity('search_cache')
 @Index('idx_search_cache_lookup', ['shopId', 'query'], { unique: true })
+// Expiry sweeps by age across every shop at once.
+@Index('idx_search_cache_fetched', ['fetchedAt'])
 export class SearchCache {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

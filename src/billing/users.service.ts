@@ -1,3 +1,4 @@
+import { redactEmail } from '../common/redact';
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -98,7 +99,7 @@ export class UsersService {
       }),
     );
 
-    this.logger.log(`Created user ${created.id} (${created.email})`);
+    this.logger.log(`Created user ${created.id} (${redactEmail(created.email)})`);
     return created;
   }
 
@@ -137,7 +138,7 @@ export class UsersService {
       }),
     );
 
-    this.logger.log(`Pending registration: ${created.email} (${created.id})`);
+    this.logger.log(`Pending registration: ${redactEmail(created.email)} (${created.id})`);
     return created;
   }
 
@@ -170,7 +171,7 @@ export class UsersService {
     user.trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 3600_000);
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Trial started for ${saved.email}, ends ${saved.trialEndsAt?.toISOString()}`);
+    this.logger.log(`Trial started for ${redactEmail(saved.email)}, ends ${saved.trialEndsAt?.toISOString()}`);
 
     return { user: saved, apiKey: issued.apiKey };
   }
@@ -188,7 +189,7 @@ export class UsersService {
     if (user.status !== UserStatus.Active) {
       user.status = UserStatus.Active;
       await this.usersRepository.save(user);
-      this.logger.log(`Verified and activated ${user.email}`);
+      this.logger.log(`Verified and activated ${redactEmail(user.email)}`);
     }
 
     // Tested on the prefix, not the hash: `apiKeyHash` carries `select: false`
@@ -219,7 +220,7 @@ export class UsersService {
     user.apiKeyIssuedAt = new Date();
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Issued API key ${generated.prefix}… for user ${saved.id} (${saved.email})`);
+    this.logger.log(`Issued API key ${generated.prefix}… for user ${saved.id} (${redactEmail(saved.email)})`);
 
     return { user: saved, apiKey: generated.plaintext };
   }
@@ -263,7 +264,7 @@ export class UsersService {
     if (details.expiresAt !== undefined) user.accessExpiresAt = details.expiresAt;
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Activated user ${saved.id} (${saved.email}) on plan ${saved.plan}`);
+    this.logger.log(`Activated user ${saved.id} (${redactEmail(saved.email)}) on plan ${saved.plan}`);
 
     return saved;
   }
@@ -326,7 +327,7 @@ export class UsersService {
     user.status = UserStatus.Expired;
     const saved = await this.usersRepository.save(user);
 
-    this.logger.warn(`Expired user ${saved.id} (${saved.email}): ${reason}`);
+    this.logger.warn(`Expired user ${saved.id} (${redactEmail(saved.email)}): ${reason}`);
     return saved;
   }
 

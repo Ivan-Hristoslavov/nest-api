@@ -23,6 +23,8 @@ import { Product } from './product.entity';
 @Entity('price_history')
 @Index('idx_price_history_product_recorded', ['productId', 'recordedAt'])
 @Index('idx_price_history_competitor_recorded', ['competitorId', 'recordedAt'])
+// Retention sweeps the table by age alone, without a product to narrow it.
+@Index('idx_price_history_recorded_at', ['recordedAt'])
 export class PriceHistory {
   @ApiProperty({ format: 'uuid' })
   @PrimaryGeneratedColumn('uuid')

@@ -3,6 +3,58 @@
 @tailwind utilities;
 
 /*
+ * Inter, served from here rather than from Google.
+ *
+ * The stylesheet link to fonts.googleapis.com was render-blocking, and the
+ * font files behind it came from a second domain again — two DNS lookups and
+ * two TLS handshakes standing in front of the first paint, for a font that is
+ * now four files in /public/fonts.
+ *
+ * One variable file per script, not one per weight: the page uses five weights
+ * and this covers 400 through 800 in a single download. `unicode-range` is
+ * what keeps it cheap — a Bulgarian reader fetches latin and cyrillic and
+ * never sees the Greek or the extended-Latin file.
+ *
+ * Downloaded from the Google Fonts API, which serves Inter under the SIL Open
+ * Font License.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/inter-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/inter-greek.woff2') format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
+/*
  * Everything below used to sit in a <style> block inside index.html.
  *
  * It moved out for the same reason the script did: a page whose styles and
@@ -106,8 +158,21 @@ h3 {
     64px 64px;
 }
 
-.view[hidden] {
-  display: none;
+/* The `hidden` attribute has to beat a display utility.
+ *
+ * Tailwind's preflight puts `[hidden] { display: none }` in the base layer, so
+ * every `.flex`, `.grid`, `.inline-flex` and `.sm:flex` matches at the same
+ * specificity and wins purely on being emitted later. An element written as
+ * `<div hidden class="grid">`, or hidden again from JavaScript with
+ * `el.hidden = true`, therefore stays on screen — which is how the empty
+ * counters strip and the empty "last check" badge reached the landing page.
+ *
+ * Repeating the attribute outranks a single utility class, and !important
+ * covers the responsive variants, which carry one class of their own. The
+ * `until-found` exclusion is preflight's: that value is meant to be revealed
+ * by find-in-page rather than kept off the layout. */
+[hidden][hidden]:not([hidden='until-found']) {
+  display: none !important;
 }
 
 .tab-active {
@@ -159,9 +224,6 @@ tbody tr:hover {
 .hover-card[data-open='true'] {
   opacity: 1;
   transform: none;
-}
-.hover-card[hidden] {
-  display: none;
 }
 /* Hover keeps it inert so it never steals the pointer; a deliberate tap
    pins it, and a pinned card has to be scrollable and selectable. */

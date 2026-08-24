@@ -1,3 +1,4 @@
+import { IsPublicHttpUrlTemplate } from '../../common/validators/public-url.validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -36,6 +37,8 @@ class SearchConfigDto {
   @IsString()
   @MaxLength(2048)
   @Matches(/\{q\}/, { message: 'searchUrlTemplate must contain {q}' })
+  // Was a bare string: any scheme, any host, including this server's own.
+  @IsPublicHttpUrlTemplate()
   @IsOptional()
   @Transform(trimString)
   searchUrlTemplate?: string;
