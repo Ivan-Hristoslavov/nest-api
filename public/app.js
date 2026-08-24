@@ -138,6 +138,19 @@ function billingPlans() {
 }
 
 /**
+ * The language the page is currently being read in.
+ *
+ * Sent with registration and with every sign-in request, because it is the
+ * only moment the server hears about it: `<html lang>` lives in the browser,
+ * and every email this account ever gets is written from what we store now.
+ * Reading it off the element rather than from the i18n module keeps this
+ * working whether that module has finished booting or not.
+ */
+function currentLocale() {
+  return (document.documentElement.lang || 'bg').slice(0, 5);
+}
+
+/**
  * The API key is held in localStorage only. It is never written into the
  * markup and never put in a URL — a key in a query string ends up in
  * server logs, browser history and Referer headers.
@@ -5090,7 +5103,7 @@ $('#signin-form').addEventListener('submit', async function (event) {
     const response = await fetch(ENDPOINTS.authSignIn, {
       method: 'POST',
       headers: { 'content-type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, locale: currentLocale() }),
     });
 
     if (response.status === 429) {
@@ -5514,7 +5527,7 @@ $('#signup-form').addEventListener('submit', async function (event) {
     const response = await fetch(ENDPOINTS.authRegister, {
       method: 'POST',
       headers: { 'content-type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(name ? { email, name } : { email }),
+      body: JSON.stringify({ email, locale: currentLocale(), ...(name ? { name } : {}) }),
     });
 
     const payload = await response.json().catch(() => ({}));

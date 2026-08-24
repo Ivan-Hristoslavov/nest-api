@@ -20,7 +20,8 @@ describe('registration', () => {
   let users: {
     findByEmail: jest.Mock<Promise<User | null>, [string]>;
     findOne: jest.Mock<Promise<User>, [string]>;
-    createPendingAccount: jest.Mock<Promise<User>, [string, string | undefined]>;
+    createPendingAccount: jest.Mock<Promise<User>, [string, string | undefined, string | undefined]>;
+    rememberLocale: jest.Mock<Promise<void>, [User, string | undefined]>;
     activateWithTrial: jest.Mock<Promise<{ user: User; apiKey: string }>, [string]>;
   };
   let mail: {
@@ -60,8 +61,9 @@ describe('registration', () => {
       findByEmail: jest.fn<Promise<User | null>, [string]>().mockResolvedValue(null),
       findOne: jest.fn<Promise<User>, [string]>().mockResolvedValue(pending),
       createPendingAccount: jest
-        .fn<Promise<User>, [string, string | undefined]>()
+        .fn<Promise<User>, [string, string | undefined, string | undefined]>()
         .mockResolvedValue(pending),
+      rememberLocale: jest.fn<Promise<void>, [User, string | undefined]>().mockResolvedValue(),
       activateWithTrial: jest
         .fn<Promise<{ user: User; apiKey: string }>, [string]>()
         .mockResolvedValue({

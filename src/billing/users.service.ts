@@ -1,6 +1,8 @@
 import { redactEmail } from '../common/redact';
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+
+import { normaliseLocale } from './email-locale';
 import { Repository } from 'typeorm';
 
 import { GeneratedApiKey, generateApiKey, hashApiKey } from './api-key.util';
@@ -117,7 +119,29 @@ export class UsersService {
    * since there is no password to guess and the alternative hands anyone a
    * denial-of-service against any customer they can name.
    */
-  async createPendingAccount(email: string, name?: string | null): Promise<User> {
+  /**
+   * Records the language somebody is currently reading in.
+   *
+   * Called on registration and on every sign-in request, because a person who
+   * signed up in one language and comes back in another is telling us
+   * something newer than what is stored. Written only when it actually
+   * changed — a sign-in should not cost a write for nothing.
+   */
+  async rememberLocale(user: User, locale?: string | null): Promise<void> {
+    if (!locale) return;
+
+    const wanted = normaliseLocale(locale);
+    if (user.locale === wanted) return;
+
+    user.locale = wanted;
+    await this.usersRepository.update(user.id, { locale: wanted });
+  }
+
+  async createPendingAccount(
+    email: string,
+    name?: string | null,
+    locale?: string | null,
+  ): Promise<User> {
     const normalised = this.normaliseEmail(email);
     const existing = await this.findByEmail(normalised);
 
@@ -127,6 +151,9 @@ export class UsersService {
       this.usersRepository.create({
         email: normalised,
         name: name?.trim() || null,
+        // What the browser was displaying when they signed up. Every email
+        // this account ever gets is written in it.
+        locale: normaliseLocale(locale),
         // Pending, not active: the row exists so a link can point at it, and
         // grants nothing until that link is opened. A registration from an
         // address nobody reads therefore leaves a dormant row rather than a

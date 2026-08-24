@@ -24,6 +24,7 @@ describe('AuthService', () => {
   };
   let users: {
     findByEmail: jest.Mock<Promise<User | null>, [string]>;
+    rememberLocale: jest.Mock<Promise<void>, [User, string | undefined]>;
     findOne: jest.Mock<Promise<User>, [string]>;
   };
   let mail: { sendSignInLink: jest.Mock<Promise<boolean>, [User, string, number]> };
@@ -65,6 +66,7 @@ describe('AuthService', () => {
     };
     users = {
       findByEmail: jest.fn<Promise<User | null>, [string]>().mockResolvedValue(account),
+      rememberLocale: jest.fn<Promise<void>, [User, string | undefined]>().mockResolvedValue(),
       findOne: jest.fn<Promise<User>, [string]>().mockResolvedValue(account),
     };
     mail = {

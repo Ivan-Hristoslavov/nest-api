@@ -15,6 +15,18 @@ export class RequestSignInDto {
   @MaxLength(255)
   @Transform(trimString)
   email!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The language the interface is being read in, so the emails match it. Anything we do not offer falls back to Bulgarian.',
+    example: 'ro',
+    maxLength: 5,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(5)
+  @Transform(trimString)
+  locale?: string;
 }
 
 export class RegisterDto {
@@ -35,6 +47,18 @@ export class RegisterDto {
   @MaxLength(160)
   @Transform(trimString)
   name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The language the interface is being read in, so the emails match it. Anything we do not offer falls back to Bulgarian.',
+    example: 'ro',
+    maxLength: 5,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(5)
+  @Transform(trimString)
+  locale?: string;
 }
 
 export class ExchangeSignInDto {

@@ -112,7 +112,12 @@ export class AuthService {
    * the same reason as sign-in: it would otherwise answer "is this person a
    * customer" to anyone who asks.
    */
-  async register(email: string, name: string | undefined, appUrl: string): Promise<void> {
+  async register(
+    email: string,
+    name: string | undefined,
+    appUrl: string,
+    locale?: string,
+  ): Promise<void> {
     const verdict = classifyEmail(email);
 
     if (verdict !== 'ok') {
@@ -129,7 +134,12 @@ export class AuthService {
 
     // An existing account gets a sign-in link instead: the person almost
     // certainly forgot they had one, and that is the thing they wanted.
-    const user = existing ?? (await this.users.createPendingAccount(email, name));
+    const user = existing ?? (await this.users.createPendingAccount(email, name, locale));
+
+    // Somebody who registered in Bulgarian and comes back in Romanian is
+    // telling us something newer than what we stored. Only ever set from a
+    // language the browser is actually displaying, never guessed.
+    await this.users.rememberLocale(user, locale);
 
     await this.issueLink(
       user,
@@ -146,13 +156,15 @@ export class AuthService {
    * person who typed their own address correctly learns the answer from their
    * inbox a second later.
    */
-  async requestSignInLink(email: string, appUrl: string): Promise<void> {
+  async requestSignInLink(email: string, appUrl: string, locale?: string): Promise<void> {
     const user = await this.users.findByEmail(email);
 
     if (!user) {
       this.logger.log(`Sign-in requested for an address with no account.`);
       return;
     }
+
+    await this.users.rememberLocale(user, locale);
 
     await this.issueLink(user, AuthTokenKind.SignInLink, appUrl);
   }

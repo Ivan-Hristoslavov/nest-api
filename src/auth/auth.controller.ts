@@ -74,7 +74,7 @@ export class AuthController {
   })
   @ApiNoContentResponse({ description: 'If there is an account, a link is on its way.' })
   async requestSignIn(@Body() dto: RequestSignInDto): Promise<{ sent: true }> {
-    await this.auth.requestSignInLink(dto.email, this.appUrl);
+    await this.auth.requestSignInLink(dto.email, this.appUrl, dto.locale);
     return { sent: true };
   }
 
@@ -95,7 +95,7 @@ export class AuthController {
     type: ErrorResponseDto,
   })
   async register(@Body() dto: RegisterDto): Promise<{ sent: true }> {
-    await this.auth.register(dto.email, dto.name, this.appUrl);
+    await this.auth.register(dto.email, dto.name, this.appUrl, dto.locale);
     return { sent: true };
   }
 

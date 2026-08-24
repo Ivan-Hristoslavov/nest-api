@@ -192,6 +192,15 @@ export class User {
   @Column({ type: 'enum', enum: UserPlan, default: UserPlan.Free })
   plan!: UserPlan;
 
+  @ApiPropertyOptional({
+    description:
+      'Language this account is written to. Captured from the browser when the account is opened; empty means the source language.',
+    example: 'ro',
+    nullable: true,
+  })
+  @Column({ name: 'locale', type: 'varchar', length: 5, nullable: true })
+  locale!: string | null;
+
   @ApiProperty({
     description: 'Maximum tracked products allowed on the current plan.',
     example: 50,
