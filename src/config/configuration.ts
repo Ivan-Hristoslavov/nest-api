@@ -129,6 +129,8 @@ export interface MailConfig {
   username?: string;
   password?: string;
   from: string;
+  /** Set to send over Resend's HTTPS API instead of SMTP. */
+  resendApiKey?: string;
   /** Where the customer is told to go and paste their key. */
   appUrl: string;
   supportEmail?: string;
@@ -288,13 +290,15 @@ export const configuration = (): Configuration => {
     mail: {
       // Enabled by having somewhere to send from. A half-configured mailer
       // that throws on every send is worse than one that is plainly off.
-      enabled: Boolean(env.SMTP_HOST && env.SMTP_FROM),
+      // A sender address plus somewhere to send from: either Resend, or SMTP.
+      enabled: Boolean(env.SMTP_FROM && (env.RESEND_API_KEY || env.SMTP_HOST)),
       host: env.SMTP_HOST ?? '',
       port: env.SMTP_PORT,
       secure: env.SMTP_SECURE ?? env.SMTP_PORT === 465,
       username: env.SMTP_USERNAME,
       password: env.SMTP_PASSWORD,
       from: env.SMTP_FROM ?? '',
+      resendApiKey: env.RESEND_API_KEY,
       appUrl: env.APP_PUBLIC_URL,
       supportEmail: env.SUPPORT_EMAIL,
     },

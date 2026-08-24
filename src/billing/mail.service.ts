@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
 
+import { redactEmail } from '../common/redact';
 import { Configuration, MailConfig } from '../config/configuration';
 import { codeBlock, dataRows, escapeHtml, noticeBox, paragraph, renderEmail } from './email-layout';
 import {
@@ -44,12 +45,26 @@ export class MailService implements OnModuleInit {
     this.config = configService.get('mail', { infer: true });
   }
 
+  /** True when mail leaves over Resend's HTTPS API rather than SMTP. */
+  private get viaResend(): boolean {
+    return Boolean(this.config.resendApiKey);
+  }
+
   onModuleInit(): void {
     if (!this.config.enabled) {
       this.logger.warn(
-        'Email is off (no SMTP_HOST/SMTP_FROM). Paid accounts will be activated but their ' +
-          'API key will NOT be delivered — issue it from the operator screen instead.',
+        'Email is off (needs SMTP_FROM, plus either RESEND_API_KEY or SMTP_HOST). Paid ' +
+          'accounts will be activated but their API key will NOT be delivered — issue it ' +
+          'from the operator screen instead.',
       );
+      return;
+    }
+
+    // Resend wins where both are configured, because it is the one that works
+    // from a host with the SMTP ports closed — which is every platform this is
+    // likely to run on. SMTP stays for a laptop, where it needs no account.
+    if (this.viaResend) {
+      this.logger.log(`Email ready via the Resend API as ${this.config.from}`);
       return;
     }
 
@@ -84,10 +99,27 @@ export class MailService implements OnModuleInit {
     return this.config.enabled && this.transporter !== null;
   }
 
-  /** Confirms the SMTP settings without sending anything. */
+  /** Confirms the settings without sending anything. */
   async verify(): Promise<{ ok: boolean; detail: string }> {
+    if (this.viaResend) {
+      // Asks Resend who the key belongs to. It proves the key is live and that
+      // 443 is open, which are the two things that fail in practice.
+      try {
+        const response = await fetch('https://api.resend.com/domains', {
+          headers: { Authorization: `Bearer ${this.config.resendApiKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        return response.ok
+          ? { ok: true, detail: `Resend accepted the key; sending as ${this.config.from}.` }
+          : { ok: false, detail: `Resend refused the key: HTTP ${response.status}.` };
+      } catch (error) {
+        return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+      }
+    }
+
     if (!this.transporter) {
-      return { ok: false, detail: 'SMTP is not configured (SMTP_HOST / SMTP_FROM are empty).' };
+      return { ok: false, detail: 'Mail is not configured (needs RESEND_API_KEY or SMTP_HOST).' };
     }
 
     try {
@@ -95,6 +127,66 @@ export class MailService implements OnModuleInit {
       return { ok: true, detail: `${this.config.host}:${this.config.port} accepted the login.` };
     } catch (error) {
       return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * One message, over HTTPS.
+   *
+   * The whole reason this exists: the platform closes the SMTP ports, so the
+   * transport has to be something that speaks over 443. The shape of the call
+   * is deliberately the same as `send` above — same arguments, same boolean,
+   * same swallowed failure — so nothing upstream knows or cares which one ran.
+   *
+   * Never throws. A failed send is reported, logged and survived: the payment
+   * that triggered it already succeeded, and an exception here would make the
+   * provider retry a charge that worked.
+   */
+  private async sendViaResend(
+    to: string,
+    subject: string,
+    html: string,
+    text: string,
+    replyTo?: string,
+  ): Promise<boolean> {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.config.resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.config.from,
+          to: [to],
+          subject,
+          html,
+          text,
+          // Set only for mail sent *on somebody's behalf*: an order request
+          // must be answered to the buyer, not to us.
+          ...(replyTo ? { reply_to: replyTo } : {}),
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!response.ok) {
+        // The body carries why — an unverified sender domain, a malformed
+        // address — and that sentence is the difference between a fix and a
+        // guess.
+        const detail = await response.text().catch(() => '');
+        this.logger.error(
+          `Could not email ${to} ("${subject}"): Resend returned ${response.status} ${detail.slice(0, 300)}`,
+        );
+        return false;
+      }
+
+      this.logger.log(`Emailed ${redactEmail(to)}: "${subject}"`);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Could not email ${to} ("${subject}"): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
     }
   }
 
@@ -445,6 +537,10 @@ export class MailService implements OnModuleInit {
     text: string,
     replyTo?: string,
   ): Promise<boolean> {
+    if (this.viaResend) {
+      return this.sendViaResend(to, subject, html, text, replyTo);
+    }
+
     if (!this.transporter) {
       this.logger.warn(`Email is off — "${subject}" for ${to} was not sent.`);
       return false;

@@ -278,6 +278,22 @@ export class EnvironmentVariables {
   @IsOptional()
   SMTP_FROM?: string;
 
+  /**
+   * Resend's API key, and the reason this service can send mail at all from a
+   * host that blocks SMTP.
+   *
+   * Railway — and most of its neighbours — close outbound 25, 465 and 587 so
+   * their addresses cannot be used to send spam. That closes SMTP entirely, to
+   * Gmail and to Resend's own SMTP endpoint alike. Resend's REST API goes over
+   * 443, which nobody blocks.
+   *
+   * Set it and mail goes through Resend; leave it empty and the SMTP settings
+   * above are used, which is what a laptop wants.
+   */
+  @IsString()
+  @IsOptional()
+  RESEND_API_KEY?: string;
+
   /** Where customers sign in — put in the email beside their key. */
   @IsString()
   @IsOptional()
