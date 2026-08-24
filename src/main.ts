@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ServerResponse } from 'node:http';
 import { setDefaultResultOrder } from 'node:dns';
+import { setDefaultAutoSelectFamily } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -21,20 +22,26 @@ import { SeoService } from './seo/seo.service';
 import { setupSwagger } from './swagger';
 
 async function bootstrap(): Promise<void> {
-  // Prefer IPv4 when a name resolves to both.
+  // Connect over IPv4 when a name resolves to both.
   //
-  // `smtp.gmail.com` publishes an A record and a AAAA record, and Node picks
-  // whichever the resolver lists first — often the AAAA one. A host with no
-  // route out over IPv6, which is the default on most container platforms,
-  // then fails with `ENETUNREACH 2a00:1450:…:465` for a server that answers
-  // perfectly well over IPv4. It cost a signup: the verification email timed
-  // out, so the account existed and its owner never heard about it.
+  // `smtp.gmail.com` publishes an A record and a AAAA record. A container with
+  // no route out over IPv6 — the default on Railway and most of its
+  // neighbours — fails on the AAAA one with `ENETUNREACH 2a00:1450:…:465`,
+  // for a server that answers perfectly well over IPv4. It cost a signup: the
+  // verification email never left, so the account existed and its owner never
+  // heard about it.
+  //
+  // Both lines are needed, and the second is the one that actually did it.
+  // `ipv4first` orders what `dns.lookup` returns, but since Node 18 sockets
+  // default to Happy Eyeballs (RFC 8305): `net.connect` races the families
+  // itself and starts with IPv6, which ignores that order and reinstates the
+  // exact failure. Turning it off makes a socket use the address it was given.
   //
   // Set for the process rather than for the mailer, because the scraper
-  // reaches out to arbitrary hosts and would hit exactly the same wall. This
-  // is a preference, not a restriction — a name with only a AAAA record is
-  // still used.
+  // reaches arbitrary hosts and meets the same wall. Neither line forbids
+  // IPv6: a name with only a AAAA record still resolves and still connects.
   setDefaultResultOrder('ipv4first');
+  setDefaultAutoSelectFamily(false);
 
   // Before the application, not after: Sentry patches the modules it traces as
   // they load, so initialising it later leaves half the context missing.
