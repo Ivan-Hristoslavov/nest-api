@@ -61,6 +61,18 @@ export class MailService implements OnModuleInit {
         this.config.username && this.config.password
           ? { user: this.config.username, pass: this.config.password }
           : undefined,
+      // Registration waits for its verification email before it answers, so
+      // these decide how long somebody stares at a spinner when the mail
+      // server is unreachable, wrong, or — as on a deployment where
+      // SMTP_PASSWORD was never set — refusing to authenticate. Nodemailer's
+      // defaults are minutes; a person gives up long before that and tries
+      // again, which sends a second mail rather than fixing anything.
+      //
+      // Generous enough for a real server on a bad day, short enough that a
+      // broken one produces an error instead of a hang.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
     });
 
     this.logger.log(
