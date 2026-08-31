@@ -55,7 +55,14 @@ import {
 import { AdjustUserDto } from './dto/adjust-user.dto';
 import { WebhookResponseDto } from './dto/webhook-response.dto';
 import { BillingEvent } from './entities/billing-event.entity';
-import { User, UserPlan, effectiveAiUsage } from './entities/user.entity';
+import {
+  PLAN_CURRENCY,
+  PLAN_PRICE,
+  User,
+  UserPlan,
+  effectiveAiUsage,
+  planPriceOf,
+} from './entities/user.entity';
 import { UsersService } from './users.service';
 import { WebhookSignatureService } from './webhook-signature.service';
 
@@ -163,16 +170,37 @@ export class BillingController {
       properties: {
         enabled: { type: 'boolean', description: 'False when Stripe is not configured at all.' },
         plans: { type: 'array', items: { type: 'string', example: 'pro' } },
+        currency: { type: 'string', example: 'EUR' },
+        prices: {
+          type: 'object',
+          description:
+            'Monthly price per plan, including the ones that cannot be bought here. The pricing page renders from this rather than from figures written into its own markup, which is what stops it disagreeing with the subscription figure shown inside the account.',
+          additionalProperties: { type: 'number' },
+          example: { free: 0, starter: 19, pro: 49, business: 99 },
+        },
       },
     },
   })
-  plans(): { enabled: boolean; plans: string[]; topUpUrl: string | null } {
+  plans(): {
+    enabled: boolean;
+    plans: string[];
+    topUpUrl: string | null;
+    currency: string;
+    prices: Record<string, number>;
+  } {
     return {
       enabled: this.checkout.enabled,
       plans: this.checkout.availablePlans().map((entry) => entry.plan),
       // Null when nothing is configured, so the interface offers a top-up only
       // where one can actually be bought.
       topUpUrl: this.checkout.topUpUrl,
+      currency: PLAN_CURRENCY,
+      // Every plan, not only the purchasable ones. `plans` above answers "what
+      // can be bought right now", which depends on Stripe being configured;
+      // this answers "what does each tier cost", which does not. A pricing page
+      // that hid its prices whenever Stripe was misconfigured would be a
+      // stranger failure than the one it was avoiding.
+      prices: { ...PLAN_PRICE },
     };
   }
 
@@ -202,11 +230,12 @@ export class BillingController {
   }
 
   @ApiKeyAuth()
+  @UseGuards(AdminGuard)
   @Get('events')
   @ApiOperation({
     summary: 'Recent billing webhooks',
     description:
-      'The last events received, with their raw payloads — the first place to look when a customer says they paid and got nothing.',
+      "The last events received, with their raw payloads — the first place to look when a customer says they paid and got nothing.\n\nOperator only. The rows are not filtered by owner and the payloads carry other customers' email addresses and subscription identifiers, so a customer key reading this would be reading everybody's billing history.",
   })
   @ApiOkResponse({ description: 'Recent events, newest first.', type: BillingEvent, isArray: true })
   recentEvents(@Query('limit') limit?: string): Promise<BillingEvent[]> {
@@ -250,6 +279,10 @@ export class BillingController {
       status: user.status,
       plan: user.plan,
       productLimit: user.productLimit,
+      // From the one server-side table of prices, so the interface never has
+      // to hold a copy — the copy is what drifts from the pricing page.
+      planPrice: planPriceOf(user.plan),
+      planCurrency: PLAN_CURRENCY,
       aiMatchesUsed: aiUsage.used,
       aiMatchesLimit: aiUsage.limit,
       aiMatchesRenew: aiUsage.renews,
@@ -475,9 +508,16 @@ export class BillingController {
     return { enabled: this.mail.enabled, ...result };
   }
 
-  /** Not part of the public contract; used by the deployment smoke check. */
+  /**
+   * Not part of the public contract; used by the deployment smoke check.
+   *
+   * Operator-only: whether the webhook secret is set is a fact about the
+   * deployment's readiness to take money, and telling a customer that it is
+   * *not* set names the one gap worth probing.
+   */
   @ApiExcludeEndpoint()
   @ApiKeyAuth()
+  @UseGuards(AdminGuard)
   @Get('webhook/health')
   webhookHealth(): { provider: string; signatureConfigured: boolean } {
     return {

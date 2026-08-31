@@ -163,7 +163,12 @@ describe('ranking', () => {
     it('keeps an unrelated result that at least has a price', () => {
       // That is the shop's search being generous, not furniture — and a price
       // is something the buyer can act on.
-      const hits = rank([offer({ title: 'Суши сет PORTATA', price: 29.32 })], 'EUR', 60, 'лед лампа');
+      const hits = rank(
+        [offer({ title: 'Суши сет PORTATA', price: 29.32 })],
+        'EUR',
+        60,
+        'лед лампа',
+      );
 
       expect(hits).toHaveLength(1);
     });

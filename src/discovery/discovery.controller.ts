@@ -25,6 +25,7 @@ import {
   ShopSearchResultDto,
 } from './dto/discovery.dto';
 import { BasketResultDto, PriceBasketDto } from './dto/basket.dto';
+import { parseRequest } from './request-parser';
 import { SearchDetectorService } from './search-detector.service';
 
 @ApiTags('Discovery')
@@ -105,7 +106,16 @@ export class DiscoveryController {
     description: 'The page could not be read as a list of products.',
     type: ErrorResponseDto,
   })
-  async detect(@Body() dto: DetectSearchDto): Promise<DetectedShopDto> {
+  async detect(
+    // Scoped to an account even though nothing is stored: this route makes the
+    // server fetch a URL the caller chose, and an unattributable outbound
+    // request is one nobody can rate-limit, meter or trace back. The address
+    // itself is checked twice — `IsPublicHttpUrl` on the DTO for a fast, clear
+    // refusal, and the agent's own lookup on every connection, redirects
+    // included.
+    @Owner() _ownerId: string,
+    @Body() dto: DetectSearchDto,
+  ): Promise<DetectedShopDto> {
     try {
       return await this.detector.detect(dto.searchUrl, dto.sampleQuery);
     } catch (error) {
@@ -130,6 +140,7 @@ export class DiscoveryController {
       inStockOnly: query.inStockOnly,
       limit: query.limit,
       useAi: query.ai,
+      scope: query.scope,
     });
   }
 
@@ -169,6 +180,7 @@ export class DiscoveryController {
         inStockOnly: query.inStockOnly,
         limit: query.limit,
         useAi: query.ai,
+        scope: query.scope,
         onProgress: emit,
       })
       .then((result) => emit({ type: 'result', ...result }))
@@ -194,16 +206,33 @@ export class DiscoveryController {
   @ApiOperation({
     summary: 'Price a whole order across your suppliers',
     description:
-      'The question a buyer actually has. Not "what does this cable cost" but "where do I place this order" — and those have different answers, because no supplier is cheapest on everything.\n\nReturns three figures: what the order costs from each supplier alone, what it costs split across them line by line, and the difference. The last one is the reason to use this, and it is not something five price lists in a spreadsheet give up easily.\n\nA supplier who cannot fill every line is still ranked, with the count of what they cover — "cheapest, but missing three items" is a real answer, and hiding it recommends an order that cannot be placed.\n\nAnswers are reused for six hours by default, which is what makes a forty-line order take seconds rather than eleven minutes. Pass `useCache: false` when the order is about to go out and the figures must be current.',
+      'The question a buyer actually has. Not "what does this cable cost" but "where do I place this order" — and those have different answers, because no supplier is cheapest on everything.\n\n**`plan` is the answer.** It is the cheapest combination of suppliers that can *actually be placed*: delivery is charged once per supplier, minimum orders are hard constraints, and a supplier who would refuse their share makes the whole plan impossible rather than merely dearer. It comes with the single-supplier baseline it is measured against, the alternatives worth considering, and sentences explaining why it won.\n\n`suppliers` and `split` describe what things *cost* and are kept for existing clients. `split` in particular is a greedy figure that ignores delivery and minimum orders, so it can overstate the benefit — prefer `plan.savings`.\n\nPass `maxSuppliers` to cap the split, or `excludeShopIds` to leave a supplier out. Answers are reused for six hours by default; pass `useCache: false` when the order is about to go out.',
   })
   @ApiOkResponse({ description: 'The order, priced.', type: BasketResultDto })
   @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
   priceBasket(@Owner() ownerId: string, @Body() dto: PriceBasketDto): Promise<BasketResultDto> {
-    return this.discoveryService.priceBasket(
-      ownerId,
-      dto.lines.map((line) => ({ query: line.query, quantity: line.quantity ?? 1 })),
-      { currency: dto.currency, useCache: dto.useCache },
-    );
+    // Structured lines win where a caller sent them — an integration knows its
+    // own quantities. A person pasting a list gets the same treatment through
+    // one parser rather than through a syntax they would have to be taught.
+    const lines = dto.lines?.length
+      ? dto.lines.map((line) => ({ query: line.query, quantity: line.quantity ?? 1 }))
+      : parseRequest(dto.text ?? '').map((line) => ({
+          query: line.query,
+          quantity: line.quantity,
+        }));
+
+    if (lines.length === 0) {
+      throw new BadRequestException(
+        'Напишете поне един артикул — по един на ред, с количество след запетая, ако има.',
+      );
+    }
+
+    return this.discoveryService.priceBasket(ownerId, lines, {
+      currency: dto.currency,
+      useCache: dto.useCache,
+      maxSuppliers: dto.maxSuppliers,
+      excludeShopIds: dto.excludeShopIds,
+    });
   }
 
   @Get('search')

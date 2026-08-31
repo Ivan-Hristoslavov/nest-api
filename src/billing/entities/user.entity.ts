@@ -50,6 +50,60 @@ export const PLAN_PRODUCT_LIMIT: Record<UserPlan, number> = {
 };
 
 /**
+ * What each plan costs per month.
+ *
+ * The one place this number is written down. Before this it existed twice —
+ * in the pricing page's markup and again in the interface's ROI panel — which
+ * is two places to change and one of them to forget. A subscription figure
+ * that disagrees with the pricing page is not a cosmetic bug: it sits directly
+ * under the words "you paid X, we saved you Y", which is the claim a customer
+ * checks against their own bank statement.
+ *
+ * `free` is zero, and callers must treat it as "no subscription to measure
+ * against" rather than as a price. An ROI of "you paid €0 and saved €386" is
+ * arithmetic, not an argument, and dividing by it is worse.
+ *
+ * **This is the display price. Stripe holds what is actually charged**, as a
+ * price id rather than an amount, so the two are separate facts by
+ * construction and nothing in the type system ties them together.
+ * {@link CheckoutService.verifyPrices} compares them once at boot and complains
+ * loudly if they have drifted, which is the closest thing to a guarantee that
+ * is available without putting a Stripe call on a hot path.
+ */
+export const PLAN_PRICE: Record<UserPlan, number> = {
+  [UserPlan.Free]: 0,
+  [UserPlan.Starter]: 19,
+  [UserPlan.Pro]: 49,
+  [UserPlan.Business]: 99,
+};
+
+/**
+ * The currency every plan is priced in.
+ *
+ * A constant rather than a column because it is one: the prices above are
+ * euro amounts, and a per-account currency would mean per-account prices,
+ * which is a different product. Named and exported anyway, so no caller has to
+ * assume it and none of them can quietly assume something else.
+ */
+export const PLAN_CURRENCY = 'EUR';
+
+/**
+ * What this plan costs, for a plan value that may have come from anywhere.
+ *
+ * The row's `plan` column is a string as far as Postgres is concerned, so a
+ * value written by an older deploy, a hand-run UPDATE or a future tier can
+ * reach a reader that has no price for it. Returning `null` for those says
+ * "not known" and lets the interface leave the figure out, which is the only
+ * honest option — falling back to another plan's price would put a number
+ * under somebody's subscription that nobody charges.
+ */
+export function planPriceOf(plan: string | null | undefined): number | null {
+  if (!plan) return null;
+  const price = (PLAN_PRICE as Record<string, number | undefined>)[plan];
+  return typeof price === 'number' ? price : null;
+}
+
+/**
  * AI comparisons an account may spend per month.
  *
  * Metered apart from price checks because it is a different cost with a

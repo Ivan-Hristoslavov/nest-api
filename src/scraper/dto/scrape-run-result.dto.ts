@@ -90,3 +90,33 @@ export class ScraperStatusDto {
   })
   lastRun!: ScrapeRunResultDto | null;
 }
+
+/**
+ * What one account may know about the scraper.
+ *
+ * Deliberately much smaller than {@link ScraperStatusDto}. That one carries
+ * `lastRun`, whose per-listing results name products and suppliers from every
+ * tenant the sweep touched — which is exactly what must not reach a customer
+ * key. This carries only facts about the caller's own listings, plus the two
+ * deployment settings that are not secret: whether checking runs at all, and
+ * on what schedule.
+ */
+export class OwnerScraperStatusDto {
+  @ApiProperty({ description: 'Whether the scheduled sweep is enabled at all.', example: true })
+  enabled!: boolean;
+
+  @ApiProperty({ description: 'Cron expression driving the sweep.', example: '0 * * * *' })
+  cron!: string;
+
+  @ApiProperty({
+    description: 'How many of **your** listings are due for a check right now.',
+    example: 12,
+  })
+  dueNow!: number;
+
+  @ApiProperty({
+    description: 'Whether a refresh of your own listings is running right now.',
+    example: false,
+  })
+  running!: boolean;
+}

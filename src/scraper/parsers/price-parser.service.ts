@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 
+import { availabilityOf } from './availability';
 import { SiteProfile } from './site-profiles';
 
 /** Where in the page the price was found. Stored on the competitor row. */
@@ -647,10 +648,16 @@ export class PriceParserService {
     const microdata = $('[itemprop="availability"]').first();
     const stated = microdata.attr('href') ?? microdata.attr('content') ?? '';
 
-    if (stated) return !/OutOfStock|SoldOut|Discontinued/i.test(stated);
-    if (/schema.org\/OutOfStock/i.test(html)) return false;
-    if (/schema.org\/InStock/i.test(html)) return true;
+    // Structured data first, then the words. This read the markup alone and
+    // stopped, which meant a shop that writes "Изчерпан" in a plain span —
+    // most of them — was indistinguishable from a shop with full shelves.
+    //
+    // Scripts and styles are dropped before the text is read: a JSON blob in a
+    // `<script>` mentioning "outOfStock" for some other article on the page is
+    // not this article's availability.
+    const page = $('body').clone();
+    page.find('script, style, noscript').remove();
 
-    return null;
+    return availabilityOf(html, stated, page.text());
   }
 }

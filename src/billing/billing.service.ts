@@ -100,7 +100,7 @@ export class BillingService {
     this.planByPriceId = Object.fromEntries(
       Object.entries(prices)
         .filter(([, priceId]) => Boolean(priceId))
-        .map(([plan, priceId]) => [priceId as string, plan as UserPlan]),
+        .map(([plan, priceId]) => [priceId, plan as UserPlan]),
     );
   }
 

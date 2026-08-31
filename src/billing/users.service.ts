@@ -198,7 +198,9 @@ export class UsersService {
     user.trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 3600_000);
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Trial started for ${redactEmail(saved.email)}, ends ${saved.trialEndsAt?.toISOString()}`);
+    this.logger.log(
+      `Trial started for ${redactEmail(saved.email)}, ends ${saved.trialEndsAt?.toISOString()}`,
+    );
 
     return { user: saved, apiKey: issued.apiKey };
   }
@@ -247,7 +249,9 @@ export class UsersService {
     user.apiKeyIssuedAt = new Date();
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Issued API key ${generated.prefix}… for user ${saved.id} (${redactEmail(saved.email)})`);
+    this.logger.log(
+      `Issued API key ${generated.prefix}… for user ${saved.id} (${redactEmail(saved.email)})`,
+    );
 
     return { user: saved, apiKey: generated.plaintext };
   }
@@ -291,7 +295,9 @@ export class UsersService {
     if (details.expiresAt !== undefined) user.accessExpiresAt = details.expiresAt;
 
     const saved = await this.usersRepository.save(user);
-    this.logger.log(`Activated user ${saved.id} (${redactEmail(saved.email)}) on plan ${saved.plan}`);
+    this.logger.log(
+      `Activated user ${saved.id} (${redactEmail(saved.email)}) on plan ${saved.plan}`,
+    );
 
     return saved;
   }

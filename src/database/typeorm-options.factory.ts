@@ -1,8 +1,10 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
+import { ApiOutreach } from '../admin/entities/api-outreach.entity';
 import { Alert } from '../alerts/entities/alert.entity';
 import { BillingEvent } from '../billing/entities/billing-event.entity';
 import { User } from '../billing/entities/user.entity';
+import { PurchaseDecision } from '../decisions/entities/purchase-decision.entity';
 import { SearchCache } from '../discovery/entities/search-cache.entity';
 import { AuthToken } from '../auth/entities/auth-token.entity';
 import { MatchCache } from '../matching/entities/match-cache.entity';
@@ -65,6 +67,8 @@ export function buildTypeOrmOptions(config: DatabaseConfig): TypeOrmModuleOption
       // and proposes dropping.
       Order,
       OrderLine,
+      ApiOutreach,
+      PurchaseDecision,
     ],
     migrations: [`${__dirname}/migrations/*.{ts,js}`],
     migrationsTableName: 'typeorm_migrations',

@@ -21,6 +21,8 @@ export interface DraftOrder {
   note?: string | null;
   currency?: string;
   lines: DraftLine[];
+  /** The decision this order carries out, when the buyer chose a plan. */
+  purchaseDecisionId?: string | null;
 }
 
 /**
@@ -99,6 +101,7 @@ export class OrdersService {
         shopName: shop.name,
         shopEmail: shop.orderEmail,
         status: OrderStatus.Draft,
+        purchaseDecisionId: draft.purchaseDecisionId ?? null,
         currency: draft.currency ?? shop.currency ?? 'EUR',
         total: round(lines.reduce((sum, line) => sum + line.lineTotal, 0)),
         note: draft.note?.trim() || null,
@@ -106,7 +109,9 @@ export class OrdersService {
       });
 
       const saved = await orders.save(order);
-      this.logger.log(`Order #${saved.number} drafted for ${redactEmail(owner.email)} at ${shop.name}`);
+      this.logger.log(
+        `Order #${saved.number} drafted for ${redactEmail(owner.email)} at ${shop.name}`,
+      );
 
       return saved;
     });
@@ -146,9 +151,7 @@ export class OrdersService {
     const sent = await this.orders.count({ where: { ownerId, sentAt: MoreThan(since) } });
 
     if (sent >= OrdersService.MAX_SENDS_PER_DAY) {
-      this.logger.warn(
-        `Account ${ownerId} reached the daily order-email limit (${sent} in 24h).`,
-      );
+      this.logger.warn(`Account ${ownerId} reached the daily order-email limit (${sent} in 24h).`);
 
       throw new BadRequestException(
         `Изпратихте ${sent} поръчки за последните 24 часа, което е дневният лимит. ` +
@@ -182,6 +185,19 @@ export class OrdersService {
 
     order.status = status;
     return this.orders.save(order);
+  }
+
+  /**
+   * Which decision, if any, needs its realized saving recomputed after this
+   * order changed hands.
+   *
+   * A getter rather than a call into the decisions service, so ordering keeps
+   * knowing nothing about decisions. The controller owns the sequencing, which
+   * keeps the dependency running one way — decisions read orders, orders do not
+   * read decisions.
+   */
+  decisionBehind(order: Order): string | null {
+    return order.purchaseDecisionId;
   }
 
   /** Deletes a draft. Anything already sent is a record and stays. */

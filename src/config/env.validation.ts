@@ -556,6 +556,76 @@ export class EnvironmentVariables {
   @IsOptional()
   AI_MATCH_TIMEOUT_MS = 9000;
 
+  // --- Web discovery -------------------------------------------------------
+  /**
+   * Whether "search everywhere" may look past the configured shops.
+   *
+   * Off, `global` means the verified shelf and nothing else — which is what it
+   * meant before this existed, and which is honest but nearly empty for any
+   * trade nobody has configured suppliers for. On, the same search reaches the
+   * open web, and a buyer asking for a part number gets the shops that
+   * actually stock it rather than the shops we happen to know.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  WEB_DISCOVERY_ENABLED = true;
+
+  /**
+   * The model that runs the searches. It never decides a match — it proposes
+   * addresses, and every one of them is fetched and judged by the same
+   * deterministic matcher a configured supplier's rows go through.
+   *
+   * Must be a model carrying the current web-search tool; the older Haiku the
+   * matcher prefers does not.
+   */
+  @IsString()
+  @IsOptional()
+  WEB_DISCOVERY_MODEL = 'claude-opus-5';
+
+  /** Searches per question. Each one costs, and three spellings is plenty. */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  @IsOptional()
+  WEB_DISCOVERY_MAX_SEARCHES = 3;
+
+  /**
+   * Product pages fetched per question, whatever the web turned up.
+   *
+   * The hard limit that keeps this from becoming a crawler. A person is
+   * waiting, and the twentieth result for a part number is not the one that
+   * stocks it.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  @IsOptional()
+  WEB_DISCOVERY_MAX_PAGES = 8;
+
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1000)
+  @IsOptional()
+  WEB_DISCOVERY_TIMEOUT_MS = 25000;
+
+  /**
+   * How long one supplier may take before the search continues without it.
+   *
+   * Measured, not guessed: every configured shop but one answers inside six
+   * seconds, and the one — cablecommerce.bg — takes nineteen. Waiting for it
+   * made every other answer nineteen seconds old before anybody saw it. A
+   * supplier that overruns is reported as timed out, which is a true statement
+   * about that supplier and not a failure of the search.
+   */
+  @Transform(toNumber)
+  @IsInt()
+  @Min(1000)
+  @IsOptional()
+  SEARCH_SUPPLIER_TIMEOUT_MS = 9000;
+
   /**
    * Hosted checkout links, one per plan.
    *

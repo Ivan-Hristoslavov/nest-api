@@ -11,7 +11,11 @@ import { PriceCheckResultDto } from '../products/dto/price-check-result.dto';
 import { ScrapeStatus } from '../products/enums/scrape-status.enum';
 import { Competitor } from '../products/entities/competitor.entity';
 import { Product } from '../products/entities/product.entity';
-import { ScrapeRunResultDto, ScraperStatusDto } from './dto/scrape-run-result.dto';
+import {
+  OwnerScraperStatusDto,
+  ScrapeRunResultDto,
+  ScraperStatusDto,
+} from './dto/scrape-run-result.dto';
 import { PRICE_SOURCE, PriceFetchError, PriceSource } from './fetchers/price-source.interface';
 
 export const SCRAPER_CRON_JOB = 'competitor-price-sweep';
@@ -43,6 +47,17 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
   private currentSweep: Promise<ScrapeRunResultDto> | null = null;
   private lastRun: ScrapeRunResultDto | null = null;
   private lastRunAt: Date | null = null;
+
+  /**
+   * Owner-scoped sweeps in flight, keyed by account.
+   *
+   * Separate from `isRunning`, which guards the *global* sweep. A customer
+   * pressing refresh must not be blocked by the scheduled sweep, and two
+   * customers refreshing at the same moment are two independent pieces of
+   * work — but one customer holding the button down is not, so each account
+   * gets at most one in flight.
+   */
+  private readonly ownerSweeps = new Map<string, Promise<ScrapeRunResultDto>>();
 
   constructor(
     @InjectRepository(Product)
@@ -184,6 +199,15 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
     );
   }
 
+  /**
+   * The whole deployment's scraper state, including the last sweep's
+   * per-listing results.
+   *
+   * Operator-only, and that is not a formality: `lastRun.results` names
+   * products and suppliers from *every* account the sweep touched. Handing it
+   * to a customer key publishes one buyer's supplier list to another.
+   * {@link getOwnerStatus} is the tenant-safe view.
+   */
   async getStatus(): Promise<ScraperStatusDto> {
     return {
       enabled: this.config.enabled,
@@ -196,6 +220,92 @@ export class ScraperService implements OnModuleInit, OnApplicationShutdown {
       dueNow: await this.competitorsService.countDueForScrape(),
       lastRunAt: this.lastRunAt?.toISOString() ?? null,
       lastRun: this.lastRun,
+    };
+  }
+
+  /**
+   * What one account may know about the scraper.
+   *
+   * The schedule and whether checking is on at all are shared facts and are
+   * safe to state. Everything that could name another tenant's data — the
+   * last sweep's results, the global queue depth, the batch size that is a
+   * property of the deployment rather than of this account — is left out.
+   */
+  async getOwnerStatus(ownerId: string): Promise<OwnerScraperStatusDto> {
+    return {
+      enabled: this.config.enabled,
+      cron: this.config.cron,
+      dueNow: await this.competitorsService.countDueForScrape(ownerId),
+      running: this.ownerSweeps.has(ownerId),
+    };
+  }
+
+  /**
+   * Re-checks the listings of **one account** that are due.
+   *
+   * This is the customer-facing "refresh" and it is deliberately not the same
+   * call as {@link runSweep}: that one walks every tenant's queue, and letting
+   * a customer trigger it means one account can spend the whole platform's
+   * request budget against suppliers it has no relationship with, then read
+   * the results.
+   *
+   * Bounded by the same batch size as the scheduled sweep, so a large catalog
+   * cannot turn one button into an unbounded burst.
+   */
+  async runOwnerSweep(ownerId: string): Promise<ScrapeRunResultDto> {
+    const startedAt = new Date();
+    const runId = `sweep_owner_${startedAt.toISOString()}`;
+
+    if (this.shuttingDown) {
+      this.logger.warn(`Refusing owner sweep ${runId}: application is shutting down.`);
+      return this.emptyRun(runId, startedAt);
+    }
+
+    // One at a time per account. A second press joins the first rather than
+    // doubling the requests we make to that account's suppliers.
+    const inFlight = this.ownerSweeps.get(ownerId);
+    if (inFlight) return inFlight;
+
+    const sweep = this.executeOwnerSweep(ownerId, runId, startedAt);
+    this.ownerSweeps.set(ownerId, sweep);
+
+    try {
+      return await sweep;
+    } finally {
+      this.ownerSweeps.delete(ownerId);
+    }
+  }
+
+  private async executeOwnerSweep(
+    ownerId: string,
+    runId: string,
+    startedAt: Date,
+  ): Promise<ScrapeRunResultDto> {
+    const due = await this.competitorsService.findDueForScrape(this.config.batchSize, ownerId);
+
+    if (due.length === 0) {
+      return this.emptyRun(runId, startedAt);
+    }
+
+    this.logger.log(`Owner sweep ${runId}: checking ${due.length} listing(s) for ${ownerId}.`);
+
+    const results = await this.mapWithConcurrency(due, this.config.concurrency, (competitor) =>
+      this.checkCompetitor(competitor),
+    );
+
+    // Deliberately not stored in `lastRun`: that field feeds the operator
+    // screen and is a deployment-wide record. One account's refresh is not.
+    return {
+      runId,
+      processed: results.length,
+      succeeded: results.filter((result) => result.error === null).length,
+      failed: results.filter((result) => result.error !== null).length,
+      changed: results.filter((result) => result.priceChanged).length,
+      significantChanges: results.filter((result) => result.significantChange).length,
+      undercuts: results.filter((result) => result.undercutsTargetPrice).length,
+      durationMs: Date.now() - startedAt.getTime(),
+      startedAt: startedAt.toISOString(),
+      results,
     };
   }
 

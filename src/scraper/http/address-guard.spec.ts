@@ -1,4 +1,9 @@
-import { BlockedAddressError, assertPublicHttpUrl, guardedLookup, isBlockedAddress } from './address-guard';
+import {
+  BlockedAddressError,
+  assertPublicHttpUrl,
+  guardedLookup,
+  isBlockedAddress,
+} from './address-guard';
 
 /**
  * The scraper fetches addresses a customer typed. Everything here is a way
@@ -85,7 +90,6 @@ describe('address guard', () => {
           lookup: (_host: string, _options: unknown, cb: Function) => cb(null, '127.0.0.1', 4),
         }));
 
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { guardedLookup: guarded } = require('./address-guard');
 
         guarded('rebind.example.com', {}, (error: NodeJS.ErrnoException | null) => {
@@ -107,7 +111,6 @@ describe('address guard', () => {
             ]),
         }));
 
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { guardedLookup: guarded } = require('./address-guard');
 
         guarded('mixed.example.com', { all: true }, (error: NodeJS.ErrnoException | null) => {

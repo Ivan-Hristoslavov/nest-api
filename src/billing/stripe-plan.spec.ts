@@ -130,9 +130,12 @@ describe('the plan a Stripe payment bought', () => {
     );
 
     expect(outcome.processed).toBe(true);
-    expect(users.activate).toHaveBeenCalledWith('u1', expect.objectContaining({
-      plan: UserPlan.Business,
-    }));
+    expect(users.activate).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        plan: UserPlan.Business,
+      }),
+    );
   });
 
   it('still issues and emails the key on the way through', async () => {

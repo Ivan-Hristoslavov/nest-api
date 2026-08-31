@@ -66,6 +66,15 @@ export class CreateOrderDto {
   @Length(3, 3)
   currency?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'The purchase decision this order carries out, when it came from a saved plan.\n\nLinking it is what later lets the saving be reported as *realized* rather than *potential*: once every supplier in the plan has an order here and each is marked confirmed, the decision stops claiming a forecast and starts reporting what was actually spent.',
+    format: 'uuid',
+  })
+  @IsUUID('4')
+  @IsOptional()
+  purchaseDecisionId?: string;
+
   @ApiProperty({ type: OrderLineInputDto, isArray: true })
   @IsArray()
   @ArrayMinSize(1)

@@ -5,11 +5,13 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AdminModule } from './admin/admin.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AuthModule } from './auth/auth.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { BillingModule } from './billing/billing.module';
 import { ShopsModule } from './shops/shops.module';
+import { DecisionsModule } from './decisions/decisions.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiKeyGuard } from './common/guards/api-key.guard';
@@ -17,6 +19,7 @@ import { KeyRevocationModule } from './common/key-revocation.service';
 import { Configuration, configuration } from './config/configuration';
 import { buildTypeOrmOptions } from './database/typeorm-options.factory';
 import { HealthModule } from './health/health.module';
+import { PricingModule } from './pricing/pricing.module';
 import { MatchingModule } from './matching/matching.module';
 import { OrdersModule } from './orders/orders.module';
 import { ProductsModule } from './products/products.module';
@@ -61,6 +64,11 @@ import { StatsModule } from './stats/stats.module';
     // the billing code that revokes keys resolve the same instance.
     KeyRevocationModule,
 
+    // Also global: what a customer pays is a domain rule the ranking, the
+    // basket and the order builder all have to agree on, and a second
+    // implementation appearing anywhere is the failure it exists to prevent.
+    PricingModule,
+
     // BillingModule first: ApiKeyGuard resolves customer keys through the
     // UsersService it exports.
     BillingModule,
@@ -68,7 +76,12 @@ import { StatsModule } from './stats/stats.module';
     // guard, which resolves sessions through the token this binds.
     AuthModule,
     ProductsModule,
+    // Before OrdersModule and DiscoveryModule, both of which import it: the
+    // basket seals a decision draft into every plan it returns, and an order
+    // names the decision it carries out.
+    DecisionsModule,
     OrdersModule,
+    AdminModule,
     AlertsModule,
     ScraperModule,
     DiscoveryModule,

@@ -1,4 +1,13 @@
-import { convert, isConvertible } from '../products/currency';
+import { InstalmentPlan } from '../scraper/parsers/instalments';
+import {
+  CostWarning,
+  LineCost,
+  NEUTRAL_TERMS,
+  SupplierTerms,
+  VatCertainty,
+  VatState,
+  effectiveLineCost,
+} from '../pricing/effective-cost';
 
 /**
  * Turning a pile of search results into an answer.
@@ -20,15 +29,36 @@ export interface RankableOffer {
   shopId: string | null;
   discountPercent: number;
   inStock?: boolean | null;
+  /** Financing the shop states on this article, if any. */
+  instalments?: InstalmentPlan[];
   /** When the figure was obtained, for anything not read just now. */
   recordedAt?: string | null;
   /** Where the figure came from. See {@link RankedHit.priceSource}. */
   priceSource?: 'live' | 'cached' | 'manual';
+  /**
+   * The supplier's full commercial terms, when they are known.
+   *
+   * Optional so that an offer from a host matching no configured shop still
+   * ranks. Absent, only `discountPercent` above applies and the VAT basis is
+   * reported as unknown — which is the truth about such an offer.
+   */
+  terms?: SupplierTerms;
+  /**
+   * Whether this buyer holds terms with the shop this came from.
+   *
+   * False only for an offer reached because the search scope was widened past
+   * the buyer's own supplier list. It is not a lesser offer — it may well be
+   * the only one — but it is a different kind of answer: no negotiated
+   * discount, no agreed delivery, and an account that does not exist yet.
+   */
+  isMine?: boolean;
 }
 
 export interface RankedHit {
   groupKey: string;
   groupLabel: string;
+  /** False for a shop this buyer holds no terms with. See {@link RankableOffer.isMine}. */
+  isMine: boolean;
   /**
    * Whether the product's own name contains what was searched for.
    *
@@ -51,6 +81,15 @@ export interface RankedHit {
   effectiveCurrency: string;
   inStock: boolean | null;
   /**
+   * What the shop will let a buyer pay monthly, as the shop states it.
+   *
+   * A price is one number and a purchase is often two decisions: 229 € against
+   * 12 × 20.75 € is capital against cashflow, and a comparison showing only
+   * the first has answered half the question. Empty where the page offers
+   * nothing — which is most of them.
+   */
+  instalments: InstalmentPlan[];
+  /**
    * When a hand-entered price was last confirmed, or null for a live one.
    *
    * The comparison mixes prices read seconds ago with prices typed in weeks
@@ -69,6 +108,31 @@ export interface RankedHit {
    * first — labelled a cached scrape "ваша цена", which is simply untrue.
    */
   priceSource: 'live' | 'cached' | 'manual';
+  /**
+   * Whether this figure can be set against the others without a caveat.
+   *
+   * `known` means the supplier's VAT treatment is on file and the figure is
+   * net of VAT. `assumed` means nobody has said, and the quoted number is
+   * being used as-is — safe next to other assumed figures, which share
+   * whatever basis they share. `uncertain` means this offer sits beside one
+   * whose basis *is* known, so one may be gross and the other net and nothing
+   * in the data says which. That last case must never be presented as a
+   * straight price comparison.
+   */
+  vatCertainty: VatCertainty;
+  vatState: VatState;
+  /** Anything the buyer should know before trusting this figure. */
+  warnings: CostWarning[];
+  /**
+   * The full unit-price working, kept so an order total can be built from it
+   * without re-deriving anything.
+   *
+   * A hit prices one unit; an order line prices a quantity at a supplier who
+   * charges delivery once. Carrying the working forward is what lets the
+   * basket add those without a second, subtly different implementation of the
+   * same arithmetic — which is the bug this whole module exists to remove.
+   */
+  cost: LineCost;
 }
 
 /**
@@ -140,11 +204,6 @@ function isMeasurement(token: string): boolean {
   );
 }
 
-/** Money, to the cent. */
-function round(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 /**
  * Cyrillic letters that look Latin, folded onto their twins.
  *
@@ -177,41 +236,69 @@ function namesMatch(name: string, words: string[]): boolean {
   return words.every((word) => folded.includes(word));
 }
 
-/** Applies the customer's discount and converts into one currency. */
+/**
+ * The terms to price this offer on.
+ *
+ * Where the offer carries the supplier's own terms, those win. Where it does
+ * not — a search result from a host matching no configured shop — the discount
+ * that came with the offer is still honoured and everything else is neutral,
+ * which reproduces exactly what this function did before terms existed.
+ */
+function termsFor(offer: RankableOffer): SupplierTerms {
+  if (offer.terms) return offer.terms;
+
+  return {
+    ...NEUTRAL_TERMS,
+    shopId: offer.shopId,
+    name: offer.shopName,
+    currency: (offer.currency ?? 'EUR').toUpperCase(),
+    discountPercent: offer.discountPercent,
+  };
+}
+
+/**
+ * Turns one offer into a ranked hit at the price this customer actually pays.
+ *
+ * The arithmetic lives in {@link effectiveLineCost} rather than here. It used
+ * to be inline — `price × (1 − discount)` and a currency conversion — and that
+ * was the whole pricing model: no VAT, no delivery, no minimum order. Keeping
+ * one authoritative implementation is what lets the basket, the ranking and
+ * anything built on them agree about a number the customer will check against
+ * their own invoice.
+ */
 export function toHit(offer: RankableOffer, target: string, words: string[] = []): RankedHit {
-  const listed = offer.price;
-  const currency = (offer.currency ?? 'EUR').toUpperCase();
-
-  const discounted = listed === null ? null : listed * (1 - offer.discountPercent / 100);
-
-  const convertible = isConvertible(currency, target);
-
-  // Rounded here rather than left to the caller. 12.00 less 30 % is
-  // 8.399999999999999 in binary floating point, and an API that answers with
-  // that number invites every consumer to round it their own way — or to
-  // compare two of them for equality and find they differ.
-  const effective =
-    discounted === null || !convertible ? null : round(convert(discounted, currency, target));
+  const terms = termsFor(offer);
+  const cost = effectiveLineCost(
+    { listPrice: offer.price, currency: offer.currency, quantity: 1 },
+    terms,
+    target,
+  );
 
   const group = groupOf(offer.title);
 
   return {
     groupKey: group.key,
     groupLabel: group.label,
+    isMine: offer.isMine !== false,
     matched: namesMatch(offer.title, words),
     shopId: offer.shopId,
     shopName: offer.shopName,
     host: offer.host,
     name: offer.title,
     url: offer.url,
-    listedPrice: listed,
-    listedCurrency: currency,
-    discountPercent: offer.discountPercent,
-    effectivePrice: effective,
-    effectiveCurrency: convertible ? target : currency,
+    listedPrice: cost.listPrice,
+    listedCurrency: cost.listCurrency,
+    discountPercent: cost.discountPercent,
+    effectivePrice: cost.effectiveUnitPrice,
+    effectiveCurrency: cost.effectiveCurrency,
     inStock: offer.inStock ?? null,
+    instalments: offer.instalments ?? [],
     recordedAt: offer.recordedAt ?? null,
     priceSource: offer.priceSource ?? 'live',
+    vatCertainty: cost.vatCertainty,
+    vatState: cost.vatState,
+    warnings: cost.warnings,
+    cost,
   };
 }
 

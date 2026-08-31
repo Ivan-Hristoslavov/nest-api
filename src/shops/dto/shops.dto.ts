@@ -1,8 +1,10 @@
 import { IsPublicHttpUrlTemplate } from '../../common/validators/public-url.validator';
+import { VatState } from '../../pricing/effective-cost';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -97,7 +99,98 @@ class SearchConfigDto {
   searchConfidence?: number;
 }
 
-export class CreateShopDto extends SearchConfigDto {
+/**
+ * The commercial terms a price depends on, beyond the discount.
+ *
+ * Shared by create and update, and every field is optional: a supplier added
+ * without them prices exactly as suppliers did before these existed. That is
+ * what keeps the change safe for shops already in the database.
+ */
+class CommercialTermsDto extends SearchConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'Whether this shop quotes with VAT, without it, or has not said. Left unset it stays `unknown`, and offers on an unknown basis are shown but marked as not directly comparable against offers whose basis is known — because assuming is a 20% error, larger than almost any discount.',
+    enum: VatState,
+    enumName: 'VatState',
+    example: VatState.Exclusive,
+  })
+  @IsEnum(VatState)
+  @IsOptional()
+  vatState?: VatState;
+
+  @ApiPropertyOptional({
+    description: 'VAT rate in percent. Only used when the shop quotes VAT-inclusive.',
+    minimum: 0,
+    maximum: 100,
+    example: 20,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  vatRate?: number;
+
+  @ApiPropertyOptional({
+    description: 'Flat delivery charge per order. Charged once per order, not per article.',
+    minimum: 0,
+    example: 12,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  shippingCost?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Goods total at or above which delivery is free. Send `null` to clear it, meaning delivery is never free.',
+    minimum: 0,
+    nullable: true,
+    example: 300,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  freeShippingOver?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Per-order charge that is not delivery — packing, documents, a card fee.',
+    minimum: 0,
+    example: 0,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  handlingFee?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Below this goods total the supplier will not accept an order. A supplier under their minimum is reported as unavailable rather than ranked as cheapest.',
+    minimum: 0,
+    example: 200,
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  minOrderValue?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Anything about the terms the fields above cannot hold — a rebate, a seasonal condition, a person to ask. Read by people, never by the pricing code.',
+    maxLength: 2000,
+  })
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  @Transform(trimString)
+  termsNote?: string;
+}
+
+export class CreateShopDto extends CommercialTermsDto {
   @ApiPropertyOptional({
     description:
       'Set false for a supplier with no website — the local warehouse that emails a price list. Nothing is fetched for them; you enter their prices, and they still join the same comparison with your discount applied.',
@@ -147,7 +240,7 @@ export class CreateShopDto extends SearchConfigDto {
   currency?: string;
 }
 
-export class UpdateShopDto extends SearchConfigDto {
+export class UpdateShopDto extends CommercialTermsDto {
   @ApiPropertyOptional({ description: 'False for a supplier with no website.', default: true })
   @Transform(toOptionalBoolean)
   @IsBoolean()

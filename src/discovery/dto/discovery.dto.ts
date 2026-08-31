@@ -1,12 +1,14 @@
+import { IsPublicHttpUrl } from '../../common/validators/public-url.validator';
+import { CostWarningKind, VatCertainty, VatState } from '../../pricing/effective-cost';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
   Length,
   Max,
   MaxLength,
@@ -52,6 +54,35 @@ export class DiscoveredProductDto {
     enum: ['live', 'cached', 'manual'],
   })
   priceSource?: 'live' | 'cached' | 'manual';
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the shop says it has this. `false` means it said so plainly — "изчерпан", "out of stock", "stoc epuizat" — and the row is shown as unavailable rather than quoted as a source. `null` means the shop said nothing, which is the normal state of an available article at a shop that only labels what it has run out of, and is never read as a refusal.',
+    type: Boolean,
+    nullable: true,
+  })
+  inStock?: boolean | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Financing the shop offers on this article, exactly as its page states it — number of payments, the monthly figure, and the lender where the page names one. Nothing is calculated here: no rate is inferred and no total is derived, because a financing figure this system computed and got wrong is one a customer can disprove against their contract.',
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        months: { type: 'number', example: 12 },
+        monthly: { type: 'number', example: 8.76 },
+        currency: { type: 'string', example: 'EUR' },
+        provider: { type: 'string', nullable: true, example: 'TBI Bank' },
+      },
+    },
+  })
+  instalments?: Array<{
+    months: number;
+    monthly: number;
+    currency: string;
+    provider: string | null;
+  }>;
 }
 
 export class ShopSearchResultDto {
@@ -76,6 +107,20 @@ export class ShopSearchResultDto {
 
   @ApiProperty({ example: 412 })
   durationMs!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'What this shop was actually asked, when the original query returned nothing and a widened spelling was tried. Absent when the shop answered the query as typed — which is the usual case, and the one that costs one request.',
+    example: 'PVC pipe',
+  })
+  usedQuery?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'False for a shop this account holds no terms with, reached only because the search scope was `global`. Its price is the shelf price — no negotiated discount applies, because nobody negotiated one.',
+    default: true,
+  })
+  isMine?: boolean;
 
   @ApiProperty({ type: DiscoveredProductDto, isArray: true })
   products!: DiscoveredProductDto[];
@@ -116,7 +161,11 @@ export class DetectSearchDto {
     example: 'https://ardes.bg/search?q=%D0%BA%D1%80%D1%83%D1%88%D0%BA%D0%B0',
   })
   @IsString()
-  @IsUrl({ require_protocol: true }, { message: 'searchUrl трябва да е пълен адрес с https://' })
+  // Not `@IsUrl`: that accepts `http://127.0.0.1:3000/` and
+  // `http://169.254.169.254/…` as perfectly well-formed addresses. This one
+  // refuses the protocols and literal addresses we will not fetch, and says so
+  // immediately instead of letting the request fail later somewhere obscure.
+  @IsPublicHttpUrl({ message: 'searchUrl трябва да е публичен адрес с https://' })
   @MaxLength(2048)
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : (value as unknown)))
   searchUrl!: string;
@@ -216,6 +265,16 @@ export class CompareQueryDto extends SearchQueryDto {
   @IsBoolean()
   @IsOptional()
   ai?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Where to look.\n\n`my_suppliers` — the default — asks only the shops this account holds terms with, which is the working question for a buyer: *can I get this from somebody I already deal with?*\n\n`global` adds the verified shelf of shops the account has **not** added. Their prices are shelf prices: no negotiated discount is applied and no agreed delivery terms exist, because nobody negotiated any. Reach for it when the first answer was "nobody stocks it".',
+    enum: ['my_suppliers', 'global'],
+    default: 'my_suppliers',
+  })
+  @IsIn(['my_suppliers', 'global'])
+  @IsOptional()
+  scope?: 'my_suppliers' | 'global';
 }
 
 export class MatchReasonDto {
@@ -223,6 +282,111 @@ export class MatchReasonDto {
   @ApiProperty({ example: '12W' }) left!: string;
   @ApiProperty({ example: '12W' }) right!: string;
   @ApiProperty({ example: true }) agrees!: boolean;
+
+  @ApiProperty({
+    description:
+      'Why it agrees or does not. `agrees` alone cannot tell a buyer whether the supplier disagreed about the capacity or simply never mentioned it — and those are the two halves of a purchasing decision.',
+    enum: ['match', 'missing', 'conflict'],
+    example: 'match',
+    required: false,
+  })
+  status?: 'match' | 'missing' | 'conflict';
+}
+
+/** One attribute as the two sides stated it. */
+export class AttributeComparisonDto {
+  @ApiProperty({
+    description:
+      'The concept, or the dimension where the supplier named none. Dynamic: whatever the two listings turned out to state.',
+    example: 'storage',
+  })
+  key!: string;
+
+  @ApiProperty({ example: 'Storage' }) label!: string;
+
+  @ApiProperty({
+    description:
+      'What this attribute decides. `identity` disagreeing is a different article; `variant` is another version of the same one; `compatibility` is whether it fits; `package` is how many come in the box.',
+    enum: ['identity', 'variant', 'compatibility', 'package', 'commercial', 'descriptive'],
+    example: 'identity',
+  })
+  role!: string;
+
+  @ApiProperty({ nullable: true, example: '512 GB' }) query!: string | null;
+  @ApiProperty({ nullable: true, example: '512 GB' }) candidate!: string | null;
+
+  @ApiProperty({ enum: ['match', 'missing', 'conflict'], example: 'match' })
+  status!: 'match' | 'missing' | 'conflict';
+}
+
+/**
+ * What a query was understood to be.
+ *
+ * Deliberately open: `attributes` carries whatever the query turned out to
+ * state, keyed by concept where one was recognised and by dimension where it
+ * was not. There is no list of supported categories, here or anywhere else.
+ */
+export class UnderstandingDto {
+  @ApiProperty({
+    nullable: true,
+    example: 'pipe',
+    description: "The kind of thing, in the buyer's own words.",
+  })
+  productType!: string | null;
+
+  @ApiProperty({ nullable: true, example: 'philips' })
+  brand!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Kept under its old name for clients written against it; it carries the product type.',
+    example: 'pipe',
+  })
+  category!: string | null;
+
+  @ApiProperty({
+    description:
+      'Every attribute read out of the query. Keys are dynamic — `ram`, `diameter`, `grammage`, `package_quantity` — and each value carries the measurement as written plus its value in a base unit, which is what two suppliers are actually compared on.',
+    example: {
+      diameter: {
+        value: '50 mm',
+        unit: 'mm',
+        normalizedValue: 0.05,
+        normalizedUnit: 'length',
+        role: 'identity',
+        label: 'Diameter',
+      },
+    },
+  })
+  attributes!: Record<string, unknown>;
+
+  @ApiProperty({ description: 'Values that are not measurements, kept for older clients.' })
+  specs!: Record<string, string>;
+
+  @ApiProperty({
+    description: 'Measurements as written, kept for older clients.',
+    isArray: true,
+    type: Object,
+  })
+  measurements!: Array<{ value: number; unit: string }>;
+
+  @ApiProperty({ description: 'Barcodes, article numbers and model codes found in the query.' })
+  identifiers!: Record<string, unknown>;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'How many the buyer wants — never part of what the article is.',
+    example: 20,
+  })
+  requestedQuantity!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'A likely typo in a brand name. Offered, never applied: the search runs as typed.',
+    example: 'iphone 15',
+  })
+  didYouMean!: string | null;
 }
 
 export class MatchDto {
@@ -235,6 +399,29 @@ export class MatchDto {
 
   @ApiProperty({ enum: ['certain', 'high', 'possible', 'weak'], example: 'certain' })
   band!: string;
+
+  @ApiProperty({
+    description:
+      'How this offer stands to what was searched for. A boolean could not carry this: a variant of the same line and a part made to fit are both useful answers, and both used to arrive as "not a match".',
+    enum: [
+      'same_product',
+      'same_family',
+      'same_type',
+      'compatible',
+      'possible',
+      'conflict',
+      'unrelated',
+    ],
+    example: 'same_product',
+  })
+  relation!: string;
+
+  @ApiProperty({
+    description: 'Which pile this belongs in when results are shown.',
+    enum: ['strong', 'possible', 'similar', 'excluded'],
+    example: 'strong',
+  })
+  group!: string;
 
   @ApiProperty({
     description: 'What decided it. Everything except `ai` is arithmetic on the two names.',
@@ -252,6 +439,116 @@ export class MatchDto {
     description: 'Attribute by attribute, so the decision can be checked rather than trusted.',
   })
   reasons!: MatchReasonDto[];
+
+  @ApiProperty({
+    type: AttributeComparisonDto,
+    isArray: true,
+    description: 'Attributes both sides state and agree on.',
+  })
+  matchedAttributes!: AttributeComparisonDto[];
+
+  @ApiProperty({
+    type: AttributeComparisonDto,
+    isArray: true,
+    description:
+      'Attributes one side states and the other is silent about. Doubt, not refusal — a supplier who states less has said less, not something different.',
+  })
+  missingAttributes!: AttributeComparisonDto[];
+
+  @ApiProperty({
+    type: AttributeComparisonDto,
+    isArray: true,
+    description:
+      'Attributes both sides state differently. A conflict in an identifying attribute ends the comparison.',
+  })
+  conflicts!: AttributeComparisonDto[];
+}
+
+/** One thing the buyer should know before trusting a figure. */
+export class CostWarningDto {
+  @ApiProperty({
+    description: 'Machine-readable reason, so a client can decide how to show it.',
+    enum: [
+      'vat_unknown',
+      'vat_not_comparable',
+      'currency_not_convertible',
+      'price_unreadable',
+      'below_minimum_order',
+    ],
+    example: 'vat_unknown',
+  })
+  kind!: CostWarningKind;
+
+  @ApiProperty({ description: 'Written for the buyer, not for the log.' })
+  message!: string;
+}
+
+/**
+ * The full working behind one unit price.
+ *
+ * Carried on every offer so a customer can be shown *how* a figure was reached
+ * — list price, discount, VAT treatment, currency — without a second request
+ * and without the interface re-deriving anything. A number a buyer cannot
+ * unpick is a number they check by hand, which is the work this replaces.
+ */
+export class EffectiveCostDto {
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1.2 })
+  listPrice!: number | null;
+
+  @ApiProperty({ example: 'EUR' }) listCurrency!: string;
+
+  @ApiProperty({ example: 15 }) discountPercent!: number;
+
+  @ApiPropertyOptional({
+    description: 'After the discount, still in the supplier’s currency and VAT basis.',
+    type: Number,
+    nullable: true,
+    example: 1.02,
+  })
+  discountedUnitPrice!: number | null;
+
+  @ApiProperty({
+    description: 'Whether this supplier quotes with VAT, without it, or has not said.',
+    enum: ['inclusive', 'exclusive', 'unknown'],
+    example: 'exclusive',
+  })
+  vatState!: VatState;
+
+  @ApiProperty({ example: 20 }) vatRate!: number;
+
+  @ApiProperty({
+    description:
+      '`known` — the VAT treatment is on file and this figure is net of VAT. `assumed` — nobody has said, and the quoted number is used as-is; safe against other assumed figures. `uncertain` — this offer sits beside one whose basis *is* known, so one may be gross and the other net and nothing says which. An `uncertain` figure must never be presented as a straight price comparison.',
+    enum: ['known', 'assumed', 'uncertain'],
+    example: 'known',
+  })
+  vatCertainty!: VatCertainty;
+
+  @ApiPropertyOptional({
+    description: 'Net of VAT, in the supplier’s currency.',
+    type: Number,
+    nullable: true,
+    example: 1.02,
+  })
+  netUnitPrice!: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Net of VAT, converted to the currency you asked to compare in.',
+    type: Number,
+    nullable: true,
+    example: 1.02,
+  })
+  effectiveUnitPrice!: number | null;
+
+  @ApiProperty({ example: 'EUR' }) effectiveCurrency!: string;
+
+  @ApiProperty({ example: 1 }) quantity!: number;
+
+  @ApiPropertyOptional({ type: Number, nullable: true, example: 1.02 })
+  netLineTotal!: number | null;
+
+  @ApiProperty({ type: CostWarningDto, isArray: true })
+  warnings!: CostWarningDto[];
 }
 
 export class RankedHitDto {
@@ -329,6 +626,35 @@ export class RankedHitDto {
     example: 'live',
   })
   priceSource!: 'live' | 'cached' | 'manual';
+
+  @ApiProperty({
+    description:
+      'Whether this figure can be set against the others without a caveat. See `cost.vatCertainty`.',
+    enum: ['known', 'assumed', 'uncertain'],
+    example: 'known',
+  })
+  vatCertainty!: VatCertainty;
+
+  @ApiProperty({
+    description: 'This supplier’s VAT treatment, as configured.',
+    enum: ['inclusive', 'exclusive', 'unknown'],
+    example: 'exclusive',
+  })
+  vatState!: VatState;
+
+  @ApiProperty({
+    description: 'Anything the buyer should know before trusting this figure.',
+    type: CostWarningDto,
+    isArray: true,
+  })
+  warnings!: CostWarningDto[];
+
+  @ApiProperty({
+    description:
+      'The full working behind `effectivePrice`, so it can be shown rather than trusted.',
+    type: EffectiveCostDto,
+  })
+  cost!: EffectiveCostDto;
 }
 
 export class ShopOutcomeDto {
@@ -342,8 +668,11 @@ export class ShopOutcomeDto {
 }
 
 export class MatchingSummaryDto {
-  @ApiProperty({ description: 'What the query was understood to mean, before any model ran.' })
-  understood!: Record<string, unknown>;
+  @ApiProperty({
+    description: 'What the query was understood to mean, before any model ran.',
+    type: UnderstandingDto,
+  })
+  understood!: UnderstandingDto;
 
   @ApiProperty({ example: 24 }) candidates!: number;
 
@@ -377,6 +706,27 @@ export class MatchingSummaryDto {
   })
   aiQuota!: { used: number; limit: number; renews: boolean } | null;
 
+  @ApiProperty({
+    description:
+      'Filters worth offering, taken from the candidates this search actually found rather than from a list written in advance. Search a laptop and you get memory, storage and screen; search a pipe and you get diameter, length and material. Nobody declared either set.',
+    isArray: true,
+    type: Object,
+    example: [
+      {
+        key: 'diameter',
+        label: 'Диаметър',
+        role: 'identity',
+        values: [{ value: '50 mm', count: 4 }],
+      },
+    ],
+  })
+  facets!: Array<{
+    key: string;
+    label: string;
+    role: string;
+    values: Array<{ value: string; count: number }>;
+  }>;
+
   @ApiProperty({ example: 180 }) durationMs!: number;
 }
 
@@ -385,6 +735,51 @@ export class ComparisonDto {
 
   @ApiProperty({ description: 'How long the whole fan-out took.', example: 1340 })
   durationMs!: number;
+
+  @ApiPropertyOptional({
+    description:
+      "The spellings a supplier may be asked, the buyer's own always first. At most one of the others is ever sent, and only to a supplier whose own search came back empty — one request per supplier per question is what makes this affordable.",
+    isArray: true,
+    type: Object,
+    example: [
+      { query: 'PVC pipe 50mm 4m', kind: 'original', reason: 'as the buyer typed it' },
+      {
+        query: 'pipe 50mm',
+        kind: 'canonical',
+        reason: 'the kind of article plus the measurement that identifies it',
+      },
+    ],
+  })
+  variants?: Array<{ query: string; kind: string; reason: string }>;
+
+  @ApiPropertyOptional({
+    description: 'Where this search looked.',
+    enum: ['my_suppliers', 'global'],
+    example: 'my_suppliers',
+  })
+  scope?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'How many results fell in each pile, so a client can lead with the answer instead of with forty rows.',
+    example: { strong: 3, possible: 5, similar: 2, excluded: 4 },
+  })
+  groups?: Record<string, number>;
+
+  @ApiPropertyOptional({
+    description:
+      'Where the milliseconds went: reading the query, asking the suppliers, ranking, matching on specifications, and a model where one was needed at all. `ai` is zero on a search the specifications settled, which is most of them. `widened` is 1 when the question had to be asked a second time in another spelling.',
+    example: { parse: 1, retrieval: 1180, ranking: 3, matching: 6, ai: 0, widened: 0, total: 1204 },
+  })
+  timings?: {
+    parse: number;
+    retrieval: number;
+    ranking: number;
+    matching: number;
+    ai: number;
+    widened: number;
+    total: number;
+  };
 
   @ApiProperty({
     type: ShopOutcomeDto,

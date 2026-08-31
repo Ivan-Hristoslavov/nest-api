@@ -1,9 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
 import { CheckoutConfig, Configuration, MailConfig, StripeConfig } from '../config/configuration';
-import { UserPlan } from './entities/user.entity';
+import { PLAN_CURRENCY, PLAN_PRICE, UserPlan } from './entities/user.entity';
 
 /** Plans a visitor can buy. `free` is not one of them. */
 export type PurchasablePlan = Extract<
@@ -23,7 +23,7 @@ export type PurchasablePlan = Extract<
  * the person who paid, rather than to whoever happened to be signed in.
  */
 @Injectable()
-export class CheckoutService {
+export class CheckoutService implements OnModuleInit {
   private readonly logger = new Logger(CheckoutService.name);
   private readonly config: StripeConfig;
   private readonly checkout: CheckoutConfig;
@@ -39,6 +39,68 @@ export class CheckoutService {
     // hard-coding a different string is how a library upgrade starts failing
     // to compile for no useful reason.
     this.stripe = this.config.secretKey ? new Stripe(this.config.secretKey) : null;
+  }
+
+  /**
+   * Checks the prices we advertise against the ones Stripe will charge.
+   *
+   * These are two separate facts by construction. `PLAN_PRICE` is what the
+   * pricing page and the ROI panel display; Stripe holds a *price id*, and the
+   * amount behind it can be edited in their dashboard by somebody who will not
+   * think to change a TypeScript constant. Nothing in either system notices,
+   * and the failure is silent and expensive: the page offers €49, the card is
+   * charged something else, and the first person to find out is the customer
+   * reading their statement.
+   *
+   * Once at boot rather than per request. The alternative — asking Stripe
+   * inside `/billing/me` — would put a third-party network call on a hot path
+   * to render a number that changes a few times a year.
+   *
+   * A warning rather than a refusal to start. A mismatch is a business problem
+   * and this is the only place it becomes visible, but it is not a reason to
+   * take a working service down, and Stripe being unreachable at boot must
+   * never be.
+   */
+  async onModuleInit(): Promise<void> {
+    if (!this.stripe) return;
+
+    for (const [plan, expected] of Object.entries(PLAN_PRICE)) {
+      const priceId = this.config.prices[plan as PurchasablePlan];
+      if (!priceId) continue;
+
+      try {
+        const price = await this.stripe.prices.retrieve(priceId);
+
+        // Stripe quotes in minor units, and `unit_amount` is null for tiered
+        // or metered prices — which these are not, but a null must not be
+        // silently read as zero and reported as a mismatch against €49.
+        if (price.unit_amount === null || price.unit_amount === undefined) {
+          this.logger.warn(
+            `Stripe price ${priceId} for "${plan}" has no fixed amount, so the advertised ` +
+              `${expected} ${PLAN_CURRENCY} could not be checked against it.`,
+          );
+          continue;
+        }
+
+        const actual = price.unit_amount / 100;
+        const currency = (price.currency ?? '').toUpperCase();
+
+        if (actual !== expected || currency !== PLAN_CURRENCY) {
+          this.logger.error(
+            `Plan "${plan}" is advertised at ${expected} ${PLAN_CURRENCY} but Stripe charges ` +
+              `${actual} ${currency}. The pricing page and every ROI figure are now wrong. ` +
+              `Fix PLAN_PRICE in user.entity.ts, or the price in Stripe.`,
+          );
+        }
+      } catch (error) {
+        // Never fatal. A Stripe outage at boot is not a reason to refuse to
+        // serve a comparison, and this check earns nothing at that moment.
+        this.logger.warn(
+          `Could not check the Stripe price for "${plan}": ` +
+            (error instanceof Error ? error.message : String(error)),
+        );
+      }
+    }
   }
 
   get enabled(): boolean {

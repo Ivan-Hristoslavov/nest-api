@@ -43,7 +43,18 @@ describe('MatchingService', () => {
         .mockResolvedValue(
           options.aiVerdicts
             ? {
-                verdicts: options.aiVerdicts,
+                // The spec still writes the verdicts the way a reader thinks
+                // about them — same or not — and they are widened here into the
+                // relation the model now answers with.
+                verdicts: options.aiVerdicts.map((verdict) => ({
+                  id: verdict.id,
+                  relation: verdict.same ? ('same_product' as const) : ('possible' as const),
+                  confidence: verdict.confidence,
+                  reason: verdict.reason,
+                  matchedAttributes: [],
+                  missingAttributes: [],
+                  conflicts: [],
+                })),
                 model: 'claude-haiku-4-5',
                 latencyMs: 120,
                 inputTokens: 400,
@@ -298,7 +309,10 @@ describe('MatchingService', () => {
         aiVerdicts: [],
       });
 
-      const run = await service.match('acc-1', QUERY, []);
+      // A search with something for the model to look at: the meter is
+      // fetched exactly when it moves, and a comparison arithmetic settled on
+      // its own has not moved it.
+      const run = await service.match('acc-1', QUERY, ambiguous);
 
       // Last month's 87 must not be presented as this month's spend.
       expect(run.aiQuota).toEqual({ used: 0, limit: 100, renews: true });
@@ -322,6 +336,22 @@ describe('MatchingService', () => {
       expect(run.aiQuota).toEqual({ used: 50, limit: 50, renews: false });
       expect(run.aiSkippedReason).toBe('quota');
       expect(claude.matchCandidates).not.toHaveBeenCalled();
+    });
+
+    it('does not read the meter on a search that never touched it', async () => {
+      // A hundred milliseconds of database on the hot path of a comparison the
+      // specifications had already settled, to report a number nobody spent.
+      const { service, users } = await build({
+        user: { aiMatchesUsed: 3, aiMatchesLimit: 100 },
+      });
+
+      const run = await service.match('acc-1', 'Philips LED 12W E27 4000K', [
+        { id: 'a', name: 'PHILIPS LED BULB 12W E27 4000K', supplier: 'Склад А' },
+      ]);
+
+      expect(run.aiCallsMade).toBe(0);
+      expect(run.aiQuota).toBeNull();
+      expect(users.findOne).not.toHaveBeenCalled();
     });
 
     it('has no meter for a caller with no account', async () => {

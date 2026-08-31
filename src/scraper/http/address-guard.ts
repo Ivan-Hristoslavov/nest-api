@@ -143,9 +143,7 @@ export function guardedLookup(
     }
 
     // `{ all: true }` answers with every record; without it, with one string.
-    const addresses = Array.isArray(address)
-      ? address.map((entry) => entry.address)
-      : [address as string];
+    const addresses = Array.isArray(address) ? address.map((entry) => entry.address) : [address];
 
     const offender = addresses.find((entry) => isBlockedAddress(entry));
 

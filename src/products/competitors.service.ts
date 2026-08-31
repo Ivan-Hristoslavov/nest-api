@@ -224,23 +224,35 @@ export class CompetitorsService {
    * Listings due for a check: active, on an active product, and either never
    * checked or checked longer ago than the product's `checkIntervalMinutes`.
    * Oldest first, so nothing starves.
+   *
+   * `ownerId` narrows the queue to one account. Omitted, the queue spans every
+   * tenant — which is what the scheduled sweep wants and what a customer must
+   * never be able to ask for. The parameter is optional rather than required
+   * so the cron path keeps its existing call, but every route that a customer
+   * key can reach passes it.
    */
-  findDueForScrape(limit: number): Promise<Competitor[]> {
+  findDueForScrape(limit: number, ownerId?: string): Promise<Competitor[]> {
+    const query = this.competitorsRepository
+      .createQueryBuilder('competitor')
+      .innerJoinAndSelect('competitor.product', 'product')
+      .where('competitor.isActive = true')
+      .andWhere('product.isActive = true')
+      .andWhere(
+        new Brackets((where) => {
+          where
+            .where('competitor.last_checked_at IS NULL')
+            .orWhere(
+              "competitor.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute')",
+            );
+        }),
+      );
+
+    if (ownerId) {
+      query.andWhere('product.owner_id = :ownerId', { ownerId });
+    }
+
     return (
-      this.competitorsRepository
-        .createQueryBuilder('competitor')
-        .innerJoinAndSelect('competitor.product', 'product')
-        .where('competitor.isActive = true')
-        .andWhere('product.isActive = true')
-        .andWhere(
-          new Brackets((where) => {
-            where
-              .where('competitor.last_checked_at IS NULL')
-              .orWhere(
-                "competitor.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute')",
-              );
-          }),
-        )
+      query
         // Property path, not the column name: combined with `take()` and a join,
         // TypeORM resolves the ORDER BY through entity metadata, and a raw column
         // name is not found there — it throws on `databaseName` of undefined.
@@ -250,16 +262,22 @@ export class CompetitorsService {
     );
   }
 
-  countDueForScrape(): Promise<number> {
-    return this.competitorsRepository
+  /** How many listings are due. Scoped to one account when `ownerId` is given. */
+  countDueForScrape(ownerId?: string): Promise<number> {
+    const query = this.competitorsRepository
       .createQueryBuilder('competitor')
       .innerJoin('competitor.product', 'product')
       .where('competitor.isActive = true')
       .andWhere('product.isActive = true')
       .andWhere(
         "(competitor.last_checked_at IS NULL OR competitor.last_checked_at < NOW() - (product.check_interval_minutes * INTERVAL '1 minute'))",
-      )
-      .getCount();
+      );
+
+    if (ownerId) {
+      query.andWhere('product.owner_id = :ownerId', { ownerId });
+    }
+
+    return query.getCount();
   }
 
   // --- The write path ------------------------------------------------------

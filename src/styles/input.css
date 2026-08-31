@@ -67,43 +67,168 @@
  * surprised here.
  */
 
-/* Light is the default so the page never flashes dark for someone who
-   prefers light; the theme script below flips it before first paint. */
+/* ------------------------------------------------------------------ *
+ * DESIGN TOKENS  —  STOCLIFY-DESIGN-SPEC.md §12, §13
+ *
+ * The one decision everything else rests on (§13.1): the brand accent moved
+ * from teal to indigo, which frees the whole green range for money.
+ *
+ * The old palette used teal for primary buttons, for hero accents and for
+ * "anything positive" at once. For a product whose only metric is money
+ * saved, that is a conflict it cannot win: if the saving and the "Buy this
+ * plan" button are the same colour, the saving has no identity. Indigo is
+ * also where B2B trust palettes live — Stripe, Linear, Mercury, Ramp.
+ *
+ * It cost exactly this block, because every colour already resolved through
+ * a variable and there is not one hex in the markup.
+ *
+ * Light is the default so the page never flashes dark for someone who
+ * prefers light; the theme script flips it before first paint.
+ * ------------------------------------------------------------------ */
 :root {
-  --bg-base: 250 250 251;
-  --bg-panel: 255 255 255;
-  --bg-raised: 248 249 251;
-  --bg-hover: 241 243 246;
-  --bg-active: 232 235 240;
-  --border-subtle: 226 230 236;
-  --border-strong: 203 209 219;
+  /* --- Surfaces --- */
+  --surface-canvas: 250 250 251;
+  --surface-panel: 255 255 255;
+  --surface-raised: 248 249 251;
+  --surface-hover: 241 243 246;
+  --surface-active: 232 235 240;
 
-  --text-primary: 17 20 27;
-  --text-secondary: 45 51 63;
-  --text-muted: 92 100 115;
-  --text-faint: 128 137 152;
-  --text-ghost: 168 176 189;
+  /* --- Borders: three, not five. Each with a job. --- */
+  --border-subtle: 234 237 242;   /* divider INSIDE a card */
+  --border-default: 222 226 233;  /* edge of a card, of a control */
+  --border-strong: 198 205 216;   /* hover, emphasis */
 
-  --accent: 13 148 136;
-  --accent-light: 15 168 154;
-  --accent-soft: 8 116 106;
-  --accent-deep: 12 130 120;
-  --accent-deepest: 10 110 101;
+  /* --- Text: five levels, each with a job. --- */
+  --text-primary: 17 20 27;       /* headings, sums */
+  --text-secondary: 45 51 63;     /* body */
+  --text-muted: 92 100 115;       /* secondary, meta */
+  --text-faint: 128 137 152;      /* labels, help */
+  --text-ghost: 168 176 189;      /* disabled, placeholder */
 
-  --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.12);
-  --shadow-glow: 0 0 0 1px rgba(13, 148, 136, 0.2), 0 16px 40px -16px rgba(13, 148, 136, 0.35);
+  /* --- Accent: INDIGO. Actions and brand. Never "positive". --- */
+  --accent: 79 70 229;
+  --accent-deep: 67 56 202;
+  --accent-light: 129 140 248;
+  --accent-on: 255 255 255;
+  --accent-wash: 238 242 255;
+  --accent-border: 199 210 254;
+  --accent-text: 67 56 202;
+
+  /* --- Positive: money saved. Only ever that. --- */
+  --positive: 5 150 105;
+  --positive-deep: 4 120 87;
+  --positive-wash: 236 253 245;
+  --positive-border: 167 243 208;
+  --positive-text: 4 108 78;
+
+  /* --- Caution: degraded supplier, stale price, unknown VAT --- */
+  --caution: 217 119 6;
+  --caution-wash: 255 251 235;
+  --caution-border: 253 230 138;
+  --caution-text: 146 64 14;
+
+  /* --- Critical: supplier down, payment failed, destructive --- */
+  --critical: 220 38 38;
+  --critical-wash: 254 242 242;
+  --critical-border: 254 202 202;
+  --critical-text: 153 27 27;
+
+  /* --- Info: neutral explanation. Sparingly. --- */
+  --info: 37 99 235;
+  --info-wash: 239 246 255;
+  --info-border: 191 219 254;
+  --info-text: 30 64 175;
+
+  --shadow-rgb: 16 24 40;
+  --accent-rgb: 79 70 229;
+
+  /*
+   * Legacy aliases, kept for one cycle (§13.3).
+   *
+   * `app.js` is 9 700 lines of markup built as strings, and rewriting every
+   * `bg-ink-900` in one change would be a diff nobody could review against a
+   * product that is live. New code uses the semantic names above; these keep
+   * the existing 8 500 lines rendering exactly as they did.
+   */
+  --bg-base: var(--surface-canvas);
+  --bg-panel: var(--surface-panel);
+  --bg-raised: var(--surface-raised);
+  --bg-hover: var(--surface-hover);
+  --bg-active: var(--surface-active);
+  --accent-soft: var(--accent-light);
+  --accent-deepest: var(--accent-deep);
+
+  /* --- Typography (§12.2). Ten steps, each with a declared job. --- */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --text-2xs: 11px;   --leading-2xs: 16px;    /* micro labels, table meta */
+  --text-xs: 12px;    --leading-xs: 16px;     /* badges, captions */
+  --text-sm: 13px;    --leading-sm: 20px;     /* table cells — the workhorse */
+  --text-base: 14px;  --leading-base: 20px;   /* body, forms — the default */
+  --text-md: 16px;    --leading-md: 24px;     /* lede, card title */
+  --text-lg: 20px;    --leading-lg: 28px;     /* section title */
+  --text-xl: 24px;    --leading-xl: 32px;     /* page title */
+  --text-2xl: 32px;   --leading-2xl: 40px;    /* numbers in tiles */
+  --text-3xl: 44px;   --leading-3xl: 48px;    /* the sum on the Money Screen */
+  --text-4xl: 56px;   --leading-4xl: 60px;    /* landing hero ONLY */
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semi: 600;
+  --weight-bold: 700;
+
+  --tracking-tight: -0.022em;
+  --tracking-num: -0.01em;
+  --tracking-caps: 0.06em;
+
+  /* --- Spacing (§12.3). A 4px grid, and nothing between the steps. --- */
+  --space-1: 4px;    --space-2: 8px;    --space-3: 12px;   --space-4: 16px;
+  --space-5: 20px;   --space-6: 24px;   --space-8: 32px;   --space-10: 40px;
+  --space-12: 48px;  --space-16: 64px;  --space-20: 80px;
+
+  /* --- Radii (§12.4). One radius per elevation; nested drops a step. --- */
+  --radius-sm: 6px;      /* badges, chips, inline controls */
+  --radius-md: 10px;     /* buttons, inputs, small cards */
+  --radius-lg: 14px;     /* cards, panels */
+  --radius-xl: 20px;     /* modals, hero panels */
+  --radius-full: 9999px; /* pills, avatars, status dots */
+
+  /* --- Shadows (§12.5) --- */
+  --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / 0.04);
+  --shadow-sm: 0 1px 2px rgb(var(--shadow-rgb) / 0.04),
+    0 2px 8px -4px rgb(var(--shadow-rgb) / 0.08);
+  --shadow-md: 0 1px 2px rgb(var(--shadow-rgb) / 0.04),
+    0 8px 24px -12px rgb(var(--shadow-rgb) / 0.12);
+  --shadow-lg: 0 24px 60px -20px rgb(var(--shadow-rgb) / 0.24);
+  --shadow-focus: 0 0 0 3px rgb(var(--accent-rgb) / 0.28);
+
+  /* Kept for the Money Screen and nothing else (§12.5): glow on every
+     primary button meant glow on nothing. */
+  --shadow-panel: var(--shadow-sm);
+  --shadow-glow: 0 0 0 1px rgb(var(--positive) / 0.25),
+    0 18px 60px -20px rgb(var(--positive) / 0.3);
+
+  /* --- Motion (§18.3) --- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+
   --grid-line: rgba(16, 24, 40, 0.045);
-  --hero-wash: rgba(13, 148, 136, 0.07);
+  --hero-wash: rgba(79, 70, 229, 0.07);
   --row-hover: rgba(16, 24, 40, 0.028);
 }
 
 .dark {
-  --bg-base: 8 9 11;
-  --bg-panel: 12 14 18;
-  --bg-raised: 17 19 25;
-  --bg-hover: 22 25 33;
-  --bg-active: 30 34 44;
-  --border-subtle: 42 47 59;
+  --surface-canvas: 8 9 11;
+  --surface-panel: 12 14 18;
+  --surface-raised: 17 19 25;
+  --surface-hover: 22 25 33;
+  --surface-active: 30 34 44;
+
+  --border-subtle: 30 34 43;
+  --border-default: 42 47 59;
   --border-strong: 58 65 80;
 
   --text-primary: 226 232 240;
@@ -112,17 +237,48 @@
   --text-faint: 108 120 138;
   --text-ghost: 76 86 102;
 
-  --accent: 45 212 191;
-  --accent-light: 94 234 212;
-  --accent-soft: 153 246 228;
-  --accent-deep: 20 184 166;
-  --accent-deepest: 15 148 136;
+  --accent: 129 140 248;
+  --accent-deep: 99 102 241;
+  --accent-light: 165 180 252;
+  --accent-on: 15 17 22;
+  --accent-wash: 30 27 66;
+  --accent-border: 67 56 202;
+  --accent-text: 165 180 252;
 
-  --shadow-panel: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset,
-    0 20px 50px -24px rgba(0, 0, 0, 0.9);
-  --shadow-glow: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 18px 60px -20px rgba(45, 212, 191, 0.35);
+  --positive: 52 211 153;
+  --positive-deep: 16 185 129;
+  --positive-wash: 6 46 36;
+  --positive-border: 16 122 92;
+  --positive-text: 110 231 183;
+
+  --caution: 251 191 36;
+  --caution-wash: 48 33 6;
+  --caution-border: 133 90 12;
+  --caution-text: 252 211 77;
+
+  --critical: 248 113 113;
+  --critical-wash: 59 18 18;
+  --critical-border: 153 40 40;
+  --critical-text: 252 165 165;
+
+  --info: 96 165 250;
+  --info-wash: 14 30 59;
+  --info-border: 30 64 160;
+  --info-text: 147 197 253;
+
+  --shadow-rgb: 0 0 0;
+  --accent-rgb: 129 140 248;
+
+  /* Shadows do not read on a dark surface; a 1px inner top light does. */
+  --shadow-sm: inset 0 1px 0 0 rgb(255 255 255 / 0.04),
+    0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: inset 0 1px 0 0 rgb(255 255 255 / 0.04),
+    0 20px 50px -24px rgb(0 0 0 / 0.9);
+  --shadow-lg: inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+    0 32px 70px -24px rgb(0 0 0 / 0.95);
+
   --grid-line: rgba(255, 255, 255, 0.035);
-  --hero-wash: rgba(45, 212, 191, 0.09);
+  --hero-wash: rgba(129, 140, 248, 0.09);
   --row-hover: rgba(255, 255, 255, 0.025);
 }
 
@@ -175,6 +331,515 @@ h3 {
   display: none !important;
 }
 
+/* ================================================================== *
+ * PRIMITIVES  —  STOCLIFY-DESIGN-SPEC.md §12.6–12.14, §18.2
+ *
+ * One product, not five. Before this, a button was a different string of
+ * utilities in each of the places it appeared, and a card that drifted from
+ * its neighbour by one padding step was the kind of thing nobody files and
+ * everybody sees.
+ *
+ * These change no screen on their own (§18.1). They are the vocabulary the
+ * screens are then rewritten in, one at a time, against a product that stays
+ * shippable throughout.
+ * ================================================================== */
+
+/* --- Cards (§12.6) ------------------------------------------------- */
+.card {
+  background: rgb(var(--surface-panel));
+  border: 1px solid rgb(var(--border-default));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-6);
+}
+.card--compact { padding: var(--space-5); }
+/* A card whose whole content is a table: the table draws its own edges. */
+.card--flush { padding: 0; }
+.card--emphasis {
+  border-color: rgb(var(--accent-border));
+  background: rgb(var(--accent-wash));
+}
+/* Money Screen only. The one place a saving is allowed to shout. */
+.card--positive {
+  border-color: rgb(var(--positive-border));
+  background: rgb(var(--positive-wash));
+}
+.card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.card__title {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-semi);
+  color: rgb(var(--text-primary));
+}
+.card__action {
+  font-size: var(--text-sm);
+  color: rgb(var(--text-muted));
+  transition: color var(--dur-fast) var(--ease-out);
+  cursor: pointer;
+}
+.card__action:hover { color: rgb(var(--accent)); }
+
+/* --- Buttons (§12.7) ----------------------------------------------- *
+ * Exactly one --primary per screen. If there are two, one of them is not
+ * the primary action.                                                  */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semi);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.btn:disabled,
+.btn[aria-disabled='true'] { opacity: 0.45; pointer-events: none; }
+
+.btn--lg { height: 44px; padding: 0 var(--space-6); font-size: var(--text-md); }
+.btn--sm { height: 28px; padding: 0 var(--space-3); font-size: var(--text-sm); }
+.btn--icon { width: 36px; padding: 0; }
+.btn--block { width: 100%; }
+
+.btn--primary { background: rgb(var(--accent)); color: rgb(var(--accent-on)); }
+.btn--primary:hover { background: rgb(var(--accent-deep)); }
+
+.btn--secondary {
+  background: rgb(var(--surface-panel));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-default));
+}
+.btn--secondary:hover {
+  border-color: rgb(var(--border-strong));
+  background: rgb(var(--surface-hover));
+}
+
+.btn--ghost { background: transparent; color: rgb(var(--text-muted)); }
+.btn--ghost:hover {
+  background: rgb(var(--surface-hover));
+  color: rgb(var(--text-primary));
+}
+
+.btn--danger { background: rgb(var(--critical)); color: #fff; }
+.btn--danger:hover { filter: brightness(0.92); }
+
+/*
+ * Loading. The label is replaced rather than hidden, because a button that
+ * keeps its old text while working invites the second click that sends the
+ * order twice.
+ */
+.btn[data-loading='true'] { pointer-events: none; opacity: 0.7; }
+.btn[data-loading='true'] .btn__spinner { display: inline-flex; }
+.btn__spinner { display: none; }
+.btn__spinner svg { animation: btn-spin 0.7s linear infinite; }
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+/* --- Forms (§12.8) ------------------------------------------------- */
+.field { display: flex; flex-direction: column; gap: var(--space-2); }
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: rgb(var(--text-secondary));
+}
+.input,
+.select,
+.textarea {
+  height: 36px;
+  padding: 0 var(--space-3);
+  width: 100%;
+  background: rgb(var(--surface-canvas));
+  border: 1px solid rgb(var(--border-default));
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  color: rgb(var(--text-primary));
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.textarea { height: auto; padding: var(--space-3); line-height: var(--leading-base); }
+.input::placeholder,
+.textarea::placeholder { color: rgb(var(--text-ghost)); }
+.input:hover,
+.select:hover,
+.textarea:hover { border-color: rgb(var(--border-strong)); }
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: rgb(var(--accent));
+  box-shadow: var(--shadow-focus);
+}
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] { border-color: rgb(var(--critical)); }
+.input:disabled,
+.select:disabled,
+.textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.hint { font-size: var(--text-xs); color: rgb(var(--text-faint)); }
+.error-text {
+  font-size: var(--text-xs);
+  color: rgb(var(--critical));
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+/* Money and percentages: the unit belongs to the control, not to a label
+   standing next to it. */
+.input-group { display: flex; align-items: stretch; }
+.input-group__addon {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: rgb(var(--surface-hover));
+  border: 1px solid rgb(var(--border-default));
+  border-left: 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-size: var(--text-sm);
+  color: rgb(var(--text-muted));
+}
+.input-group .input {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Status (§12.9) ------------------------------------------------ *
+ * The dot is 8px, which is under the minimum for carrying a meaning on
+ * its own — so a glyph or a word always travels with it.               */
+.status { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); }
+.status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.status--ok .status__dot { background: rgb(var(--positive)); }
+.status--warn .status__dot { background: rgb(var(--caution)); }
+.status--critical .status__dot { background: rgb(var(--critical)); }
+.status--idle .status__dot { background: rgb(var(--text-ghost)); }
+.status--manual .status__dot {
+  background: transparent;
+  border: 2px solid rgb(var(--text-faint));
+}
+
+/* --- Badges (§12.10) ----------------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semi);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge--neutral { background: rgb(var(--surface-hover)); color: rgb(var(--text-muted)); }
+.badge--positive {
+  background: rgb(var(--positive-wash));
+  color: rgb(var(--positive-text));
+  border-color: rgb(var(--positive-border));
+}
+.badge--caution {
+  background: rgb(var(--caution-wash));
+  color: rgb(var(--caution-text));
+  border-color: rgb(var(--caution-border));
+}
+.badge--critical {
+  background: rgb(var(--critical-wash));
+  color: rgb(var(--critical-text));
+  border-color: rgb(var(--critical-border));
+}
+.badge--accent {
+  background: rgb(var(--accent-wash));
+  color: rgb(var(--accent-text));
+  border-color: rgb(var(--accent-border));
+}
+.badge--info {
+  background: rgb(var(--info-wash));
+  color: rgb(var(--info-text));
+  border-color: rgb(var(--info-border));
+}
+
+/* --- Section headings (§12.2) -------------------------------------- *
+ * Uppercase is allowed here and on state badges. Nowhere else.         */
+.section-label {
+  font-size: var(--text-2xs);
+  line-height: var(--leading-2xs);
+  font-weight: var(--weight-semi);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: rgb(var(--text-faint));
+}
+
+/* --- Empty states (§12.14, §16) ------------------------------------ */
+.empty { padding: var(--space-12) var(--space-6); text-align: center; }
+.empty__title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semi);
+  color: rgb(var(--text-primary));
+}
+.empty__body {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: rgb(var(--text-muted));
+  max-width: 420px;
+  margin: var(--space-2) auto var(--space-6);
+}
+
+/* --- Skeletons (§12.14) -------------------------------------------- *
+ * No spinner for anything whose shape is already known. A skeleton in
+ * the shape of the answer holds the layout still, which is the actual
+ * complaint behind "it feels slow" — not the waiting, the jumping.     */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--surface-hover)) 0%,
+    rgb(var(--surface-active)) 50%,
+    rgb(var(--surface-hover)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+.skeleton--text { height: 12px; margin: var(--space-2) 0; }
+.skeleton--line { height: 12px; }
+.skeleton--metric { height: 32px; width: 60%; }
+.skeleton--row { height: 40px; margin-bottom: var(--space-2); }
+.skeleton--card { height: 120px; border-radius: var(--radius-lg); }
+
+/* --- Tooltips (§18.2) ---------------------------------------------- *
+ * For the dozen terms a buyer cannot be expected to know — effective
+ * price, match confidence, stale price. Hover and focus, so the keyboard
+ * reaches them too.                                                    */
+.tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.tip__mark {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgb(var(--border-strong));
+  color: rgb(var(--text-faint));
+  font-size: 9px;
+  font-weight: var(--weight-semi);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  flex-shrink: 0;
+}
+.tip__body {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: max-content;
+  max-width: 260px;
+  padding: var(--space-2) var(--space-3);
+  background: rgb(var(--surface-panel));
+  border: 1px solid rgb(var(--border-default));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-normal);
+  color: rgb(var(--text-secondary));
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    visibility var(--dur-fast);
+}
+.tip:hover .tip__body,
+.tip:focus-within .tip__body { opacity: 1; visibility: visible; }
+
+/* --- Operator console --------------------------------------------- *
+   Written as classes rather than repeated utility strings: these appear
+   on ten elements in the markup and again in JavaScript that builds
+   rows, and a nav item that drifts from its neighbours by one padding
+   step is the kind of thing nobody files but everybody sees. */
+.op-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  border-radius: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(var(--text-muted));
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease;
+}
+.op-tab:hover {
+  color: rgb(var(--text-secondary));
+  background-color: rgb(var(--bg-hover));
+}
+.op-tab.tab-active {
+  color: rgb(var(--text-primary));
+  background-color: rgb(var(--bg-active));
+  box-shadow: inset 0 0 0 1px rgb(var(--border-subtle));
+}
+
+/* A count that only appears when it is not zero. A badge reading "0" is a
+   line of furniture teaching the eye to skip the place a real number will
+   later appear. */
+.op-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  background-color: rgb(245 158 11 / 0.16);
+  padding: 0.0625rem 0.375rem;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgb(252 211 77);
+}
+
+/* The section rail scrolls sideways on a phone, but the page's 10px
+   scrollbar under a 40px strip of tabs is furniture, not information —
+   the half-visible next tab already says there is more to the right. */
+.op-rail {
+  scrollbar-width: none;
+}
+.op-rail::-webkit-scrollbar {
+  display: none;
+}
+
+/* --- Operator tables ---------------------------------------------- *
+   A table with ten columns is the right shape for the customer list on a
+   monitor and the wrong one on a phone: at 430px it needs 1031px, so it
+   either scrolls sideways — putting the buttons off the edge, which is
+   where they were — or it stops being a table.
+
+   Below `md` each row becomes a card and each cell prints its own column
+   heading from `data-label`. Done in CSS rather than as a second set of
+   render functions: two renderers for one table is two places to fix
+   every future column, and they drift.
+
+   Cells with nothing to label — the action column — carry no
+   `data-label` and lose the heading track instead of showing a blank. */
+@media (max-width: 767px) {
+  .op-table,
+  .op-table tbody,
+  .op-table tr,
+  .op-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .op-table thead {
+    display: none;
+  }
+
+  .op-table tr {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid rgb(var(--border-subtle));
+  }
+
+  .op-table td {
+    display: grid;
+    grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.3rem 0;
+    /* Utilities on the cells set desktop padding and right alignment;
+       neither survives the change of shape. */
+    text-align: left !important;
+  }
+
+  .op-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgb(var(--text-faint));
+  }
+
+  .op-table td:not([data-label]) {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 0.625rem;
+  }
+
+  /* The controls in a card are full width: a select sized for a table cell
+     is a 90px tap target sitting in 300px of empty row. */
+  .op-table td select,
+  .op-table td input {
+    width: 100%;
+  }
+
+  .op-table td .op-actions {
+    justify-content: flex-start;
+  }
+}
+
+.op-range {
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgb(var(--text-muted));
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease;
+}
+.op-range:hover {
+  color: rgb(var(--text-secondary));
+}
+.op-range.tab-active {
+  color: rgb(var(--text-primary));
+  background-color: rgb(var(--bg-active));
+  box-shadow: inset 0 0 0 1px rgb(var(--border-subtle));
+}
+
+/* The live dot, when it is actually live. Pulsing is the whole signal —
+   a static green dot says "there is a feature here", a beating one says
+   "this number is younger than the last time you looked". */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.op-live-on {
+  background-color: rgb(52 211 153) !important;
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+/* Search inputs carry a browser-drawn clear button that lands on top of
+   the text at this size. The keyboard already has Escape. */
+input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .tab-active {
   color: rgb(var(--text-primary));
   background-color: rgb(var(--bg-active));
@@ -183,6 +848,22 @@ h3 {
 
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+/* Number fields ship with the browser's spinner: two arrows stacked inside
+   the field, which in a table cell sit right on top of the value and only
+   appear on hover, so the column twitches as the pointer crosses it. The
+   operator types a limit or pastes one; nobody raises a product allowance
+   one unit at a time. `textfield` covers Firefox, the pseudo-elements cover
+   WebKit and Blink. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 tbody tr:hover {
@@ -391,6 +1072,25 @@ tbody tr:hover {
   animation: fade-up 0.35s ease both;
 }
 
+/*
+ * A button that is running something.
+ *
+ * It is not disabled — pressing it is how the work is stopped — so it must not
+ * look disabled. It looks *different*: the accent drains out of it and it says
+ * "Спри", which together read as "this is doing something, and this is how you
+ * make it stop". A greyed-out button would say the opposite, and a button that
+ * looked unchanged is what got pressed four times in the first place.
+ */
+.is-busy {
+  background-color: rgb(var(--surface-raised)) !important;
+  color: rgb(var(--text-muted)) !important;
+  box-shadow: none !important;
+}
+
+.is-busy:hover {
+  color: rgb(var(--text-primary)) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -410,4 +1110,25 @@ tbody tr:hover {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/*
+ * A disclosure that shows it discloses.
+ *
+ * `<summary>` laid out as a grid loses the browser's own triangle — the
+ * element stops being rendered as a list item, and the marker goes with it.
+ * The savings history relied on that triangle and had nothing in its place,
+ * so a row that opened a full calculation looked exactly like a row that did
+ * nothing at all.
+ */
+.savings-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+.savings-row > summary .disclosure {
+  transition: transform 0.15s ease;
+}
+
+.savings-row[open] > summary .disclosure {
+  transform: rotate(90deg);
 }

@@ -73,6 +73,8 @@ export interface ScraperConfig {
   concurrency: number;
   timeoutMs: number;
   minDelayMs: number;
+  /** Per-supplier ceiling for one search. See SEARCH_SUPPLIER_TIMEOUT_MS. */
+  supplierTimeoutMs: number;
   alertThresholdPercent: number;
   driver: ScraperDriver;
   userAgent: string;
@@ -146,6 +148,23 @@ export interface MatchingConfig {
 }
 
 /**
+ * Finding the shops nobody configured.
+ *
+ * "Everywhere" cannot mean a longer hardcoded list — a buyer asking for a
+ * polishing machine should not have to know which storefronts this system was
+ * taught. The model runs the searches; the addresses it returns are fetched
+ * and judged here, exactly like a configured supplier's rows.
+ */
+export interface WebDiscoveryConfig {
+  enabled: boolean;
+  apiKey?: string;
+  model: string;
+  maxSearches: number;
+  maxPages: number;
+  timeoutMs: number;
+}
+
+/**
  * How long observed prices are kept, and at what resolution.
  *
  * `price_history` is append-only and never stops growing: two thousand watched
@@ -184,6 +203,7 @@ export interface Configuration {
   app: AppConfig;
   checkout: CheckoutConfig;
   matching: MatchingConfig;
+  webDiscovery: WebDiscoveryConfig;
   currency: CurrencyConfig;
   history: HistoryConfig;
   observability: ObservabilityConfig;
@@ -330,6 +350,7 @@ export const configuration = (): Configuration => {
       concurrency: env.SCRAPER_CONCURRENCY,
       timeoutMs: env.SCRAPER_TIMEOUT_MS,
       minDelayMs: env.SCRAPER_MIN_DELAY_MS,
+      supplierTimeoutMs: env.SEARCH_SUPPLIER_TIMEOUT_MS,
       alertThresholdPercent: env.SCRAPER_ALERT_THRESHOLD_PERCENT,
       driver: env.SCRAPER_DRIVER,
       userAgent: env.SCRAPER_USER_AGENT,
@@ -365,6 +386,16 @@ export const configuration = (): Configuration => {
       model: env.AI_MATCH_MODEL,
       maxCandidates: env.AI_MATCH_MAX_CANDIDATES,
       timeoutMs: env.AI_MATCH_TIMEOUT_MS,
+    },
+    webDiscovery: {
+      // Keyed as well as enabled, for the same reason matching is: a flag on
+      // with no key reports a capability that can never run.
+      enabled: env.WEB_DISCOVERY_ENABLED && Boolean(env.ANTHROPIC_API_KEY),
+      apiKey: env.ANTHROPIC_API_KEY,
+      model: env.WEB_DISCOVERY_MODEL,
+      maxSearches: env.WEB_DISCOVERY_MAX_SEARCHES,
+      maxPages: env.WEB_DISCOVERY_MAX_PAGES,
+      timeoutMs: env.WEB_DISCOVERY_TIMEOUT_MS,
     },
     currency: {
       ratesPerEur: parseRates(env.FX_RATES_PER_EUR),

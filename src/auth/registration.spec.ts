@@ -20,7 +20,10 @@ describe('registration', () => {
   let users: {
     findByEmail: jest.Mock<Promise<User | null>, [string]>;
     findOne: jest.Mock<Promise<User>, [string]>;
-    createPendingAccount: jest.Mock<Promise<User>, [string, string | undefined, string | undefined]>;
+    createPendingAccount: jest.Mock<
+      Promise<User>,
+      [string, string | undefined, string | undefined]
+    >;
     rememberLocale: jest.Mock<Promise<void>, [User, string | undefined]>;
     activateWithTrial: jest.Mock<Promise<{ user: User; apiKey: string }>, [string]>;
   };

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 
 import { numericTransformer } from '../../common/transformers/numeric-column.transformer';
+import { VatState } from '../../pricing/effective-cost';
 
 /**
  * A supplier we can ask.
@@ -183,6 +184,105 @@ export class Shop {
   @ApiProperty({ description: 'Currency this shop quotes in.', example: 'EUR' })
   @Column({ type: 'char', length: 3, default: 'EUR' })
   currency!: string;
+
+  // --- Commercial terms ------------------------------------------------------
+  //
+  // Everything below defaults to neutral, so a shop configured before these
+  // columns existed prices exactly as it did before: discount applied, nothing
+  // else. That is what makes them safe to add to live data.
+
+  @ApiProperty({
+    description:
+      'Whether this shop quotes with VAT, without it, or has not said.\n\n`unknown` is the honest default and the one every existing shop starts on: a price scraped from a page carries no statement about VAT, and assuming one is a 20% error — larger than almost any negotiated discount, and the exact mistake this product exists to prevent. An offer priced on an unknown basis is still shown, but it is marked as not directly comparable against one whose basis is known.',
+    enum: VatState,
+    enumName: 'VatState',
+    example: VatState.Exclusive,
+  })
+  @Column({ name: 'vat_state', type: 'varchar', length: 12, default: VatState.Unknown })
+  vatState!: VatState;
+
+  @ApiProperty({
+    description: 'VAT rate in percent. Only consulted when the shop quotes VAT-inclusive.',
+    example: 20,
+  })
+  @Column({
+    name: 'vat_rate',
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    default: 20,
+    transformer: numericTransformer,
+  })
+  vatRate!: number;
+
+  @ApiProperty({
+    description:
+      'Flat delivery charge per order. Charged once per order, not per article — which is why splitting an order across four suppliers saves on goods and adds four deliveries.',
+    example: 12,
+  })
+  @Column({
+    name: 'shipping_cost',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
+  shippingCost!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Goods total at or above which delivery is free. Null means it never is. Read against the goods total before delivery is added, so a delivery charge cannot push an order over the line that waives it.',
+    type: Number,
+    nullable: true,
+    example: 300,
+  })
+  @Column({
+    name: 'free_shipping_over',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  freeShippingOver!: number | null;
+
+  @ApiProperty({
+    description: 'Per-order charge that is not delivery — packing, documents, a card fee.',
+    example: 0,
+  })
+  @Column({
+    name: 'handling_fee',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
+  handlingFee!: number;
+
+  @ApiProperty({
+    description:
+      'Below this goods total the supplier will not accept an order. A supplier under their minimum is not the cheapest one — they are not an option, and presenting them as the answer recommends an order that will be refused.',
+    example: 200,
+  })
+  @Column({
+    name: 'min_order_value',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
+  minOrderValue!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Anything about this supplier’s terms that the fields above cannot hold — a rebate agreement, a seasonal condition, a person to ask. Read by humans, never by the pricing code.',
+    nullable: true,
+  })
+  @Column({ name: 'terms_note', type: 'text', nullable: true })
+  termsNote!: string | null;
 
   @ApiProperty({ description: 'Inactive shops are left out of every search.', example: true })
   /**

@@ -64,9 +64,9 @@ describe('the language an email is written in', () => {
     });
 
     it('substitutes placeholders after the lookup, so grammar can move them', () => {
-      expect(translator('en')('Връзката важи {minutes} минути и се използва веднъж.', { minutes: 15 })).toBe(
-        'The link is valid for 15 minutes and works once.',
-      );
+      expect(
+        translator('en')('Връзката важи {minutes} минути и се използва веднъж.', { minutes: 15 }),
+      ).toBe('The link is valid for 15 minutes and works once.');
     });
 
     it('substitutes every occurrence of a placeholder', () => {

@@ -99,9 +99,10 @@ export class SeoService {
    * out of the results they were made for.
    */
   headTags(language: string | null): string {
-    const chosen = language && (SEO_LANGUAGES as readonly string[]).includes(language)
-      ? language
-      : SOURCE_LANGUAGE;
+    const chosen =
+      language && (SEO_LANGUAGES as readonly string[]).includes(language)
+        ? language
+        : SOURCE_LANGUAGE;
 
     const canonical = this.urlFor(chosen);
 
@@ -170,7 +171,11 @@ export class SeoService {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function escapeXml(value: string): string {

@@ -218,9 +218,12 @@ export class MailService implements OnModuleInit {
             ? t(
                 'Издадохме нов ключ по ваша заявка. <strong>Предишният спря да работи в същия момент</strong> — ако някъде е останал записан, заменете го.',
               )
-            : t('Благодарим ви. Планът ви е <strong>{plan}</strong> и достъпът е активен веднага.', {
-                plan: escapeHtml(plan),
-              }),
+            : t(
+                'Благодарим ви. Планът ви е <strong>{plan}</strong> и достъпът е активен веднага.',
+                {
+                  plan: escapeHtml(plan),
+                },
+              ),
         ),
         codeBlock(apiKey, t('Вашият ключ')),
         noticeBox(
@@ -533,6 +536,46 @@ export class MailService implements OnModuleInit {
     });
 
     return this.send(options.to, subject, html, text, options.replyTo);
+  }
+
+  /**
+   * A partnership letter to a supplier site, asking for a feed.
+   *
+   * Takes the body as text the operator has read and possibly rewritten,
+   * rather than composing it here from a template: this is the one email we
+   * send that a person is expected to edit before it goes, and a method that
+   * regenerated it from arguments would quietly discard those edits.
+   *
+   * `replyTo` is the operator's own address. The answer to "can we have API
+   * access" is a conversation with a human, and routing it to the no-reply
+   * sender the rest of this file uses would lose it.
+   */
+  async sendOutreach(options: {
+    to: string;
+    replyTo: string;
+    subject: string;
+    body: string;
+  }): Promise<boolean> {
+    const paragraphs = options.body
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean);
+
+    const { html, text } = renderEmail({
+      title: options.subject,
+      // The first line of the letter, which is the greeting, makes a poor
+      // preheader. The second paragraph is the one that says who we are.
+      preheader: (paragraphs[1] ?? paragraphs[0] ?? '').slice(0, 140),
+      heading: options.subject,
+      appUrl: this.config.appUrl,
+      supportEmail: this.config.supportEmail,
+      body: paragraphs.map((block) =>
+        // Single newlines inside a block are the bullet lists in the template.
+        paragraph(escapeHtml(block).replace(/\n/g, '<br />'), block),
+      ),
+    });
+
+    return this.send(options.to, options.subject, html, text, options.replyTo);
   }
 
   /** Tells a customer their subscription has lapsed and the key has stopped. */

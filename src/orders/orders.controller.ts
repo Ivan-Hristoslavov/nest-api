@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 
 import { MailService } from '../billing/mail.service';
+import { PurchaseDecisionsService } from '../decisions/purchase-decisions.service';
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { AuthenticatedRequest } from '../common/guards/api-key.guard';
@@ -48,6 +49,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly mail: MailService,
+    private readonly decisions: PurchaseDecisionsService,
   ) {}
 
   @Post()
@@ -59,7 +61,19 @@ export class OrdersController {
   @ApiOkResponse({ type: Order })
   @ApiNotFoundResponse({ description: 'No such supplier on your list.', type: ErrorResponseDto })
   async create(@Req() request: AuthenticatedRequest, @Body() dto: CreateOrderDto): Promise<Order> {
-    return this.orders.create(this.owner(request), dto);
+    const owner = this.owner(request);
+
+    // Checked here rather than trusted from the body. Without this an account
+    // could attach its order to somebody else's decision id, and the victim's
+    // savings history would start reporting purchases they never made — a
+    // write across a tenant boundary through a field that merely looks like a
+    // label. `findOne` is owner-scoped and throws, so an id from another
+    // account is refused as missing.
+    if (dto.purchaseDecisionId) {
+      await this.decisions.findOne(owner.id, dto.purchaseDecisionId);
+    }
+
+    return this.orders.create(owner, dto);
   }
 
   @Get()
@@ -149,12 +163,25 @@ export class OrdersController {
       'The two states this system cannot know for itself — they happen in a phone call or a reply we never see. A status guessed at would be worse than none.',
   })
   @ApiOkResponse({ type: Order })
-  setStatus(
+  async setStatus(
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderStatusDto,
   ): Promise<Order> {
-    return this.orders.setStatus(this.owner(request).id, id, dto.status);
+    const ownerId = this.owner(request).id;
+    const order = await this.orders.setStatus(ownerId, id, dto.status);
+
+    // Confirming an order is the moment a plan becomes a purchase, and
+    // cancelling one is the moment it stops being one. Both directions are
+    // handled by the same call, which re-reads the evidence rather than
+    // adjusting a running total — a total nudged up on confirm and down on
+    // cancel drifts the first time a request is retried.
+    const decisionId = this.orders.decisionBehind(order);
+    if (decisionId) {
+      await this.decisions.refreshRealizedSavings(ownerId, decisionId);
+    }
+
+    return order;
   }
 
   @Delete(':id')

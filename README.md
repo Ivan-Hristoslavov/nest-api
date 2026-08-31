@@ -144,8 +144,10 @@ Everything except `/health` and the billing webhook needs `X-API-KEY`.
 | PATCH/DELETE | `…/competitors/:competitorId` | Update / remove a listing |
 | PATCH | `…/competitors/:competitorId/promote` | Make it the primary listing |
 | POST | `…/competitors/:competitorId/prices` | Manual price for one rival |
-| GET | `/api/v1/scraper/status` | Driver, schedule, listings due, last sweep |
-| POST | `/api/v1/scraper/run` | Sweep everything that is due |
+| GET | `/api/v1/scraper/status` | **Operator key.** Driver, schedule, listings due across the deployment, last sweep |
+| POST | `/api/v1/scraper/run` | **Operator key.** Sweep every account's due listings |
+| GET | `/api/v1/scraper/status/mine` | How many of *your* listings are due, and whether a refresh is running |
+| POST | `/api/v1/scraper/run/mine` | Re-check *your own* due listings now |
 | **POST** | **`/api/v1/scraper/trigger/:id`** | **Scrape one product now (real fetch)** |
 | POST | `/api/v1/scraper/competitors/:id/refresh` | Re-check one listing now |
 | GET | `/api/v1/analytics/products/:id?days=30` | Min/max/avg, volatility, trend, series |
@@ -172,6 +174,13 @@ Everything except `/health` and the billing webhook needs `X-API-KEY`.
 | GET | `/health` | Public liveness + database probe |
 
 ---
+
+> **Why two pairs of routes.** The deployment-wide `status` and `run` are
+> operator-only because the sweep walks *every* tenant's queue: its per-listing
+> results name products and suppliers belonging to accounts other than the
+> caller's, and triggering it spends the platform's request budget against
+> suppliers the caller has no relationship with. `status/mine` and `run/mine`
+> answer the same questions for one account and can name nobody else.
 
 ## 6. Scraping
 
@@ -399,6 +408,110 @@ just cannot be sent from here.
 
 ---
 
+## 6d. Purchase decisions — the savings proof
+
+The comparison says "you save €31.40". Three months later the customer is
+deciding whether to renew, and that sentence is worth nothing unless it can be
+turned into **"here is exactly why you saved €31.40"**.
+
+It cannot be, if the number is recomputed from live rows. By November every
+input has moved: the discount was renegotiated, delivery went up, the article
+was relisted or delisted, the matcher was retrained, the optimiser was
+improved. Recomputing would silently rewrite history, and the figure shown in
+November would not be the figure the buyer acted on in August.
+
+So a decision is **written down whole**, and never recomputed.
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| POST | `/api/v1/purchase-decisions` | Keep the plan from the last comparison |
+| GET | `/api/v1/purchase-decisions` | Your decisions — pagination, date, supplier, savings sort |
+| GET | `/api/v1/purchase-decisions/summary` | The savings screen |
+| GET | `/api/v1/purchase-decisions/:id` | One decision, whole — the "how was this calculated?" payload |
+| GET | `/api/v1/purchase-decisions/:id/orders` | Orders placed on it |
+
+### How one is created, without running the optimiser twice
+
+`POST /discovery/basket` already computes everything a decision needs. Running
+the optimiser again at save time would ask the suppliers again and could return
+a **different** plan — so the stored decision would not be the one the buyer
+looked at. Equally, a decision must not be written on every comparison: the
+interface re-prices whenever the supplier cap changes, and saving those would
+fill the record with plans nobody chose and drag abandoned experiments into the
+average saving.
+
+The basket therefore returns a **sealed draft** — the complete snapshot plus an
+HMAC over its canonical form — and stores nothing. If the buyer presses *use
+this plan*, the client posts that object back unchanged and the server verifies
+its own signature before writing a row. The result:
+
+- no second optimiser run, no supplier re-queried, no model call — saving is
+  one `INSERT`;
+- nothing stored for a comparison nobody acted on;
+- the round trip through an untrusted client **cannot** invent a saving;
+- stateless, so it works across any number of containers.
+
+The draft also expires after an hour. A signature says the figures are ours; it
+says nothing about whether they are still worth acting on.
+
+### Immutability
+
+Enforced three times over, because this is evidence:
+
+1. `PurchaseDecisionsService` has **no** update method.
+2. A Postgres trigger (`trg_purchase_decisions_immutable`) raises on any UPDATE
+   touching the snapshot, the terms, the plan or the saving.
+3. Nothing joins to a supplier — the names, discounts and delivery terms are
+   *copied*, so renaming or deleting a supplier changes no stored decision.
+
+The only permitted change appends evidence of a purchase: `savings_kind`,
+`realized_total` and `realized_savings`.
+
+### Potential vs realized savings
+
+Never merged, never summed. Reporting a forecast as a fact is the one claim a
+customer will check against their own ledger.
+
+- **Potential** — what the optimiser says the chosen plan avoids.
+- **Realized** — what was avoided on a purchase that happened: every supplier
+  in the plan has an order linked to the decision, and the buyer has marked
+  each of them `confirmed`. Confirmation is the one fact only the buyer knows,
+  which is why it is the gate.
+
+A decision counts towards exactly one of the two. The realized figure takes
+**goods from the linked orders** (the buyer may have trimmed a quantity before
+sending) and **delivery and handling from the snapshot**, because an order
+request does not carry them — keeping both sides of the comparison on the same
+basis as the baseline, which includes delivery too.
+
+### Provenance
+
+Every line in a snapshot carries where its price came from — `live` / `cached`
+/ `manual`, the URL, the supplier, when it was last confirmed and how old it
+already was at the moment of the decision — and what settled its match: method,
+confidence, the attributes compared, and whether a model was used with which
+model and prompt version. Opening a decision after thirty days shows *"price
+checked 28 Aug 2026, 14:31"*, not today's price.
+
+### Retention
+
+**Purchase decisions are business records and are never swept.** They are not
+cache, and they must not be treated like `search_cache` or thinned like
+`price_history`:
+
+- no scheduled job deletes them, and none should be added;
+- they survive the deletion of a supplier (`supplier_ids` is a plain array, not
+  a foreign key) and of the orders placed on them;
+- deleting a decision would break the order that references it, so the foreign
+  key from `orders.purchase_decision_id` is `ON DELETE SET NULL` — the record
+  of a purchase outlives the reasoning behind it, never the other way round.
+
+The growth is bounded by how many orders a buyer actually places, which is tens
+per month rather than the millions per year `price_history` sees. If a limit is
+ever wanted, it belongs in an account-deletion path, not in a nightly sweep.
+
+---
+
 ## 7. Alerting
 
 `price_drop`, `price_rise`, `undercut`, `all_time_low`, `out_of_stock`, `scrape_failing`.
@@ -515,6 +628,35 @@ npm run migration:run
 
 Three migrations ship: the baseline schema (idempotent, so an existing `synchronize`-built database adopts it cleanly), the competitors/alerts/billing tables, and a data backfill that gives every pre-existing product its primary listing — without it those products would be silently skipped by every sweep.
 
+### Reading `schema:log`
+
+```bash
+npm run schema:log
+```
+
+It will always propose a dozen statements, and **on a correctly migrated
+database every one of them is wrong**. TypeORM compares the live schema against
+what the *decorators* declare, and three kinds of object cannot be expressed as
+a decorator at all:
+
+- **Foreign keys** declared in migrations rather than as `@ManyToOne` relations
+  — `fk_products_owner`, `fk_orders_owner`, `fk_orders_purchase_decision`;
+- **Check constraints** — `chk_shops_vat_state`,
+  `chk_purchase_decisions_realized`;
+- **GIN and partial indexes** — `idx_purchase_decisions_suppliers` (array
+  containment) and `idx_orders_purchase_decision` (partial, because nearly
+  every order has no decision and indexing those NULLs would cost writes to
+  answer nothing).
+
+So the rule when reading it: **every line should be a `DROP`**, and every one
+should name an object in that list. An `ADD` or an `ALTER … TYPE` is real
+drift and means a migration is missing. Plain indexes *are* declared on the
+entities and correctly stay out of the output.
+
+The `purchase_decisions` immutability trigger is invisible to `schema:log`
+entirely — TypeORM does not model triggers — which is another reason it is
+written in the migration and asserted in tests rather than assumed.
+
 ---
 
 ## 10. Scripts
@@ -552,7 +694,7 @@ Ordered so nothing on the list depends on something below it.
 
 - [ ] **Fill in `COMPANY`** near the bottom of [public/index.html](public/index.html): company name, EIK, address, contact email, mail provider, effective date. Until then the terms, the privacy policy, the GDPR appendix, the footer and every "write to us" button show `[ФИРМА]` and the contact link is disabled — visibly, on purpose.
 - [ ] **Have a lawyer read the three legal pages.** They are written against what the code actually does, which is the hard half, but they are not legal advice.
-- [x] **Run the migrations.** Done on 2026-08-24: `Orders` and `ColumnDefaults` applied, so the `orders` table and `shops.order_email` exist. `npm run schema:log` now proposes five statements and no more — all of them TypeORM asking to rename foreign keys it has no relation declared for, on `products.owner_id`, `search_cache.shop_id`, `auth_tokens.user_id`, `shops.owner_id` and `orders.owner_id`. That is the expected baseline; anything beyond those five is real drift.
+- [x] **Run the migrations.** Last applied 2026-08-28: `SupplierCommercialTerms`, which adds the VAT, delivery and minimum-order columns every price now depends on. `npm run schema:log` proposes **seven** statements and no more, and all seven are TypeORM asking to drop constraints it has no metadata for — five foreign keys (`products.owner_id`, `search_cache.shop_id`, `auth_tokens.user_id`, `shops.owner_id`, `orders.owner_id`) and the two check constraints on `shops` (`chk_shops_vat_state`, `chk_shops_terms_non_negative`). That is the expected baseline; anything beyond those seven is real drift.
 - [ ] **Rotate the credentials.** The database password and Supabase keys were shared in plain text during setup, and `API_KEY` is a sample.
 - [ ] **Set `CORS_ORIGINS`** to your domain instead of `*`.
 - [ ] **Repeat the Stripe setup in the live account.** The three plans, their prices and a hosted payment link each exist in the **test** account (`acct_1QdfKu…`) and are wired into `.env`, so `GET /billing/plans` answers `enabled: true` and the pricing buttons open a real Stripe page — one that takes test cards and no money. Create the same three in live, replace every value in the Stripe block of `.env`, and paste `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` yourself.

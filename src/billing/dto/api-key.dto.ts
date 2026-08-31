@@ -88,6 +88,18 @@ export class MyAccountDto {
   @ApiProperty({ description: 'How many products this plan may track.', example: 50 })
   productLimit!: number;
 
+  @ApiPropertyOptional({
+    description:
+      'What this plan costs per month, from the server rather than from the interface — so the figure under "your subscription" can never disagree with the pricing page.\n\n`0` on the free plan, and `null` when the account is on a plan this deploy has no price for. Both mean "there is no subscription to measure a saving against"; neither should be printed as a price.',
+    type: Number,
+    nullable: true,
+    example: 49,
+  })
+  planPrice!: number | null;
+
+  @ApiProperty({ description: 'The currency `planPrice` is quoted in.', example: 'EUR' })
+  planCurrency!: string;
+
   @ApiProperty({
     description:
       'AI comparisons spent this month, after the monthly rollover. Spent only on offers the specifications cannot settle — most searches use none.',

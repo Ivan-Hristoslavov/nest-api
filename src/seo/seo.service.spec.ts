@@ -65,15 +65,11 @@ describe('SeoService', () => {
     });
 
     it('falls back to the source language when none was asked for', () => {
-      expect(seo.headTags(null)).toContain(
-        '<link rel="canonical" href="https://stoclify.bg/" />',
-      );
+      expect(seo.headTags(null)).toContain('<link rel="canonical" href="https://stoclify.bg/" />');
     });
 
     it('ignores a language it does not have rather than inventing an address', () => {
-      expect(seo.headTags('zz')).toContain(
-        '<link rel="canonical" href="https://stoclify.bg/" />',
-      );
+      expect(seo.headTags('zz')).toContain('<link rel="canonical" href="https://stoclify.bg/" />');
     });
 
     it('carries structured data a search engine can parse', () => {

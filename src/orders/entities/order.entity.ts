@@ -112,6 +112,29 @@ export class Order {
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
   sentAt!: Date | null;
 
+  /**
+   * The purchase decision this order came out of, when it came out of one.
+   *
+   * Nullable, and it will stay nullable. An order typed in by hand is a
+   * perfectly good order — that flow predates decisions and keeps working
+   * untouched — and this column is the difference between "the plan said to buy
+   * here" and "we actually bought here". Only that difference lets a realized
+   * saving be told apart from a potential one.
+   *
+   * A plain column rather than a `@ManyToOne` relation. Nothing on the order
+   * ever needs to *read* the decision — the order already carries its own copy
+   * of everything a supplier is being asked for — and a relation would invite
+   * an eager join that pulls a several-hundred-kilobyte snapshot into every
+   * order listing.
+   */
+  @ApiPropertyOptional({
+    description: 'The decision this order was placed on, if any.',
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ name: 'purchase_decision_id', type: 'uuid', nullable: true })
+  purchaseDecisionId!: string | null;
+
   @ApiProperty({ type: () => OrderLine, isArray: true })
   @OneToMany(() => OrderLine, (line) => line.order, { cascade: ['insert'], eager: true })
   lines!: OrderLine[];

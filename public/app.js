@@ -28,7 +28,9 @@ function translate(text) {
  * interface ends up half in demo and half in a real account.
  */
 function isIdentified() {
-  return Boolean(getSession() || getApiKey());
+  // One definition, shared with the credential layer. An operator key does not
+  // count: it names nobody, so there is no account for a customer view to show.
+  return hasCustomerCredentials();
 }
 
 /**
@@ -82,13 +84,17 @@ const ENDPOINTS = {
   products: API_BASE + '/products',
   analyticsOverview: API_BASE + '/analytics/overview',
   scraperTrigger: API_BASE + '/scraper/trigger',
-  scraperRun: API_BASE + '/scraper/run',
+  // Sweeps this account's own listings. The unscoped '/scraper/run' walks
+  // every tenant's queue and is operator-only for that reason.
+  scraperRun: API_BASE + '/scraper/run/mine',
   scraperRefresh: API_BASE + '/scraper/competitors',
   discoverySearch: API_BASE + '/discovery/search',
   discoveryShops: API_BASE + '/discovery/shops',
   discoveryDetect: API_BASE + '/discovery/detect',
   discoveryAvailable: API_BASE + '/discovery/available',
   discoveryBasket: API_BASE + '/discovery/basket',
+  purchaseDecisions: API_BASE + '/purchase-decisions',
+  purchaseDecisionsSummary: API_BASE + '/purchase-decisions/summary',
   discoveryCompare: API_BASE + '/discovery/compare',
   discoveryCompareStream: API_BASE + '/discovery/compare/stream',
   shops: API_BASE + '/shops',
@@ -110,7 +116,21 @@ const ENDPOINTS = {
   billingRotateKey: API_BASE + '/billing/users/api-key',
   billingMailHealth: API_BASE + '/billing/mail/health',
   matchingHealth: API_BASE + '/matching/health',
+  // Operator panel only — carries the last sweep's per-listing results across
+  // every account. The customer-facing view is '/scraper/status/mine'.
   scraperStatus: API_BASE + '/scraper/status',
+  adminOverview: API_BASE + '/admin/overview',
+  adminDecisions: API_BASE + '/admin/purchase-decisions',
+  adminDecisionAnalytics: API_BASE + '/admin/purchase-decisions/analytics',
+  adminShops: API_BASE + '/admin/shops',
+  adminEvents: API_BASE + '/admin/events',
+  adminOutreach: API_BASE + '/admin/outreach',
+  adminOutreachPreview: API_BASE + '/admin/outreach/preview',
+  adminScrape: API_BASE + '/admin/scrape',
+  adminScrapeRun: API_BASE + '/admin/scrape/run',
+  adminAlerts: API_BASE + '/admin/alerts',
+  adminSearchQuality: API_BASE + '/admin/search/quality',
+  adminSearchDebug: API_BASE + '/admin/search/debug',
 };
 
 /**
@@ -127,6 +147,36 @@ const ENDPOINTS = {
  */
 let billingPlansPromise = null;
 
+/**
+ * The signed-in account, fetched once per page load.
+ *
+ * `/billing/me` was being asked five times to render one screen — the plan bar
+ * asks, `renderAccount` asks through it, and the Money Screen asks for the
+ * subscription price. Same answer every time, five round trips, and on a cold
+ * Supabase connection each one costs ~150ms.
+ *
+ * Cleared by `forgetAccount()` whenever the identity changes, so a sign-in or
+ * a pasted key is never answered from the previous account's cache.
+ */
+let accountPromise = null;
+
+function accountOnce(options) {
+  if (!accountPromise || (options && options.force)) {
+    accountPromise = fetch(ENDPOINTS.billingMe, { headers: authHeaders() })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null);
+  }
+
+  return accountPromise;
+}
+
+/** Called on every credential change: a cached account outliving its session
+ *  would show the previous customer's plan to the next one. */
+function forgetAccount() {
+  accountPromise = null;
+  moneyScreenCache = null;
+}
+
 function billingPlans() {
   if (!billingPlansPromise) {
     billingPlansPromise = fetch(ENDPOINTS.billingPlans, {
@@ -134,11 +184,45 @@ function billingPlans() {
     })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null)
-      .then((payload) => payload || { enabled: false, plans: [], topUpUrl: null });
+      .then((payload) => payload || { enabled: false, plans: [], topUpUrl: null, prices: {} });
   }
 
   return billingPlansPromise;
 }
+
+/**
+ * Paints the pricing cards from the server's prices.
+ *
+ * The markup ships with the current figures written in, so the page is right
+ * with JavaScript off and right before this resolves — but the server has the
+ * only definition, and this is what makes the card and the "Абонамент" line
+ * inside the account incapable of disagreeing. They now read the same number
+ * from the same place.
+ *
+ * Silent when the call fails: the markup's own figure is the correct one until
+ * somebody changes the price, and blanking a pricing page because a fetch
+ * failed would be a worse answer than a slightly stale one.
+ */
+async function paintPlanPrices() {
+  const nodes = $$('[data-plan-price]');
+  if (!nodes.length) return;
+
+  const payload = await billingPlans();
+  const prices = (payload && payload.prices) || {};
+  // A symbol for the currencies a price is actually quoted in, and the code
+  // itself for anything else — an unrecognised currency should read oddly
+  // rather than silently claim to be euros.
+  const symbols = { EUR: '€', BGN: 'лв.', USD: '$' };
+  const currency = (payload && payload.currency) || 'EUR';
+  const symbol = symbols[currency] || currency + ' ';
+
+  nodes.forEach(function (node) {
+    const price = prices[node.dataset.planPrice];
+    if (typeof price !== 'number') return;
+    node.textContent = symbol + price;
+  });
+}
+
 
 /**
  * The language the page is currently being read in.
@@ -153,90 +237,21 @@ function currentLocale() {
   return (document.documentElement.lang || 'bg').slice(0, 5);
 }
 
-/**
- * The API key is held in localStorage only. It is never written into the
- * markup and never put in a URL — a key in a query string ends up in
- * server logs, browser history and Referer headers.
- */
-const KEY_STORAGE = 'stoclify.apiKey';
-
-function getApiKey() {
-  try {
-    return window.localStorage.getItem(KEY_STORAGE) || '';
-  } catch (error) {
-    return '';
-  }
-}
-
-function setApiKey(value) {
-  try {
-    if (value) window.localStorage.setItem(KEY_STORAGE, value);
-    else window.localStorage.removeItem(KEY_STORAGE);
-  } catch (error) {
-    /* private browsing — the session simply stays unauthenticated */
-  }
-  renderApiKeyBadge();
-  // The operator entry belongs to the key, not to the session: pasting a
-  // customer key must take it away again.
-  void detectOperator();
-}
-
-/** Every authenticated call goes through here, so the header is never forgotten. */
-/**
- * Where a signed-in browser keeps its proof.
+/*
+ * Credentials live in `auth.js`.
  *
- * Separate from the API key on purpose: the key is a machine credential
- * that belongs in a script and cannot be read back once issued, while
- * this is handed out again on every sign-in and can be dropped from one
- * device without breaking anybody's integration.
+ * Moved out because this is the interface's security boundary: two identities
+ * that must never be confused, and a set of rules short enough to read in one
+ * sitting if they are not buried in eight thousand lines of rendering. What it
+ * defines and this file uses: `getApiKey`, `setApiKey`, `getOperatorKey`,
+ * `setOperatorKey`, `clearAllCredentials`, `getSession`, `setSession`,
+ * `authHeaders` (customer), `operatorHeaders` (operator),
+ * `hasCustomerCredentials`, `operatorKnown` and `usingOperatorKey`.
+ *
+ * The rule it exists to enforce, in one line: `authHeaders` cannot send an
+ * operator key, because it never reads the slot one is kept in.
  */
-const SESSION_STORAGE = 'stoclify.session';
 
-function getSession() {
-  try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE);
-    if (!raw) return null;
-
-    const session = JSON.parse(raw);
-    // A session that has run out is the same as none: dropping it here
-    // means the interface asks for a sign-in instead of firing requests
-    // that will all answer 401.
-    if (!session.token || new Date(session.expiresAt).getTime() < Date.now()) {
-      window.localStorage.removeItem(SESSION_STORAGE);
-      return null;
-    }
-
-    return session;
-  } catch (error) {
-    return null;
-  }
-}
-
-function setSession(session) {
-  try {
-    if (session) window.localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
-    else window.localStorage.removeItem(SESSION_STORAGE);
-  } catch (error) {
-    /* private browsing — the tab stays signed in, the next one will not */
-  }
-}
-
-function authHeaders(extra) {
-  const headers = Object.assign({ Accept: 'application/json' }, extra || {});
-
-  // A session wins where both exist. Somebody who has just signed in
-  // means to act as that account, whatever key is left in this browser
-  // from before.
-  const session = getSession();
-  if (session) {
-    headers.Authorization = 'Bearer ' + session.token;
-    return headers;
-  }
-
-  const key = getApiKey();
-  if (key) headers['x-api-key'] = key;
-  return headers;
-}
 
 /* ------------------------------------------------------------------ *
  * Small helpers
@@ -314,7 +329,7 @@ function toast(message, tone) {
   };
 
   element.className =
-    'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border bg-ink-800 px-5 py-3 text-[13.5px] font-medium shadow-2xl transition-all duration-300 opacity-100 translate-y-0 ' +
+    'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border bg-ink-800 px-4 py-3 text-[12.5px] font-medium shadow-2xl transition-all duration-300 opacity-100 translate-y-0 ' +
     (palette[tone] || palette.info);
   element.textContent = message;
 
@@ -326,7 +341,7 @@ function toast(message, tone) {
       element.style.opacity = '';
       element.style.transform = '';
       element.className =
-        'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 translate-y-3 rounded-xl border border-white/10 bg-ink-800 px-5 py-3 text-[13.5px] font-medium text-slate-200 opacity-0 shadow-2xl transition-all duration-300';
+        'pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 translate-y-3 rounded-xl border border-white/10 bg-ink-800 px-4 py-3 text-[12.5px] font-medium text-slate-200 opacity-0 shadow-2xl transition-all duration-300';
     }, 320);
   }, 3600);
 }
@@ -339,6 +354,7 @@ const VIEWS = [
   'landing',
   'catalogue',
   'dashboard',
+  'savings',
   'operator',
   'terms',
   'privacy',
@@ -385,25 +401,108 @@ function switchView(name, options) {
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
-  if (name === 'dashboard') loadProducts();
+  if (name === 'operator') {
+    void loadOperatorPanel();
+    return;
+  }
+
+  // The customer views, and the reason they are gated rather than simply
+  // hopeful.
+  //
+  // An operator holds no customer credential, so every request these make is
+  // one the server will refuse — correctly, and by design. The interface used
+  // to make them anyway and paper over the wall of refusals, which is how a
+  // working system came to look broken the moment somebody pasted an operator
+  // key: eight endpoints answering "this is an operator key" at once.
+  //
+  // Asked here, once, rather than inside each loader, because the next
+  // customer view added must not have to remember.
+  if (usingOperatorKey) {
+    showOperatorOnlyNotice(name);
+    return;
+  }
+
+  if (name === 'dashboard') {
+    loadProducts();
+    // The first thing on the dashboard, so it is asked for first (§3.1).
+    void renderMoneyScreen();
+  }
   if (name === 'catalogue') void loadShops();
-  if (name === 'dashboard' || name === 'catalogue') void refreshPlanBar();
-  if (name === 'operator') void loadOperatorPanel();
+  if (name === 'savings') void loadSavings();
+  if (name === 'dashboard' || name === 'catalogue' || name === 'savings') void refreshPlanBar();
 }
 
-$$('.nav-link').forEach(function (button) {
-  button.addEventListener('click', function () {
-    switchView(button.dataset.view);
+/**
+ * Says why a customer screen is empty for an operator, instead of showing a
+ * row of failed requests.
+ *
+ * An operator key is not a lesser customer key — it belongs to no account, so
+ * there is genuinely nothing for these screens to show. The honest answer is a
+ * sentence and a way back to the panel, which is the screen this person
+ * actually wanted.
+ */
+function showOperatorOnlyNotice(view) {
+  const targets = {
+    dashboard: '#products-table-body',
+    catalogue: '#shops-list',
+    savings: '#savings-summary',
+  };
 
-    // `switchView` scrolls to the top, and returns early when the view is
-    // already open — so the section scroll is queued after it either way.
-    const section = button.dataset.scroll && document.getElementById(button.dataset.scroll);
-    if (section) {
-      window.setTimeout(function () {
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 60);
-    }
-  });
+  const holder = $(targets[view]);
+  if (!holder) return;
+
+  const notice =
+    'Влезли сте с операторски ключ. Той няма клиентски акаунт, затова тук няма какво да се покаже. ' +
+    'Отворете панела, или поставете клиентски ключ.';
+
+  const html =
+    '<p class="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3.5 py-3 text-[12.5px] text-amber-300">' +
+    translate(notice) +
+    '</p>';
+
+  // The products table is a <tbody>, so a bare <p> would be dropped by the
+  // parser. Wrapped in a full-width cell it lands where it was meant to.
+  holder.innerHTML =
+    holder.tagName === 'TBODY'
+      ? '<tr><td colspan="99" class="px-3.5 py-6">' + html + '</td></tr>'
+      : html;
+
+  const roi = $('#savings-roi');
+  const history = $('#savings-history');
+  if (view === 'savings') {
+    if (roi) roi.innerHTML = '';
+    if (history) history.innerHTML = '';
+  }
+}
+
+/*
+ * Delegated, not bound per element.
+ *
+ * This used to be `$$('.nav-link').forEach(addEventListener)`, which runs once
+ * at load and therefore only ever reaches the buttons already in the markup.
+ * Most of this interface is built as HTML strings long afterwards, so every
+ * `.nav-link` rendered by JavaScript — the onboarding checklist's "Price it",
+ * "How this is calculated", the "all →" links — looked like a button, had a
+ * cursor and a hover state, and did nothing at all when clicked.
+ *
+ * One listener on the document covers both, and covers whatever gets rendered
+ * next without anyone having to remember to re-bind.
+ */
+document.addEventListener('click', function (event) {
+  const button = event.target.closest('.nav-link[data-view]');
+  if (!button) return;
+
+  switchView(button.dataset.view);
+  if (button.dataset.view === 'catalogue' && window.resizeSearchBox) window.resizeSearchBox();
+
+  // `switchView` scrolls to the top, and returns early when the view is
+  // already open — so the section scroll is queued after it either way.
+  const section = button.dataset.scroll && document.getElementById(button.dataset.scroll);
+  if (section) {
+    window.setTimeout(function () {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  }
 });
 
 window.addEventListener('hashchange', function () {
@@ -493,7 +592,7 @@ $$('[data-close-modal]').forEach(function (button) {
   button.addEventListener('click', () => closeModal(button.dataset.closeModal));
 });
 
-['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(function (id) {
+['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(function (id) {
   // Clicking the backdrop closes; clicking the panel must not.
   document.getElementById(id).addEventListener('click', function (event) {
     if (event.target === this) closeModal(id);
@@ -510,7 +609,7 @@ document.addEventListener('keydown', function (event) {
     return;
   }
 
-  ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal'].forEach(closeModal);
+  ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(closeModal);
 });
 
 /* ------------------------------------------------------------------ *
@@ -613,13 +712,13 @@ $('#key-toggle').addEventListener('click', function () {
   const icon = this.querySelector('i');
   const hidden = field.type === 'password';
   field.type = hidden ? 'text' : 'password';
-  icon.className = hidden ? 'fa-solid fa-eye-slash text-[13px]' : 'fa-solid fa-eye text-[13px]';
+  icon.className = hidden ? 'fa-solid fa-eye-slash text-[12.5px]' : 'fa-solid fa-eye text-[12.5px]';
 });
 
 function showKeyStatus(message, tone) {
   const element = $('#key-status');
   const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
-  element.className = 'mt-2.5 text-[12.5px] ' + (palette[tone] || palette.info);
+  element.className = 'mt-2.5 text-[11.5px] ' + (palette[tone] || palette.info);
   element.textContent = message;
   element.classList.remove('hidden');
 }
@@ -652,9 +751,45 @@ $('#key-form').addEventListener('submit', async function (event) {
       showKeyStatus('Ключът е валиден, но абонаментът е изтекъл.', 'error');
       return;
     }
+
+    // An operator key has no account, so the customer endpoint refuses it by
+    // design — a correct answer, not a broken one. Left to fall through it
+    // landed in the catch below and reported "the API did not answer", which
+    // is the opposite of what happened: the API answered precisely. Ask the
+    // endpoint that *is* the operator's instead, and say which key this is.
+    if (response.status === 400) {
+      const asOperator = await fetch(ENDPOINTS.billingUsers, {
+        headers: { Accept: 'application/json', 'x-api-key': candidate },
+      });
+
+      if (!asOperator.ok) {
+        showKeyStatus('Ключът е невалиден. Проверете го и опитайте пак.', 'error');
+        return;
+      }
+
+      // Into the operator slot, which is a different box from the customer
+      // one. This is the moment the two identities are told apart, and doing
+      // it here — once, where the server has just said which this is — is what
+      // keeps every later request from having to guess.
+      setOperatorKey(candidate);
+      forgetAccount();
+      renderAccount();
+      showKeyStatus('Операторски ключ — валиден и запазен в този браузър.', 'success');
+      toast('Операторският ключ е активен.', 'success');
+      window.setTimeout(() => closeModal('key-modal'), 700);
+      // No loadProducts(): an operator key has no products, and asking would
+      // earn the same 400 the branch above just explained.
+      return;
+    }
+
     if (!response.ok) throw new Error('HTTP ' + response.status);
 
+    // A customer key. Any operator key in this browser goes, for the same
+    // reason the reverse is true: holding both leaves every request needing a
+    // decision nobody made.
+    setOperatorKey('');
     setApiKey(candidate);
+    forgetAccount();
     renderAccount();
     showKeyStatus('Ключът е валиден и запазен в този браузър.', 'success');
     toast('API ключът е активен.', 'success');
@@ -662,7 +797,9 @@ $('#key-form').addEventListener('submit', async function (event) {
     loadProducts();
   } catch (error) {
     // The key may still be right while the server is down; store it and
-    // say exactly that rather than blaming the key.
+    // say exactly that rather than blaming the key. As a customer key: the
+    // operator slot is only ever filled by a server that confirmed it, so an
+    // unreachable server must never put one there.
     setApiKey(candidate);
     showKeyStatus(failureText(error, 'API-то не отговори — ключът е запазен'), 'info');
   } finally {
@@ -672,7 +809,11 @@ $('#key-form').addEventListener('submit', async function (event) {
 });
 
 $('#key-remove').addEventListener('click', function () {
-  setApiKey('');
+  // Both slots. "Remove the key" means this browser holds no credential, and
+  // leaving an operator key behind because the dialog was showing a customer
+  // one would be the surprise version of that.
+  clearAllCredentials();
+  forgetAccount();
   renderAccount();
   $('#key-input').value = '';
   showKeyStatus('Ключът е премахнат от този браузър.', 'info');
@@ -1010,7 +1151,7 @@ function addSupplierButton(product) {
   return (
     '<button type="button" data-add-supplier="' +
     escapeHtml(product.id) +
-    '" class="inline-flex items-center gap-2 rounded-xl border border-dashed border-white/15 px-4 py-2.5 text-[13px] font-medium text-slate-400 transition hover:border-accent-500/50 hover:text-accent-300">' +
+    '" class="inline-flex items-center gap-2 rounded-xl border border-dashed border-white/15 px-3.5 py-2.5 text-[12.5px] font-medium text-slate-400 transition hover:border-accent-500/50 hover:text-accent-300">' +
     '<i class="fa-solid fa-plus text-[11px]"></i>Добави склад</button>'
   );
 }
@@ -1078,7 +1219,7 @@ function productThumb(product) {
   }
 
   return (
-    '<span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[12px] font-bold ring-1 ' +
+    '<span class="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[11.5px] font-bold ring-1 ' +
     toneFor(label) +
     '">' +
     escapeHtml(initialsFor(translate(label))) +
@@ -1097,7 +1238,7 @@ function productThumb(product) {
  */
 function emptyMark(note) {
   return (
-    '<span class="block text-center text-[13px] text-slate-600">—</span>' +
+    '<span class="block text-center text-[12.5px] text-slate-600">—</span>' +
     (note
       ? '<span class="mt-0.5 block truncate text-center text-[11px] text-slate-600">' +
         escapeHtml(note) +
@@ -1108,7 +1249,7 @@ function emptyMark(note) {
 
 function chipHtml(icon, text, extraClass, hoverAttributes) {
   return (
-    '<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium ' +
+    '<span class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ' +
     (extraClass || 'bg-white/5 text-slate-400') +
     '"' +
     (hoverAttributes || '') +
@@ -1170,10 +1311,10 @@ function warehouseChipHtml(product, view) {
     escapeHtml(summary) +
     '">' +
     '<i class="fa-solid fa-warehouse text-[9.5px] text-slate-500"></i>' +
-    '<span class="num text-[10.5px] font-semibold text-slate-300">' +
+    '<span class="num text-[10px] font-semibold text-slate-300">' +
     tally.total +
     '</span>' +
-    '<span class="text-[10.5px] text-slate-500">' + translate('склада') + '</span>' +
+    '<span class="text-[10px] text-slate-500">' + translate('склада') + '</span>' +
     (dots ? '<span class="wh-dots">' + dots + '</span>' : '') +
     (overflow > 0 ? '<span class="text-[10px] text-slate-500">+' + overflow + '</span>' : '') +
     '</span>'
@@ -1207,7 +1348,7 @@ function rangeCellHtml(product, view) {
 
   return (
     '<span class="flex items-baseline gap-2">' +
-    '<span class="num text-[13.5px] font-semibold ' +
+    '<span class="num text-[12.5px] font-semibold ' +
     (view.spread > 0.01 ? 'text-emerald-400' : 'text-slate-600') +
     '"><span class="masked">' +
     (view.spread > 0.01 ? euro.format(view.spread) : '—') +
@@ -1219,7 +1360,7 @@ function rangeCellHtml(product, view) {
     '<span class="mt-1.5 block"><span class="range-track block">' +
     marketPin +
     '</span>' +
-    '<span class="num mt-1 flex justify-between text-[10.5px] text-slate-500">' +
+    '<span class="num mt-1 flex justify-between text-[10px] text-slate-500">' +
     '<span class="masked">' +
     euro.format(view.best.price) +
     '</span><span class="masked">' +
@@ -1253,10 +1394,10 @@ let hoverPinned = false;
 
 function hoverRow(label, value, valueClass) {
   return (
-    '<div class="flex items-baseline justify-between gap-4 py-0.5">' +
-    '<span class="spec-key text-[11.5px]">' +
+    '<div class="flex items-baseline justify-between gap-3 py-0.5">' +
+    '<span class="spec-key text-[11px]">' +
     escapeHtml(label) +
-    '</span><span class="text-right text-[12px] ' +
+    '</span><span class="text-right text-[11.5px] ' +
     (valueClass || 'text-slate-200') +
     '">' +
     value +
@@ -1278,7 +1419,7 @@ function warehouseCardHtml(product, view) {
     .filter((item) => item.count > 0)
     .map(
       (item) =>
-        '<span class="rounded-md px-1.5 py-0.5 text-[10.5px] font-medium ' +
+        '<span class="rounded-md px-1.5 py-0.5 text-[10px] font-medium ' +
         item.tone +
         '">' +
         item.count +
@@ -1307,21 +1448,21 @@ function warehouseCardHtml(product, view) {
       return (
         '<div class="flex items-center gap-2.5 border-t border-white/5 py-1.5 first:border-0">' +
         '<span class="wh-dot ' + state.tone + '"></span>' +
-        '<span class="min-w-0 flex-1"><span class="block truncate text-[12px] font-medium text-slate-200">' +
+        '<span class="min-w-0 flex-1"><span class="block truncate text-[11.5px] font-medium text-slate-200">' +
         escapeHtml(supplier.name) +
         (isBest
           ? '<span class="ml-1.5 rounded bg-emerald-500/15 px-1 py-px align-middle text-[9.5px] font-bold uppercase text-emerald-400">най-евтин</span>'
           : '') +
-        '</span><span class="block truncate font-mono text-[10.5px] text-slate-500">' +
+        '</span><span class="block truncate font-mono text-[10px] text-slate-500">' +
         escapeHtml(supplier.host) +
         (supplier.location ? ' · ' + escapeHtml(supplier.location) : '') +
         '</span></span>' +
-        '<span class="shrink-0 text-right"><span class="num block text-[12.5px] font-semibold ' +
+        '<span class="shrink-0 text-right"><span class="num block text-[11.5px] font-semibold ' +
         (isBest ? 'text-emerald-400' : 'text-slate-200') +
         '"><span class="masked">' +
         (typeof supplier.price === 'number' ? euro.format(supplier.price) : '—') +
         '</span></span>' +
-        '<span class="num block text-[10.5px] ' +
+        '<span class="num block text-[10px] ' +
         state.tone +
         '">' +
         (premium !== null && premium > 0.05
@@ -1329,7 +1470,7 @@ function warehouseCardHtml(product, view) {
           : '') +
         escapeHtml(state.label) +
         '</span></span>' +
-        '<span class="w-16 shrink-0 text-right text-[10.5px] text-slate-500">' +
+        '<span class="w-16 shrink-0 text-right text-[10px] text-slate-500">' +
         escapeHtml(formatRelative(supplier.updatedAt)) +
         '</span>' +
         '</div>'
@@ -1338,7 +1479,7 @@ function warehouseCardHtml(product, view) {
     .join('');
 
   const footer = view.best
-    ? '<div class="border-t border-white/8 px-4 py-2.5">' +
+    ? '<div class="border-t border-white/8 px-3.5 py-2.5">' +
       hoverRow(
         'Диапазон',
         '<span class="num masked">' +
@@ -1366,15 +1507,15 @@ function warehouseCardHtml(product, view) {
     : '';
 
   return (
-    '<div class="px-4 pb-2 pt-3">' +
-    '<p class="text-[12.5px] font-semibold text-slate-200">' +
+    '<div class="px-3.5 pb-2 pt-3">' +
+    '<p class="text-[11.5px] font-semibold text-slate-200">' +
     escapeHtml(product.name) +
     '</p>' +
     (badges ? '<div class="mt-1.5 flex flex-wrap gap-1">' + badges + '</div>' : '') +
     '</div>' +
     (rows
-      ? '<div class="max-h-72 overflow-y-auto border-t border-white/8 px-4 py-1">' + rows + '</div>'
-      : '<p class="border-t border-white/8 px-4 py-4 text-[12px] text-slate-500">' +
+      ? '<div class="max-h-72 overflow-y-auto border-t border-white/8 px-3.5 py-1">' + rows + '</div>'
+      : '<p class="border-t border-white/8 px-3.5 py-2.5 text-[11.5px] text-slate-500">' +
         'Няма свързани складове. Отворете реда и добавете поне един.</p>') +
     footer
   );
@@ -1391,37 +1532,37 @@ function specCardHtml(product) {
     hoverRow('Марка', escapeHtml(product.brand || '—')) +
     (product.manufacturer ? hoverRow('Производител', escapeHtml(product.manufacturer)) : '') +
     (product.model
-      ? hoverRow('Модел', '<span class="font-mono text-[11.5px]">' + escapeHtml(product.model) + '</span>')
+      ? hoverRow('Модел', '<span class="font-mono text-[11px]">' + escapeHtml(product.model) + '</span>')
       : '') +
     (product.category ? hoverRow('Категория', escapeHtml(product.category)) : '') +
     (product.sku
-      ? hoverRow('Вашият SKU', '<span class="font-mono text-[11.5px]">' + escapeHtml(product.sku) + '</span>')
+      ? hoverRow('Вашият SKU', '<span class="font-mono text-[11px]">' + escapeHtml(product.sku) + '</span>')
       : '') +
     (product.gtin
       ? hoverRow(
           'Баркод (GTIN)',
-          '<span class="font-mono text-[11.5px]">' + escapeHtml(product.gtin) + '</span>',
+          '<span class="font-mono text-[11px]">' + escapeHtml(product.gtin) + '</span>',
         )
       : '');
 
   return (
-    '<div class="flex items-start gap-3 px-4 pb-3 pt-3">' +
+    '<div class="flex items-start gap-3 px-3.5 pb-3 pt-3">' +
     productThumb(product) +
-    '<span class="min-w-0"><span class="block text-[12.5px] font-semibold text-slate-200">' +
+    '<span class="min-w-0"><span class="block text-[11.5px] font-semibold text-slate-200">' +
     escapeHtml(product.brand || product.name) +
-    '</span><span class="block truncate text-[11.5px] text-slate-500">' +
+    '</span><span class="block truncate text-[11px] text-slate-500">' +
     escapeHtml(product.manufacturer || product.category || '') +
     '</span></span></div>' +
-    '<div class="border-t border-white/8 px-4 py-2">' +
+    '<div class="border-t border-white/8 px-3.5 py-2">' +
     identity +
     '</div>' +
     (specs
-      ? '<div class="border-t border-white/8 px-4 py-2"><p class="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">Спецификация</p>' +
+      ? '<div class="border-t border-white/8 px-3.5 py-2"><p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Спецификация</p>' +
         specs +
         '</div>'
       : '') +
     (product.notes
-      ? '<div class="border-t border-white/8 px-4 py-2.5 text-[11.5px] leading-relaxed text-slate-400">' +
+      ? '<div class="border-t border-white/8 px-3.5 py-2.5 text-[11px] leading-relaxed text-slate-400">' +
         '<i class="fa-solid fa-note-sticky mr-1.5 text-[10px] text-slate-500"></i>' +
         escapeHtml(product.notes) +
         '</div>'
@@ -1447,12 +1588,12 @@ function alertsCardHtml() {
     .map(function (row) {
       return (
         '<div class="flex items-baseline justify-between gap-3 border-t border-white/5 py-1.5 first:border-0">' +
-        '<span class="min-w-0"><span class="block text-[12px] font-medium text-slate-200">' +
+        '<span class="min-w-0"><span class="block text-[11.5px] font-medium text-slate-200">' +
         escapeHtml(row[0]) +
         '</span><span class="block text-[11px] text-slate-500">' +
         escapeHtml(row[1]) +
         '</span></span>' +
-        '<span class="shrink-0 text-[10.5px] text-slate-500">' +
+        '<span class="shrink-0 text-[10px] text-slate-500">' +
         escapeHtml(row[2]) +
         '</span></div>'
       );
@@ -1460,19 +1601,19 @@ function alertsCardHtml() {
     .join('');
 
   return (
-    '<div class="px-4 pb-2 pt-3">' +
-    '<p class="text-[12.5px] font-semibold text-slate-200">Праг за аларма</p>' +
-    '<p class="mt-1 text-[12px] leading-relaxed text-slate-400">' +
+    '<div class="px-3.5 pb-2 pt-3">' +
+    '<p class="text-[11.5px] font-semibold text-slate-200">Праг за аларма</p>' +
+    '<p class="mt-1 text-[11.5px] leading-relaxed text-slate-400">' +
     'Вашата долна граница за този артикул. Щом някой склад падне под нея, системата вдига ' +
     'аларма — прагът не спира и не купува нищо, само ви казва.' +
     '</p></div>' +
-    '<div class="border-t border-white/8 px-4 py-2">' +
-    '<p class="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">Кога се вдига аларма</p>' +
+    '<div class="border-t border-white/8 px-3.5 py-2">' +
+    '<p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Кога се вдига аларма</p>' +
     rows +
     '</div>' +
-    '<div class="border-t border-white/8 px-4 py-2.5">' +
-    '<p class="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">Къде отива</p>' +
-    '<p class="text-[11.5px] leading-relaxed text-slate-400">' +
+    '<div class="border-t border-white/8 px-3.5 py-2.5">' +
+    '<p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Къде отива</p>' +
+    '<p class="text-[11px] leading-relaxed text-slate-400">' +
     'В Slack, ако е зададен <code class="font-mono text-[11px] text-slate-300">ALERT_SLACK_WEBHOOK_URL</code>, ' +
     'и/или на ваш webhook през <code class="font-mono text-[11px] text-slate-300">ALERT_WEBHOOK_URL</code> ' +
     '(подписан с HMAC-SHA256). <span class="text-amber-400">Ако няма зададен канал, алармата ' +
@@ -1591,7 +1732,7 @@ function supplierRowsHtml(product, view) {
   // one moment you most need it, it was missing.
   if (view.count === 0) {
     return (
-      '<div class="px-5 py-5"><p class="mb-3 text-[13px] text-slate-500">' +
+      '<div class="px-4 py-3.5"><p class="mb-3 text-[12.5px] text-slate-500">' +
       'Няма свързани складове. Добавете поне един, за да започне следенето.</p>' +
       addSupplierButton(product) +
       '</div>'
@@ -1623,20 +1764,20 @@ function supplierRowsHtml(product, view) {
       ].filter(Boolean);
 
       return (
-        '<div class="flex items-center gap-4 rounded-xl border px-4 py-3 ' +
+        '<div class="flex items-center gap-3 rounded-xl border px-3.5 py-3 ' +
         (isBest ? 'border-emerald-500/35 bg-emerald-500/[0.06]' : 'border-white/8 bg-ink-850') +
         '">' +
         '<span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg ' +
         (isBest ? 'bg-emerald-500/15' : 'bg-white/5') +
-        '"><i class="fa-solid fa-warehouse text-[12px] ' +
+        '"><i class="fa-solid fa-warehouse text-[11.5px] ' +
         (isBest ? 'text-emerald-400' : 'text-slate-500') +
         '"></i></span>' +
         '<span class="min-w-0 flex-1">' +
         (supplier.url
           ? '<a href="' +
             escapeHtml(supplier.url) +
-            '" target="_blank" rel="noopener noreferrer" class="group/link block truncate text-[13px] font-medium text-slate-200 hover:text-accent-500 hover:underline" title="Отвори страницата в магазина">'
-          : '<span class="block truncate text-[13px] font-medium text-slate-200">') +
+            '" target="_blank" rel="noopener noreferrer" class="group/link block truncate text-[12.5px] font-medium text-slate-200 hover:text-accent-500 hover:underline" title="Отвори страницата в магазина">'
+          : '<span class="block truncate text-[12.5px] font-medium text-slate-200">') +
         escapeHtml(supplier.name) +
         (supplier.url
           ? '<i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[9px] opacity-0 transition group-hover/link:opacity-100"></i>'
@@ -1645,7 +1786,7 @@ function supplierRowsHtml(product, view) {
           ? '<span class="ml-2 rounded-md bg-emerald-500/15 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-emerald-400">най-евтин</span>'
           : '') +
         (supplier.url ? '</a>' : '</span>') +
-        '<span class="block truncate font-mono text-[11.5px] text-slate-500">' +
+        '<span class="block truncate font-mono text-[11px] text-slate-500">' +
         escapeHtml(supplier.host) +
         '</span>' +
         // Everything the scrape learned about this listing, on one line:
@@ -1664,18 +1805,18 @@ function supplierRowsHtml(product, view) {
             '</span>'
           : '') +
         '</span>' +
-        '<span class="shrink-0 text-right"><span class="num block text-[14px] font-semibold ' +
+        '<span class="shrink-0 text-right"><span class="num block text-[13px] font-semibold ' +
         (isBest ? 'text-emerald-400' : 'text-slate-200') +
         '"><span class="masked">' +
         (typeof supplier.price === 'number' ? euro.format(supplier.price) : '—') +
         '</span></span>' +
         (premium !== null && premium > 0.01
-          ? '<span class="num block text-[11.5px] text-slate-500"><span class="masked">+' +
+          ? '<span class="num block text-[11px] text-slate-500"><span class="masked">+' +
             premium.toFixed(1) +
             '%</span></span>'
           : '') +
         '</span>' +
-        '<span class="w-24 shrink-0 text-right text-[11.5px] ' +
+        '<span class="w-24 shrink-0 text-right text-[11px] ' +
         (supplier.isActive === false
           ? 'text-slate-600'
           : supplier.inStock === false
@@ -1688,7 +1829,7 @@ function supplierRowsHtml(product, view) {
             ? 'изчерпан'
             : 'наличен') +
         '</span>' +
-        '<span class="w-24 shrink-0 text-right text-[11.5px] text-slate-500">' +
+        '<span class="w-24 shrink-0 text-right text-[11px] text-slate-500">' +
         escapeHtml(formatRelative(supplier.updatedAt)) +
         '</span>' +
         (supplier.id
@@ -1707,7 +1848,7 @@ function supplierRowsHtml(product, view) {
     .join('');
 
   return (
-    '<div class="space-y-2 px-5 py-4">' +
+    '<div class="space-y-2 px-4 py-2.5">' +
     specStripHtml(product) +
     items +
     '<div class="pt-1">' +
@@ -1739,9 +1880,9 @@ function specStripHtml(product) {
   const cells = facts
     .map(function (pair) {
       return (
-        '<div><dt class="spec-key text-[10.5px] uppercase tracking-wide">' +
+        '<div><dt class="spec-key text-[10px] uppercase tracking-wide">' +
         escapeHtml(pair[0]) +
-        '</dt><dd class="mt-0.5 text-[12.5px] text-slate-200">' +
+        '</dt><dd class="mt-0.5 text-[11.5px] text-slate-200">' +
         escapeHtml(pair[1]) +
         '</dd></div>'
       );
@@ -1749,7 +1890,7 @@ function specStripHtml(product) {
     .join('');
 
   return (
-    '<div class="mb-3 rounded-xl border border-white/8 bg-ink-900 px-4 py-3">' +
+    '<div class="mb-3 rounded-xl border border-white/8 bg-ink-900 px-3.5 py-3">' +
     (cells
       ? '<dl class="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">' +
         cells +
@@ -1758,7 +1899,7 @@ function specStripHtml(product) {
     (product.notes
       ? '<p class="' +
         (cells ? 'mt-3 border-t border-white/8 pt-3 ' : '') +
-        'text-[12px] leading-relaxed text-slate-400">' +
+        'text-[11.5px] leading-relaxed text-slate-400">' +
         '<i class="fa-solid fa-note-sticky mr-1.5 text-[10px] text-slate-500"></i>' +
         escapeHtml(product.notes) +
         '</p>'
@@ -1801,7 +1942,7 @@ function renderTable() {
         escapeHtml(product.id) +
         '" class="cursor-pointer border-b border-white/[0.06] transition hover:bg-white/[0.025]">' +
         /* Product: thumbnail, name, identity line, warehouse chip. */
-        '<td class="px-5 py-4"><div class="flex items-start gap-3">' +
+        '<td class="px-4 py-2.5"><div class="flex items-start gap-3">' +
         '<i class="fa-solid fa-chevron-right mt-2.5 shrink-0 text-[11px] text-slate-600 transition ' +
         (open ? 'rotate-90 text-accent-400' : '') +
         '"></i>' +
@@ -1841,7 +1982,7 @@ function renderTable() {
           : '') +
         '</span></span></div></td>' +
         /* Our own price, and the alert threshold under it. */
-        '<td class="px-3 py-4 text-right">' +
+        '<td class="px-3 py-2.5 text-right">' +
         (product.marketPrice
           ? '<span class="num block text-slate-200">' + euro.format(product.marketPrice) + '</span>'
           : emptyMark()) +
@@ -1855,7 +1996,7 @@ function renderTable() {
             '</span>'
           : '') +
         '</td>' +
-        '<td class="px-3 py-4 text-right">' +
+        '<td class="px-3 py-2.5 text-right">' +
         (view.best
           ? '<span class="num block font-semibold text-accent-300"><span class="masked">' +
             euro.format(view.best.price) +
@@ -1863,10 +2004,10 @@ function renderTable() {
             trendHtml(view)
           : emptyMark()) +
         '</td>' +
-        '<td class="px-3 py-4">' +
+        '<td class="px-3 py-2.5">' +
         rangeCellHtml(product, view) +
         '</td>' +
-        '<td class="px-3 py-4">' +
+        '<td class="px-3 py-2.5">' +
         (view.margin === null
           ? emptyMark()
           : '<span class="num block text-right font-semibold ' +
@@ -1875,16 +2016,16 @@ function renderTable() {
             view.margin.toFixed(1) +
             '%</span></span>') +
         '</td>' +
-        '<td class="px-3 py-4">' +
+        '<td class="px-3 py-2.5">' +
         (!view.best
           ? emptyMark()
           : view.best.url
           ? '<a href="' +
             escapeHtml(view.best.url) +
-            '" target="_blank" rel="noopener noreferrer" data-external class="flex items-center gap-1.5 text-[12.5px] text-slate-400 transition hover:text-accent-500 hover:underline"><span class="truncate">' +
+            '" target="_blank" rel="noopener noreferrer" data-external class="flex items-center gap-1.5 text-[11.5px] text-slate-400 transition hover:text-accent-500 hover:underline"><span class="truncate">' +
             escapeHtml(view.best.host) +
             '</span><i class="fa-solid fa-arrow-up-right-from-square shrink-0 text-[9px]"></i></a>'
-          : '<span class="block truncate text-[12.5px] text-slate-400">' +
+          : '<span class="block truncate text-[11.5px] text-slate-400">' +
             escapeHtml(view.best.host) +
             '</span>') +
         (view.best && view.best.location
@@ -1897,7 +2038,7 @@ function renderTable() {
         '</td>' +
         /* Status and freshness together: two columns that each carried one
            short line, side by side, are one column with two lines. */
-        '<td class="px-3 py-4"><span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ' +
+        '<td class="px-3 py-2.5"><span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ' +
         badge.className +
         '"><i class="fa-solid ' +
         badge.icon +
@@ -1913,7 +2054,7 @@ function renderTable() {
             ' с грешка</span>'
           : '') +
         '</td>' +
-        '<td class="px-2 py-4"><span class="flex items-center justify-end">' +
+        '<td class="px-2 py-2.5"><span class="flex items-center justify-end">' +
         iconButton('refresh-product', product.id, 'fa-rotate', 'Провери всички складове') +
         iconButton('edit-product', product.id, 'fa-pen', 'Редактирай продукта') +
         iconButton('delete-product', product.id, 'fa-trash', 'Изтрий продукта', 'hover:text-red-400') +
@@ -2306,8 +2447,8 @@ function applyReveal(next, persist) {
   revealed = next;
   document.body.classList.toggle('revealed', revealed);
   $('#reveal-icon').className = revealed
-    ? 'fa-solid fa-eye-slash text-[12px]'
-    : 'fa-solid fa-eye text-[12px]';
+    ? 'fa-solid fa-eye-slash text-[11.5px]'
+    : 'fa-solid fa-eye text-[11.5px]';
   // Written in JavaScript rather than in the markup, so the pass i18n.js makes
   // over the document never sees it — hence the explicit lookup. This was the
   // one showing "Скрий цени на едро" next to "Monitoring dashboard".
@@ -2439,7 +2580,7 @@ async function loadShops() {
   } catch (error) {
     shops = [];
     list.innerHTML =
-      '<p class="px-5 py-6 text-[13px] text-slate-500">' +
+      '<p class="px-4 py-6 text-[12.5px] text-slate-500">' +
       translate('Няма връзка с API-то. Опитайте пак след малко.') +
       '</p>';
     $('#shops-empty').classList.add('hidden');
@@ -2453,6 +2594,41 @@ async function loadShops() {
   list.innerHTML = shops.map(shopRowHtml).join('');
   renderProvidersStrip();
   bindShopRows();
+  renderShopsSummary(shops);
+}
+
+/**
+ * What the closed row says.
+ *
+ * The two facts worth knowing without opening anything: how many suppliers a
+ * search asks, and whether any of them cannot be asked. A supplier whose
+ * search broke is the reason results look thin, and finding that out by
+ * opening a drawer is finding it out too late.
+ */
+function renderShopsSummary(shops) {
+  const summary = $('#shops-summary');
+  const warning = $('#shops-warning');
+  if (!summary) return;
+
+  const searched = shops.filter((shop) => shop.isActive !== false);
+
+  summary.textContent = searched.length
+    ? pluralMessage(searched.length, {
+        one: '{n} доставчик в търсенето',
+        other: '{n} доставчика в търсенето',
+      })
+    : translate('Още няма твои доставчици');
+
+  if (!warning) return;
+
+  const broken = shops.filter((shop) => shop.lastError).length;
+  warning.hidden = broken === 0;
+  if (broken > 0) {
+    warning.textContent = pluralMessage(broken, {
+      one: '{n} не отговаря',
+      other: '{n} не отговарят',
+    });
+  }
 }
 
 /**
@@ -2484,7 +2660,7 @@ function renderProvidersStrip() {
         return (
           '<button type="button" data-add-known="' +
           escapeHtml(provider.host) +
-          '" class="mr-1.5 mt-1 inline-block rounded-md border border-white/10 bg-ink-850 px-2 py-0.5 text-[11.5px] text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+          '" class="mr-1.5 mt-1 inline-block rounded-md border border-white/10 bg-ink-850 px-2 py-0.5 text-[11px] text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
           escapeHtml(provider.name) +
           '</button>'
         );
@@ -2573,13 +2749,13 @@ function shopRowHtml(shop) {
   const note = off
     ? ''
     : shop.searchSummary
-      ? '<span class="mt-1 block truncate text-[11.5px] text-slate-500" title="' +
+      ? '<span class="mt-1 block truncate text-[11px] text-slate-500" title="' +
         escapeHtml(shop.searchSummary) +
         '">' +
         escapeHtml(shop.searchSummary) +
         '</span>'
       : !live.searchable
-        ? '<span class="mt-1 block truncate text-[11.5px] text-slate-500" title="' +
+        ? '<span class="mt-1 block truncate text-[11px] text-slate-500" title="' +
           escapeHtml(live.reason) +
           '">' +
           escapeHtml(live.reason) +
@@ -2588,7 +2764,7 @@ function shopRowHtml(shop) {
 
   const error =
     !off && shop.lastError
-      ? '<span class="mt-1 flex items-start gap-1.5 text-[11.5px] text-amber-400/90" title="' +
+      ? '<span class="mt-1 flex items-start gap-1.5 text-[11px] text-amber-400/90" title="' +
         escapeHtml(shop.lastError) +
         '"><i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0 text-[9px]"></i>' +
         '<span class="min-w-0 truncate">последно търсене: ' +
@@ -2600,15 +2776,15 @@ function shopRowHtml(shop) {
   // work out again how this shop can be searched. A storefront that has
   // moved platform may have gained a usable search, or lost one.
   const action = off
-    ? '<span class="text-[12px] text-slate-600">—</span>'
+    ? '<span class="text-[11.5px] text-slate-600">—</span>'
     : '<button type="button" data-reprobe="' +
       escapeHtml(shop.id) +
-      '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300" ' +
+      '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[11.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300" ' +
       'title="Проверява наново дали търсачката на магазина работи, и ако не — дали има карта на сайта.">' +
       '<i class="fa-solid fa-arrows-rotate text-[11px]"></i>Провери наново</button>';
 
   return (
-    '<div class="grid grid-cols-[minmax(0,1fr)_7.5rem_11.5rem_5.5rem] items-center gap-4 px-5 py-4' +
+    '<div class="grid grid-cols-[minmax(0,1fr)_7.5rem_11.5rem_5.5rem] items-center gap-3 px-4 py-2.5' +
     (off ? ' opacity-55' : '') +
     '" data-shop="' +
     escapeHtml(shop.id) +
@@ -2621,21 +2797,21 @@ function shopRowHtml(shop) {
     '</span>' +
     liveChip +
     '</span>' +
-    '<span class="mt-0.5 block truncate font-mono text-[11.5px] text-slate-500">' +
+    '<span class="mt-0.5 block truncate font-mono text-[11px] text-slate-500">' +
     escapeHtml(shop.host) +
     '</span>' +
     note +
     error +
     '</span>' +
     /* 2 — the discount, which decides which shop the search calls cheapest */
-    '<label class="flex items-center justify-end gap-1.5 text-[12px] text-slate-500">' +
+    '<label class="flex items-center justify-end gap-1.5 text-[11.5px] text-slate-500">' +
     '<input type="number" min="0" max="100" step="0.5" value="' +
     Number(shop.discountPercent) +
     '" data-discount="' +
     escapeHtml(shop.id) +
     '" aria-label="Отстъпка при ' +
     escapeHtml(shop.name) +
-    '" class="num w-16 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[13px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
+    '" class="num w-16 rounded-lg border border-white/10 bg-ink-850 px-2 py-1.5 text-right text-[12.5px] text-slate-200 outline-none focus:border-accent-500/60" />%</label>' +
     /* 3 — the one action this row offers */
     '<span class="min-w-0">' +
     action +
@@ -2814,7 +2990,7 @@ function showDetectStatus(message, tone) {
     error: 'text-red-400',
     info: 'text-slate-400',
   };
-  element.className = 'text-[12.5px] leading-relaxed ' + (palette[tone] || palette.info);
+  element.className = 'text-[11.5px] leading-relaxed ' + (palette[tone] || palette.info);
   element.textContent = message;
   element.classList.remove('hidden');
 }
@@ -2839,14 +3015,14 @@ function renderDetectResult(result) {
     .map(function (sample) {
       return (
         '<li class="flex items-baseline justify-between gap-3 border-t border-white/8 py-1.5">' +
-        '<span class="min-w-0 flex-1 truncate text-[12px] text-slate-300" title="' +
+        '<span class="min-w-0 flex-1 truncate text-[11.5px] text-slate-300" title="' +
         escapeHtml(sample.title) +
         '">' +
         escapeHtml(sample.title || '(без име)') +
         '</span>' +
         (sample.price === null
-          ? '<span class="shrink-0 text-[11.5px] text-amber-400">без цена</span>'
-          : '<span class="num shrink-0 text-[12px] font-semibold text-slate-200">' +
+          ? '<span class="shrink-0 text-[11px] text-amber-400">без цена</span>'
+          : '<span class="num shrink-0 text-[11.5px] font-semibold text-slate-200">' +
             Number(sample.price).toFixed(2) +
             '</span>') +
         '</li>'
@@ -2854,9 +3030,9 @@ function renderDetectResult(result) {
     })
     .join('');
 
-  box.className = 'rounded-xl border ' + tone.border + ' ' + tone.bg + ' px-4 py-3.5';
+  box.className = 'rounded-xl border ' + tone.border + ' ' + tone.bg + ' px-3.5 py-2.5';
   box.innerHTML =
-    '<p class="text-[13px] font-semibold ' +
+    '<p class="text-[12.5px] font-semibold ' +
     tone.text +
     '"><i class="fa-solid ' +
     tone.icon +
@@ -2868,12 +3044,12 @@ function renderDetectResult(result) {
     percent +
     '% пълни)</p>' +
     (percent >= 70
-      ? '<p class="mt-1 text-[12px] text-slate-400">Проверете имената и цените — ако отговарят на видяното в сайта, запазете.</p>'
-      : '<p class="mt-1 text-[12px] text-slate-400">Част от редовете са непълни. Запазването пак работи, но проверете внимателно.</p>') +
+      ? '<p class="mt-1 text-[11.5px] text-slate-400">Проверете имената и цените — ако отговарят на видяното в сайта, запазете.</p>'
+      : '<p class="mt-1 text-[11.5px] text-slate-400">Част от редовете са непълни. Запазването пак работи, но проверете внимателно.</p>') +
     '<ul class="mt-2">' +
     rows +
     '</ul>' +
-    '<p class="mt-2.5 break-all font-mono text-[10.5px] text-slate-500">' +
+    '<p class="mt-2.5 break-all font-mono text-[10px] text-slate-500">' +
     escapeHtml(result.urlTemplate) +
     '</p>';
   box.classList.remove('hidden');
@@ -2894,7 +3070,7 @@ $('#detect-form').addEventListener('submit', async function (event) {
   const original = button.innerHTML;
   button.disabled = true;
   button.innerHTML =
-    '<i class="fa-solid fa-circle-notch fa-spin text-[13px]"></i>Разпознавам…';
+    '<i class="fa-solid fa-circle-notch fa-spin text-[12.5px]"></i>Разпознавам…';
   $('#detect-status').classList.add('hidden');
 
   try {
@@ -2978,7 +3154,7 @@ $('#shop-form').addEventListener('submit', async function (event) {
 
   if (!host || host.indexOf('.') === -1) {
     const status = $('#shop-status');
-    status.className = 'text-[12.5px] text-red-500';
+    status.className = 'text-[11.5px] text-red-500';
     status.textContent = 'Въведете домейн, например tmt-elkom.com';
     status.classList.remove('hidden');
     return;
@@ -3109,8 +3285,8 @@ function specChipsHtml(specs) {
 
   if (specs.watt) {
     chips.push(
-      '<span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-300">' +
-        '<i class="fa-solid fa-bolt text-[8px] opacity-60"></i>' +
+      '<span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">' +
+        '<i class="fa-solid fa-bolt text-[9px] opacity-60"></i>' +
         escapeHtml(specs.watt) +
         '</span>',
     );
@@ -3118,7 +3294,7 @@ function specChipsHtml(specs) {
 
   if (specs.socket) {
     chips.push(
-      '<span class="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-slate-300">' +
+      '<span class="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-300">' +
         escapeHtml(specs.socket) +
         '</span>',
     );
@@ -3127,7 +3303,7 @@ function specChipsHtml(specs) {
   const tone = kelvinTone(specs.kelvin);
   if (tone) {
     chips.push(
-      '<span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5 text-[10.5px] ' +
+      '<span class="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] ' +
         tone.text +
         '"><span class="inline-block h-2 w-2 rounded-full" style="background:' +
         tone.swatch +
@@ -3139,7 +3315,7 @@ function specChipsHtml(specs) {
 
   if (specs.lumens) {
     chips.push(
-      '<span class="rounded-md bg-white/5 px-1.5 py-0.5 text-[10.5px] text-slate-400">' +
+      '<span class="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">' +
         specs.lumens +
         ' lm</span>',
     );
@@ -3211,17 +3387,17 @@ function offerCardHtml(hit) {
     hoverRow('Прочетено', 'сега, от сайта на магазина', 'text-emerald-400');
 
   return (
-    '<div class="px-4 pb-2 pt-3">' +
-    '<p class="text-[12.5px] font-semibold leading-snug text-slate-200">' +
+    '<div class="px-3.5 pb-2 pt-3">' +
+    '<p class="text-[11.5px] font-semibold leading-snug text-slate-200">' +
     escapeHtml(hit.name) +
     '</p></div>' +
-    '<div class="border-t border-white/8 px-4 py-2">' +
+    '<div class="border-t border-white/8 px-3.5 py-2">' +
     rows +
     '</div>' +
-    '<div class="border-t border-white/8 px-4 py-2">' +
+    '<div class="border-t border-white/8 px-3.5 py-2">' +
     pricing +
     '</div>' +
-    '<p class="border-t border-white/8 px-4 py-2.5 font-mono text-[11px] text-slate-500">' +
+    '<p class="border-t border-white/8 px-3.5 py-2.5 font-mono text-[11px] text-slate-500">' +
     escapeHtml(hit.host) +
     '</p>'
   );
@@ -3241,9 +3417,9 @@ function renderShopOutcomes(result) {
   const refused = result.shops.filter((shop) => !shop.ok);
 
   box.innerHTML =
-    '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-4 shadow-panel">' +
+    '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-2.5 shadow-panel">' +
     '<div class="flex flex-wrap items-baseline justify-between gap-2">' +
-    '<p class="text-[13px] font-medium ' +
+    '<p class="text-[12.5px] font-medium ' +
     (carrying.length ? 'text-slate-200' : 'text-slate-400') +
     '">' +
     (carrying.length
@@ -3253,7 +3429,7 @@ function renderShopOutcomes(result) {
         })
       : 'Не се намери в нито един магазин') +
     '</p>' +
-    '<p class="text-[11.5px] text-slate-500"><i class="fa-solid fa-bolt mr-1 text-[9px] text-accent-400"></i>' +
+    '<p class="text-[11px] text-slate-500"><i class="fa-solid fa-bolt mr-1 text-[9px] text-accent-400"></i>' +
     formatMessage('попитани на живо за {seconds} сек', {
       seconds: (result.durationMs / 1000).toFixed(1),
     }) +
@@ -3264,7 +3440,7 @@ function renderShopOutcomes(result) {
         carrying
           .map(function (shop) {
             return (
-              '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-medium text-emerald-400">' +
+              '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11px] font-medium text-emerald-400">' +
               '<i class="fa-solid fa-store text-[9px]"></i>' +
               escapeHtml(shop.name) +
               '<span class="text-emerald-400/70">' +
@@ -3276,12 +3452,12 @@ function renderShopOutcomes(result) {
         '</div>'
       : '') +
     (empty.length
-      ? '<p class="mt-2 text-[11.5px] text-slate-500">Няма го в: ' +
+      ? '<p class="mt-2 text-[11px] text-slate-500">Няма го в: ' +
         escapeHtml(empty.map((shop) => shop.name).join(', ')) +
         '</p>'
       : '') +
     (refused.length
-      ? '<p class="mt-1.5 text-[11.5px] text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>' +
+      ? '<p class="mt-1.5 text-[11px] text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>' +
         'Не отговориха: ' +
         escapeHtml(
           refused
@@ -3308,6 +3484,24 @@ const MATCH_BANDS = {
   weak: { className: 'bg-white/[0.06] text-slate-400', label: 'слабо' },
 };
 
+/**
+ * A shop this buyer holds no terms with.
+ *
+ * Never hidden and never dressed as a supplier. It may well be the only place
+ * that stocks the thing — but its price is a shelf price, there is no
+ * negotiated discount behind it, and there is no account to order on yet.
+ */
+function newSupplierBadgeHtml(hit) {
+  if (hit.isMine !== false) return '';
+
+  return (
+    '<span class="rounded-md bg-sky-500/12 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300" ' +
+    'title="' + escapeHtml(translate('Магазин извън твоите доставчици — цена по каталог, без договорена отстъпка.')) + '">' +
+    translate('нов магазин') +
+    '</span>'
+  );
+}
+
 function matchBadgeHtml(hit) {
   const match = hit.match;
 
@@ -3316,34 +3510,53 @@ function matchBadgeHtml(hit) {
     // shop's own search engine implied.
     return hit.matched
       ? ''
-      : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] text-amber-400/90" ' +
+      : '<span class="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400/90" ' +
           'title="Търсачката на магазина върна това по подобие — името не съдържа търсеното.">по подобие</span>';
   }
 
   const band = MATCH_BANDS[match.band] || MATCH_BANDS.weak;
   const percent = Math.round(match.confidence * 100);
 
-  const detail = (match.reasons || [])
-    .slice(0, 6)
-    .map((reason) =>
-      reason.right
-        ? (reason.agrees ? '✓ ' : '✕ ') + reason.label + ': ' + reason.left + ' / ' + reason.right
-        : (reason.agrees ? '✓ ' : '✕ ') + reason.left,
-    )
-    .join('\n');
+  // The relation, where the payload carries one. "Друг вариант" and "различен"
+  // are two answers a percentage cannot tell apart, and they lead to opposite
+  // decisions: one is worth a click, the other is worth skipping.
+  const label = RELATION_LABELS[match.relation] || band.label;
 
+  // The tooltip is the explanation in full: what agreed, what neither side
+  // could confirm, and what ruled it out. Section 24 asks for exactly this,
+  // and it is what a buyer disputing a match needs to read.
+  const line = (entry) =>
+    (entry.status === 'conflict' ? '✕ ' : entry.status === 'missing' ? '? ' : '✓ ') +
+    entry.label +
+    (entry.right || entry.left ? ': ' + (entry.left || '—') + ' / ' + (entry.right || '—') : '');
+
+  const detail = (match.reasons || []).slice(0, 8).map(line).join('\n');
   const title = match.explanation + (detail ? '\n\n' + detail : '');
 
+  // A conflict is never a shade of agreement, whatever the confidence says.
+  const className =
+    match.relation === 'conflict'
+      ? 'bg-rose-500/12 text-rose-300'
+      : match.relation === 'compatible'
+        ? 'bg-indigo-500/12 text-indigo-300'
+        : match.relation === 'same_family'
+          ? 'bg-amber-500/12 text-amber-400'
+          : band.className;
+
+  const conflicts = (match.conflicts || []).length;
+  const missing = (match.missingAttributes || []).length;
+
   return (
-    '<span class="rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ' +
-    band.className +
+    '<span class="rounded-md px-1.5 py-0.5 text-[10px] font-semibold ' +
+    className +
     '" title="' +
     escapeHtml(title) +
     '">' +
-    translate(band.label) +
+    translate(label) +
     ' ' +
     percent +
     '%' +
+    (conflicts ? ' · ✕' + conflicts : missing ? ' · ?' + missing : '') +
     (match.method === 'ai' ? ' · AI' : '') +
     '</span>'
   );
@@ -3366,38 +3579,114 @@ function matchBadgeHtml(hit) {
  * worse than no sentence.
  */
 function verdictHtml(best, priced, dearest) {
-  if (!best || priced.length < 2) return '';
+  if (!best) return '';
 
   const saving = dearest - best.effectivePrice;
+  const percent = best.match ? Math.round(best.match.confidence * 100) : null;
+  const breakdown = best.match && best.match.breakdown;
 
+  // The answer, before the evidence.
+  //
+  // This screen used to open with a table and a one-line note above it, and
+  // the reader had to work out which row was the answer. The answer is one
+  // offer at one supplier for one price, so it is said first, at a size that
+  // says it is the answer, and everything else on the page is the working.
   return (
-    '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-white/8 bg-emerald-500/[0.05] px-5 py-3">' +
-    '<span class="text-[13px] text-slate-300">Най-евтин: ' +
-    '<strong class="font-semibold text-slate-100">' +
+    '<div class="border-b border-white/8 bg-emerald-500/[0.05] px-4 py-3.5">' +
+    '<div class="flex flex-wrap items-start gap-x-6 gap-y-4">' +
+    '<div class="min-w-0 flex-1">' +
+    '<p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-500">' +
+    '<i class="fa-solid fa-trophy mr-1.5 text-[10px]"></i>Най-добра оферта</p>' +
+    '<p class="mt-1.5 text-[14px] font-semibold leading-snug text-slate-100">' +
+    escapeHtml(best.name) +
+    '</p>' +
+    '<p class="mt-1 text-[11.5px] text-slate-500">' +
     escapeHtml(best.shopName) +
-    '</strong> — <strong class="num font-semibold text-emerald-400">' +
+    ' · ' +
+    escapeHtml(best.host) +
+    '</p>' +
+    '</div>' +
+    '<div class="shrink-0 text-right">' +
+    '<p class="num text-[26px] font-bold leading-none text-emerald-400">' +
     best.effectivePrice.toFixed(2) +
-    ' ' +
-    escapeHtml(best.effectiveCurrency) +
-    '</strong></span>' +
+    ' <span class="text-[14px] font-semibold">' + escapeHtml(best.effectiveCurrency) + '</span></p>' +
+    (best.discountPercent > 0
+      ? '<p class="mt-1 text-[11px] text-slate-500">' +
+        escapeHtml(formatMessage('след −{percent}%', { percent: best.discountPercent })) +
+        '</p>'
+      : '') +
     (saving >= 0.01
-      ? '<span class="text-[12.5px] text-slate-500">' +
+      ? '<p class="mt-1 text-[11px] text-emerald-500/90">' +
         escapeHtml(
-          formatMessage('с {amount} под най-скъпата оферта за същия артикул', {
+          formatMessage('с {amount} под най-скъпата', {
             amount: saving.toFixed(2) + ' ' + best.effectiveCurrency,
           }),
         ) +
+        '</p>'
+      : '') +
+    '</div>' +
+    '</div>' +
+    '<div class="mt-4 flex flex-wrap items-center gap-3">' +
+    (best.url
+      ? '<a href="' + escapeHtml(best.url) + '" target="_blank" rel="noopener" ' +
+        'class="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3.5 py-2 text-[12.5px] font-semibold text-ink-950 transition hover:bg-emerald-400">' +
+        'Виж офертата<i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>'
+      : '') +
+    (percent !== null
+      ? '<span class="text-[11.5px] text-slate-400">' +
+        escapeHtml(formatMessage('{percent}% съвпадение', { percent: percent })) +
         '</span>'
       : '') +
-    (best.match
-      ? '<span class="ml-auto text-[12px] text-slate-500">' +
-        escapeHtml(
-          formatMessage('съвпадение {percent}%', {
-            percent: Math.round(best.match.confidence * 100),
-          }),
-        ) +
-        '</span>'
+    // The explanation exists and is not in the way. A buyer disputing a match
+    // needs every line of it; a buyer placing an order needs none of them.
+    (breakdown
+      ? '<details class="w-full">' +
+        '<summary class="cursor-pointer list-none text-[11.5px] text-slate-500 transition hover:text-slate-300">' +
+        '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>Защо съвпада' +
+        '</summary>' +
+        breakdownHtml(breakdown) +
+        '</details>'
       : '') +
+    '</div>' +
+    '</div>'
+  );
+}
+
+/**
+ * The verdict taken apart, for the reader who opened it.
+ *
+ * Deliberately behind a disclosure and deliberately complete: every dimension
+ * that was weighed, what it compared, and whether it agreed. A percentage
+ * nobody can take apart is a percentage nobody should act on.
+ */
+function breakdownHtml(breakdown) {
+  const mark = { match: '✓', missing: '?', conflict: '✕' };
+  const tone = {
+    match: 'text-emerald-400',
+    missing: 'text-slate-500',
+    conflict: 'text-rose-400',
+  };
+
+  const rows = (breakdown.components || [])
+    .filter(function (component) {
+      // A dimension nobody stated on either side explains nothing.
+      return component.value > 0 || component.status === 'conflict';
+    })
+    .map(function (component) {
+      return (
+        '<li class="flex items-baseline gap-2 py-0.5">' +
+        '<span class="' + tone[component.status] + '">' + mark[component.status] + '</span>' +
+        '<span class="text-slate-300">' + escapeHtml(translate(component.label)) + '</span>' +
+        '<span class="text-slate-500">' + escapeHtml(component.detail) + '</span>' +
+        '</li>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div class="mt-2 rounded-xl bg-ink-950/60 px-3.5 py-3">' +
+    '<p class="text-[11.5px] text-slate-300">' + escapeHtml(translate(breakdown.headline)) + '</p>' +
+    (rows ? '<ul class="mt-2 text-[11.5px]">' + rows + '</ul>' : '') +
     '</div>'
   );
 }
@@ -3443,35 +3732,310 @@ function matchingSummaryHtml(matching) {
   if (parts.length === 0) return '';
 
   return (
-    '<span class="text-[11.5px] text-slate-500" title="Моделът се пита само за офертите, които спецификациите не решават.">' +
+    '<span class="text-[11px] text-slate-500" title="Моделът се пита само за офертите, които спецификациите не решават.">' +
     '<i class="fa-solid fa-wand-magic-sparkles mr-1 text-[10px] text-accent-500/70"></i>' +
     parts.join(' · ') +
     '</span>'
   );
 }
 
-function renderCatalogueResults(hits, query, matching) {
-  const results = $('#catalogue-results');
-  catalogueHits = hits;
+/**
+ * The filters this search can offer, which is never the same list twice.
+ *
+ * A laptop search offers memory, storage and a screen size. A pipe search
+ * offers a bore, a length and a material. Neither list is written down
+ * anywhere: the server counts what the candidates on *this* page turned out to
+ * state, and an attribute earns a chip by having more than one value among
+ * them — which is exactly the condition under which a filter is any use.
+ */
+let catalogueFilters = {};
 
-  if (!hits.length) {
+function renderFacets(matching) {
+  const facets = (matching && matching.facets) || [];
+  if (!facets.length) return '';
+
+  const chips = facets
+    .map(function (facet) {
+      const values = facet.values
+        .slice(0, 8)
+        .map(function (entry) {
+          const active = catalogueFilters[facet.key] === entry.value;
+          return (
+            '<button type="button" data-facet="' +
+            escapeHtml(facet.key) +
+            '" data-value="' +
+            escapeHtml(entry.value) +
+            '" class="rounded-md px-2 py-1 text-[11px] ring-1 transition ' +
+            (active
+              ? 'bg-accent-500/15 text-accent-300 ring-accent-500/40'
+              : 'bg-ink-900 text-slate-300 ring-white/8 hover:ring-white/20') +
+            '">' +
+            escapeHtml(entry.value) +
+            '<span class="ml-1 text-slate-500">' +
+            entry.count +
+            '</span></button>'
+          );
+        })
+        .join('');
+
+      return (
+        '<div class="flex flex-wrap items-center gap-1.5">' +
+        '<span class="mr-1 text-[11px] uppercase tracking-wide text-slate-500">' +
+        escapeHtml(attributeLabel(facet.key, facet.label)) +
+        '</span>' +
+        values +
+        '</div>'
+      );
+    })
+    .join('');
+
+  const active = Object.keys(catalogueFilters).length;
+
+  return (
+    '<div id="catalogue-facets" class="mb-3 space-y-2 rounded-xl border border-white/8 bg-ink-900 px-4 py-2.5 shadow-panel">' +
+    '<div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">' +
+    '<i class="fa-solid fa-sliders text-[10px]"></i>Стесни по характеристика' +
+    (active
+      ? '<button type="button" id="clear-facets" class="ml-auto rounded-md px-2 py-0.5 text-[11px] font-normal normal-case text-accent-400 hover:underline">изчисти</button>'
+      : '') +
+    '</div>' +
+    chips +
+    '</div>'
+  );
+}
+
+/**
+ * The next step when your own suppliers do not stock it.
+ *
+ * The whole point of having two scopes, and the reason neither of them needs
+ * to be a decision the buyer makes up front. They ask the working question,
+ * and if the answer is "nobody you deal with", the other question is one
+ * button away rather than a second search they have to construct.
+ */
+function widenHtml(query) {
+  if (searchScope() !== 'my_suppliers') return '';
+
+  return (
+    '<div class="mt-4">' +
+    '<button type="button" id="search-everywhere" ' +
+    'class="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[12.5px] font-semibold text-ink-950 transition hover:bg-accent-400">' +
+    '<i class="fa-solid fa-globe text-[11.5px]"></i>' + translate('Потърси навсякъде') +
+    '</button>' +
+    '<p class="mt-2 text-[11.5px] text-slate-600">' +
+    escapeHtml(translate('Магазини, с които още нямаш договорени условия — цените са по каталог.')) +
+    '</p></div>'
+  );
+}
+
+/** Wires that button, once it is on the page. */
+function bindWiden() {
+  const button = document.getElementById('search-everywhere');
+  if (!button) return;
+
+  button.addEventListener('click', function () {
+    setSearchScope('global');
+    $('#catalogue-search').click();
+  });
+}
+
+/** True when a hit satisfies every filter the reader has switched on. */
+function passesFilters(hit) {
+  const keys = Object.keys(catalogueFilters);
+  if (!keys.length) return true;
+
+  const attributes = (hit.match && hit.match.attributes) || {};
+  return keys.every(function (key) {
+    return attributes[key] === catalogueFilters[key];
+  });
+}
+
+/** Wires the filter chips, once the results they describe are on the page. */
+function bindFacets(hits, query, matching, verdict) {
+  const box = document.getElementById('catalogue-facets');
+  if (!box) return;
+
+  box.querySelectorAll('button[data-facet]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const key = button.getAttribute('data-facet');
+      const value = button.getAttribute('data-value');
+
+      // A second click on the same value clears it. Filters are a way of
+      // asking a narrower question, not a state to be trapped in.
+      if (catalogueFilters[key] === value) delete catalogueFilters[key];
+      else catalogueFilters[key] = value;
+
+      renderCatalogueResults(hits, query, matching, verdict);
+    });
+  });
+
+  const clear = document.getElementById('clear-facets');
+  if (clear) {
+    clear.addEventListener('click', function () {
+      catalogueFilters = {};
+      renderCatalogueResults(hits, query, matching, verdict);
+    });
+  }
+}
+
+
+/**
+ * What this shop will let you pay monthly.
+ *
+ * A price is one number and a purchase is often two decisions — 229 € against
+ * 12 × 20.75 € is capital against cashflow, and the buyer could already see
+ * the second on the shop's own page while the comparison stayed silent about
+ * it.
+ *
+ * The shortest plan is shown, because it is the one with the least interest
+ * buried in it and the one a buyer reads as "what would this cost me a month".
+ * The rest, and the lender, ride along in the tooltip: a name is what makes
+ * the offer checkable, and a buyer with an account at one bank and none at
+ * another is not choosing between equal offers.
+ */
+function instalmentChipHtml(hit) {
+  const plans = (hit && hit.instalments) || [];
+  if (!plans.length) return '';
+
+  const first = plans[0];
+  const described = plans
+    .map(function (plan) {
+      return (
+        plan.months +
+        ' × ' +
+        plan.monthly.toFixed(2) +
+        ' ' +
+        plan.currency +
+        (plan.provider ? ' · ' + plan.provider : '')
+      );
+    })
+    .join('\n');
+
+  return (
+    '<span class="mt-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-300" ' +
+    'title="' +
+    escapeHtml(translate('На изплащане, както го обявява магазинът:') + '\n' + described) +
+    '">' +
+    '<i class="fa-solid fa-credit-card text-[9px]"></i>' +
+    escapeHtml(
+      first.months + ' × ' + first.monthly.toFixed(2) + ' ' + first.currency,
+    ) +
+    (first.provider
+      ? '<span class="text-sky-300/70">· ' + escapeHtml(first.provider) + '</span>'
+      : '') +
+    '</span>'
+  );
+}
+
+function renderCatalogueResults(allHits, query, matching, verdict) {
+  const results = $('#catalogue-results');
+  catalogueHits = allHits;
+
+  // The server's verdict outranks the list length, and outranks anything a
+  // shop's search engine returned.
+  //
+  // Belt and braces on purpose. The backend now sends only validated rows, so
+  // an empty list already produces the right screen — but this function used
+  // to be handed every candidate a supplier coughed up and rendered them as
+  // priced offers under a note saying nothing matched. One explicit refusal
+  // here means no future payload change can bring that screen back.
+  const status = verdict && verdict.status;
+  if (status === 'NO_MATCH') allHits = [];
+
+  /*
+   * Which rows the price arithmetic is allowed to see.
+   *
+   * The crown, the "from" figure and the per-group spread are claims about
+   * *this article*, and they were being computed over every row on the page.
+   * A cheaper price on a different article is not a saving — it is the one
+   * mistake this feature exists to prevent — and the day an 8.94 € screen
+   * protector outranked a 114.99 € polisher, the arithmetic was correct and
+   * the answer was nonsense.
+   *
+   * So the server says which rows are offers, and only those are priced.
+   * Alternatives stay on the page and stay out of the sums.
+   */
+  const offerUrls = new Set(
+    ((verdict && verdict.offers) || []).map(function (offer) { return offer.url; }),
+  );
+  const isOffer = function (hit) {
+    return offerUrls.size ? offerUrls.has(hit.url) : Boolean(hit.match) && hit.match.relation === 'same_product';
+  };
+
+  // Filtering happens here rather than on the server: the results are already
+  // in the browser, and a round trip to hide four rows would be a round trip
+  // the buyer waits for.
+  const hits = allHits.filter(passesFilters);
+
+  // Filtered down to nothing. Said plainly, with the filters still on screen —
+  // an empty table under six switched-on chips reads as a broken search.
+  if (allHits.length && !hits.length) {
     results.innerHTML =
-      '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-12 text-center text-[13.5px] text-slate-500 shadow-panel">' +
-      '<i class="fa-solid fa-inbox mb-3 block text-2xl text-slate-700"></i>' +
-      'Нищо за „' +
-      escapeHtml(query) +
-      '". Пробвайте с модел или артикулен номер вместо описание.</div>';
+      renderFacets(matching) +
+      '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-6 text-center text-[12.5px] text-slate-500 shadow-panel">' +
+      'Никоя оферта не отговаря на избраните характеристики.</div>';
+    bindFacets(allHits, query, matching, verdict);
     return;
   }
 
-  // Rows the matcher is not convinced by are listed but never counted.
-  // A cheaper price on a different article is not a saving, and letting
-  // one set the "from" figure — or wear the crown — turns the whole
-  // comparison into an argument for buying the wrong thing.
+  if (!allHits.length) {
+    const widen = widenHtml(query);
+
+    results.innerHTML =
+      '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-7 text-center shadow-panel">' +
+      '<i class="fa-solid fa-inbox mb-3 block text-[17px] text-slate-700"></i>' +
+      '<p class="text-[13px] font-medium text-slate-300">' +
+      escapeHtml(
+        widen
+          ? formatMessage('Не намерихме „{query}" при твоите доставчици.', { query: query })
+          : formatMessage('Нищо за „{query}".', { query: query }),
+      ) +
+      '</p>' +
+      (widen ||
+        '<p class="mx-auto mt-2 max-w-md text-[12.5px] text-slate-500">' +
+          escapeHtml(translate('Пробвайте с модел или артикулен номер вместо описание.')) +
+          '</p>') +
+      '</div>';
+
+    bindWiden();
+    return;
+  }
+
+  // Two different questions, and answering them with one number was the bug.
+  //
+  //  * **Trusted** decides the *price* claims: the crown, the "from" figure,
+  //    the per-group spread. A cheaper price on a different article is not a
+  //    saving, so anything the matcher is unsure of stays out of the
+  //    arithmetic.
+  //
+  //  * **Excluded** decides what is *shown at all*, and only a stated
+  //    difference earns that. Folding everything under 70 % away meant a
+  //    search for a cable the buyer described in their own words produced a
+  //    screen saying nobody stocked it, with the right answer collapsed
+  //    underneath. A possible match is still an answer.
   const MATCH_FLOOR = 0.7;
   const isWeak = (hit) => Boolean(hit.match) && hit.match.confidence < MATCH_FLOOR;
 
-  const priced = hits.filter((hit) => hit.effectivePrice !== null && !isWeak(hit));
+  const isExcluded = function (hit) {
+    if (!hit.match) return false;
+    if (hit.match.relation) {
+      return hit.match.relation === 'conflict' || hit.match.relation === 'unrelated';
+    }
+    // An older payload with no relation on it: the floor is all there is.
+    return hit.match.confidence < MATCH_FLOOR;
+  };
+
+  // Sold-out rows are shown, and they do not get to set the price.
+  //
+  // The "from 95 €" line, the per-group spread and the crown are claims about
+  // what this article costs *today*. A shop that has run out keeps the row and
+  // the number on its page, often the lowest number on screen because it was
+  // being cleared — so letting it into the arithmetic quotes a price nobody
+  // can pay. Only a stated refusal is excluded: silence about stock is the
+  // normal state of an article that is perfectly available.
+  const priced = hits.filter(
+    (hit) =>
+      hit.effectivePrice !== null && !isWeak(hit) && isOffer(hit) && hit.inStock !== false,
+  );
   const cheapest = priced.length
     ? Math.min(...priced.map((hit) => hit.effectivePrice))
     : 0;
@@ -3479,19 +4043,26 @@ function renderCatalogueResults(hits, query, matching) {
 
   // The crown goes to the cheapest row we believe is the right article,
   // wherever it now sits: the list is ordered by confidence first.
-  const best = priced.reduce(
-    (winner, hit) => (winner === null || hit.effectivePrice < winner.effectivePrice ? hit : winner),
-    null,
-  );
+  const chosen = verdict && verdict.bestOffer;
+  const best =
+    (chosen && priced.find(function (hit) { return hit.url === chosen.url; })) ||
+    priced.reduce(
+      (winner, hit) => (winner === null || hit.effectivePrice < winner.effectivePrice ? hit : winner),
+      null,
+    );
 
   const suppliers = new Set(hits.map((hit) => hit.host));
+  // Counted over offers, because that is what the sentence claims to count.
+  const offerRows = hits.filter(isOffer);
+  const offerCount = offerRows.length;
+  const offerSuppliers = new Set(offerRows.map((hit) => hit.host));
   const showSupplier = true;
 
   // Per-group extremes: the cheapest cable is not comparable with the
   // cheapest reel, so each group is coloured against its own range.
   const groupStats = new Map();
   hits.forEach(function (hit) {
-    if (hit.effectivePrice === null || isWeak(hit)) return;
+    if (hit.effectivePrice === null || isWeak(hit) || !isOffer(hit) || hit.inStock === false) return;
     const stat = groupStats.get(hit.groupKey);
     if (!stat) {
       groupStats.set(hit.groupKey, {
@@ -3520,67 +4091,58 @@ function renderCatalogueResults(hits, query, matching) {
     [...groupStats.entries()].filter(([, stat]) => stat.count > 1).map(([key]) => key),
   );
 
-  const strong = hits.filter((hit) => !isWeak(hit));
-  const weak = hits.filter(isWeak);
+  const strong = hits.filter((hit) => !isExcluded(hit));
+  const weak = hits.filter(isExcluded);
 
   // Eight kitchens returned for "лед крушка" is not eight results. When
   // nothing clears the bar, the honest answer is "nothing matched" with
   // the shop's guesses folded away — listing them like results makes the
   // tool look broken when it was the shop's search engine being generous.
-  if (strong.length === 0) {
-    results.innerHTML =
-      '<div class="overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">' +
-      '<div class="px-5 py-10 text-center">' +
-      '<i class="fa-solid fa-magnifying-glass mb-3 block text-2xl text-slate-700"></i>' +
-      '<p class="text-[14px] font-medium text-slate-300">Никой доставчик няма „' +
-      escapeHtml(query) +
-      '"</p>' +
-      '<p class="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-slate-500">' +
-      'Магазините върнаха ' +
-      weak.length +
-      ' ' +
-      plural(weak.length, 'резултат', 'резултата') +
-      ', но нито един не е този артикул. Опитайте с модел, мощност или артикулен номер.' +
-      '</p>' +
-      '<button type="button" id="show-weak" class="mt-4 rounded-lg border border-white/10 bg-ink-850 px-4 py-2 text-[12.5px] font-medium text-slate-400 transition hover:text-slate-200">' +
-      'Покажи какво върнаха магазините' +
-      '</button>' +
-      '</div>' +
-      '<div id="weak-list" class="hidden divide-y divide-white/[0.06] border-t border-white/8"></div>' +
-      '</div>';
+  /*
+   * Nothing the matcher would stand behind — which is not the same as nothing.
+   *
+   * This used to answer with a panel saying "никой доставчик няма" and fold
+   * every row away behind a button. A search that had just reported "намерено
+   * в 1 от 6 магазина · 11 резултата" then showed none of them, and the two
+   * halves of the screen contradicted each other in front of the reader.
+   *
+   * A shop's own search returning eleven things is information. It is not a
+   * confirmed match and it must not be dressed as one, but hiding it is the
+   * software telling somebody that what they can plainly see does not exist.
+   * So the rows are shown, with a line above them saying exactly what they are.
+   */
+  const nothingConfirmed = strong.length === 0;
 
-    const list = document.getElementById('weak-list');
-    list.innerHTML = weak
-      .map(function (hit) {
-        return (
-          '<div class="flex items-center gap-3 px-5 py-2.5 text-[12.5px]">' +
-          '<span class="min-w-0 flex-1 truncate text-slate-400">' + escapeHtml(hit.name) + '</span>' +
-          '<span class="shrink-0 text-slate-600">' + escapeHtml(hit.shopName) + '</span>' +
-          '<span class="num shrink-0 text-slate-500">' +
-          (hit.effectivePrice === null ? '—' : hit.effectivePrice.toFixed(2) + ' ' + escapeHtml(hit.effectiveCurrency)) +
-          '</span></div>'
-        );
-      })
-      .join('');
-
-    document.getElementById('show-weak').addEventListener('click', function () {
-      list.classList.toggle('hidden');
-      this.textContent = list.classList.contains('hidden')
-        ? 'Покажи какво върнаха магазините'
-        : 'Скрий';
-    });
-
-    return;
-  }
+  const unconfirmedNote = nothingConfirmed
+    ? '<div class="border-b border-white/8 bg-amber-500/[0.06] px-4 py-3 text-[11.5px] leading-relaxed text-amber-400">' +
+      '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
+      escapeHtml(
+        formatMessage('Нищо не съвпада точно с „{query}".', { query: query }),
+      ) +
+      ' <span class="text-amber-400/70">' +
+      escapeHtml(
+        pluralMessage(hits.length, {
+          one: 'Отдолу е {n} резултатът, който търсачките на магазините върнаха.',
+          other: 'Отдолу са {n} резултата, които търсачките на магазините върнаха.',
+        }),
+      ) +
+      '</span>' +
+      widenHtml(query) +
+      '</div>'
+    : '';
 
   const ordered = [
-    ...strong.filter((hit) => comparable.has(hit.groupKey)),
-    ...strong.filter((hit) => !comparable.has(hit.groupKey)),
+    ...strong.filter((hit) => !isWeak(hit) && comparable.has(hit.groupKey)),
+    ...strong.filter((hit) => !isWeak(hit) && !comparable.has(hit.groupKey)),
+    ...strong.filter(isWeak),
     ...weak,
   ];
 
   let singlesHeaderDone = false;
-  let weakHeaderDone = false;
+  // Two running headings, because a row can be unsure *and* a row can be ruled
+  // out, and they are shown in different halves of the table.
+  let lastUnsureRelation = null;
+  let lastExcludedRelation = null;
 
   const rows = ordered
     .map(function (hit, index) {
@@ -3590,7 +4152,7 @@ function renderCatalogueResults(hits, query, matching) {
       const groupHeader = (label, note, spread, currency) =>
         '<tr><td colspan="' +
         columnCount +
-        '" class="border-y border-white/8 bg-ink-950/60 px-5 py-2">' +
+        '" class="border-y border-white/8 bg-ink-950/60 px-4 py-2">' +
         '<span class="flex flex-wrap items-baseline gap-x-2 gap-y-1">' +
         '<span class="text-[11px] font-semibold uppercase tracking-wide text-accent-500">' +
         escapeHtml(label) +
@@ -3609,20 +4171,27 @@ function renderCatalogueResults(hits, query, matching) {
           : '') +
         '</span></td></tr>';
 
-      if (isWeak(hit)) {
+      if (isExcluded(hit)) {
         // Checked first: a doubtful row often shares a group with the
         // real ones, and falling into the group branch would file it
         // under a heading that says these are comparable.
-        if (!weakHeaderDone) {
-          weakHeaderDone = true;
+        //
+        // Which heading depends on *why* it is doubtful, and those are not
+        // degrees of one thing. A 256 GB drive where 128 was asked for is a
+        // different article; a brake pad by another maker for the same car is
+        // a purchase worth considering; a listing the shop merely guessed at
+        // is neither. One heading for all three told the buyer nothing.
+        const relation = (hit.match && hit.match.relation) || 'possible';
+        if (relation !== lastExcludedRelation) {
+          lastExcludedRelation = relation;
           header = groupHeader(
-            'Може да не е същият артикул',
-            'показани, но извън сравнението на цените',
+            WEAK_GROUP_HEADINGS[relation] || WEAK_GROUP_HEADINGS.possible,
+            WEAK_GROUP_NOTES[relation] || WEAK_GROUP_NOTES.possible,
             0,
             '',
           );
         }
-      } else if (comparable.has(hit.groupKey)) {
+      } else if (comparable.has(hit.groupKey) && !isWeak(hit)) {
         if (hit.groupKey !== lastGroup) {
           lastGroup = hit.groupKey;
           header = groupHeader(
@@ -3638,6 +4207,19 @@ function renderCatalogueResults(hits, query, matching) {
               hit.effectiveCurrency,
             stat.max - stat.min,
             hit.effectiveCurrency,
+          );
+        }
+      } else if (isWeak(hit)) {
+        // Shown, and shown as what it is: a listing worth a look that the
+        // matcher would not put a price claim behind.
+        const relation = (hit.match && hit.match.relation) || 'possible';
+        if (relation !== lastUnsureRelation) {
+          lastUnsureRelation = relation;
+          header = groupHeader(
+            WEAK_GROUP_HEADINGS[relation] || WEAK_GROUP_HEADINGS.possible,
+            WEAK_GROUP_NOTES[relation] || WEAK_GROUP_NOTES.possible,
+            0,
+            '',
           );
         }
       } else if (!singlesHeaderDone && comparable.size > 0) {
@@ -3694,12 +4276,12 @@ function renderCatalogueResults(hits, query, matching) {
         (hit.url
           ? '<a href="' +
             escapeHtml(hit.url) +
-            '" target="_blank" rel="noopener noreferrer" class="block truncate text-[13px] font-medium text-slate-200 transition group-hover:text-accent-500" title="' +
+            '" target="_blank" rel="noopener noreferrer" class="block text-[12.5px] font-medium leading-snug text-slate-200 transition [overflow-wrap:anywhere] group-hover:text-accent-500" title="' +
             escapeHtml(hit.name) +
             '">' +
             escapeHtml(hit.name) +
             '</a>'
-          : '<span class="block truncate text-[13px] font-medium text-slate-200" title="' +
+          : '<span class="block text-[12.5px] font-medium leading-snug text-slate-200 [overflow-wrap:anywhere]" title="' +
             escapeHtml(hit.name) +
             '">' +
             escapeHtml(hit.name) +
@@ -3707,28 +4289,30 @@ function renderCatalogueResults(hits, query, matching) {
         (specs || hit.match || !hit.matched || hit.recordedAt
           ? '<span class="mt-1 flex flex-wrap items-center gap-1">' +
             matchBadgeHtml(hit) +
+            newSupplierBadgeHtml(hit) +
             // A price typed in three weeks ago and one read three seconds
             // ago rank together, which is right — but they are not the
             // same claim, and only this says so.
             (hit.priceSource === 'manual'
-              ? '<span class="rounded-md bg-violet-500/12 px-1.5 py-0.5 text-[10.5px] text-violet-300" ' +
+              ? '<span class="rounded-md bg-violet-500/12 px-1.5 py-0.5 text-[10px] text-violet-300" ' +
                 'title="Цена, която вие сте въвели. Нищо не я презарежда — проверете я, ако е стара.">' +
                 'ваша цена · ' +
                 escapeHtml(formatRelative(hit.recordedAt)) +
                 '</span>'
               : hit.recordedAt
-                ? '<span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10.5px] text-slate-400" ' +
+                ? '<span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-400" ' +
                   'title="Прочетено от магазина по-рано и запазено. Отметнете „Питай наново“ за цена към момента.">' +
                   'прочетено ' +
                   escapeHtml(formatRelative(hit.recordedAt)) +
                   '</span>'
                 : '') +
             specs +
+            instalmentChipHtml(hit) +
             '</span>'
           : '') +
         '</span></span></td>' +
         (showSupplier
-          ? '<td class="px-3 py-3 text-[12px] text-slate-400">' +
+          ? '<td class="px-3 py-3 text-[11.5px] text-slate-400">' +
             // A supplier without a page is a name, not a link. This cell used
             // to write the anchor either way, and an empty href is not an
             // inert link — the browser resolves it against the current page,
@@ -3747,7 +4331,7 @@ function renderCatalogueResults(hits, query, matching) {
                 '">' +
                 escapeHtml(hit.shopName) +
                 '</span>') +
-            '<span class="block truncate font-mono text-[10.5px] text-slate-500">' +
+            '<span class="block truncate font-mono text-[10px] text-slate-500">' +
             escapeHtml(hit.host) +
             '</span>' +
             (hit.discountPercent > 0
@@ -3758,7 +4342,7 @@ function renderCatalogueResults(hits, query, matching) {
             '</td>'
           : '') +
         (anyDiscount
-          ? '<td class="num px-3 py-3 text-right text-[12px] ' +
+          ? '<td class="num px-3 py-3 text-right text-[11.5px] ' +
             (hit.discountPercent > 0 ? 'text-slate-500 line-through' : 'text-slate-600') +
             '">' +
             (hit.listedPrice === null ? '—' : hit.listedPrice.toFixed(2)) +
@@ -3766,16 +4350,16 @@ function renderCatalogueResults(hits, query, matching) {
           : '') +
         '<td class="px-3 py-3">' +
         '<span class="flex items-baseline justify-end gap-1.5">' +
-        '<span class="num text-[16px] font-semibold ' +
+        '<span class="num text-[14px] font-semibold ' +
         (isBest ? 'text-emerald-400' : 'text-slate-200') +
         '">' +
         (hit.effectivePrice === null ? '—' : hit.effectivePrice.toFixed(2)) +
         '</span>' +
-        '<span class="text-[10.5px] text-slate-600">' +
+        '<span class="text-[10px] text-slate-600">' +
         escapeHtml(hit.effectiveCurrency) +
         '</span></span>' +
         (hit.discountPercent > 0 && hit.listedPrice !== null
-          ? '<span class="mt-0.5 block text-right text-[10.5px] text-accent-300/80">' +
+          ? '<span class="mt-0.5 block text-right text-[10px] text-accent-300/80">' +
             translate('след') +
             ' −' +
             hit.discountPercent +
@@ -3788,23 +4372,23 @@ function renderCatalogueResults(hits, query, matching) {
         '<td class="px-3 py-3 text-right">' +
         (isBest
           ? '<span class="inline-flex items-center gap-1 rounded-md bg-emerald-500/12 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">' +
-            '<i class="fa-solid fa-check text-[8px]"></i>най-евтин</span>'
+            '<i class="fa-solid fa-check text-[9px]"></i>най-евтин</span>'
           : delta === null || stat.count < 2
             ? '<span class="text-[11px] text-slate-600">—</span>'
-            : '<span class="num block text-[12.5px] font-semibold ' +
+            : '<span class="num block text-[11.5px] font-semibold ' +
               deltaTone +
               '">+' +
               delta.toFixed(2) +
               '</span>' +
-              '<span class="num block text-[10.5px] text-slate-500">+' +
+              '<span class="num block text-[10px] text-slate-500">+' +
               over.toFixed(0) +
               '%</span>') +
         '</td>' +
         '<td class="py-3 pl-3 pr-5">' +
         (hit.inStock === false
-          ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-400"><i class="fa-solid fa-circle-minus text-[8px]"></i>изчерпан</span>'
+          ? '<span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-400"><i class="fa-solid fa-circle-minus text-[9px]"></i>изчерпан</span>'
           : hit.inStock === true
-            ? '<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[11px] font-medium text-emerald-400"><i class="fa-solid fa-circle-check text-[8px]"></i>наличен</span>'
+            ? '<span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-emerald-500/12 px-2 py-0.5 text-[11px] font-medium text-emerald-400"><i class="fa-solid fa-circle-check text-[9px]"></i>наличен</span>'
             : '<span class="text-[11px] text-slate-600">—</span>') +
         '</td></tr>'
       );
@@ -3820,11 +4404,24 @@ function renderCatalogueResults(hits, query, matching) {
 
      Everything a row knows is already printed on it, so there is nothing to
      add in that space. It goes to the two columns that carry words. */
+  /*
+   * Widths that fit the words the columns actually contain.
+   *
+   * Availability had nine per cent, which is not enough for the badge that
+   * goes in it — "изчерпан" with its icon overflowed, and the wrapper's
+   * `overflow-hidden` sliced the label down the middle. The article column had
+   * forty-six and spent it truncating titles anyway, because a product name in
+   * this trade is sixty characters before the size.
+   *
+   * So the widest column gives up what the narrowest one was short of. Nothing
+   * scrolls sideways: the table still totals a hundred per cent, and the names
+   * wrap onto a second line rather than losing their ends.
+   */
   const columns = anyDiscount
-    ? '<col class="w-[40%]" /><col class="w-[18%]" /><col class="w-[9%]" />' +
-      '<col class="w-[15%]" /><col class="w-[9%]" /><col class="w-[9%]" />'
-    : '<col class="w-[46%]" /><col class="w-[20%]" />' +
-      '<col class="w-[16%]" /><col class="w-[9%]" /><col class="w-[9%]" />';
+    ? '<col class="w-[34%]" /><col class="w-[16%]" /><col class="w-[9%]" />' +
+      '<col class="w-[13%]" /><col class="w-[11%]" /><col class="w-[17%]" />'
+    : '<col class="w-[40%]" /><col class="w-[18%]" />' +
+      '<col class="w-[14%]" /><col class="w-[11%]" /><col class="w-[17%]" />';
 
   const range =
     singleGroup && priced.length > 1
@@ -3845,7 +4442,7 @@ function renderCatalogueResults(hits, query, matching) {
 
   const spread =
     singleGroup && priced.length > 1 && cheapest > 0
-      ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-semibold text-emerald-400">' +
+      ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11px] font-semibold text-emerald-400">' +
         escapeHtml(
           formatMessage('спестявате до {amount} на бройка', {
             amount: (dearest - cheapest).toFixed(2) + ' ' + priced[0].effectiveCurrency,
@@ -3853,7 +4450,7 @@ function renderCatalogueResults(hits, query, matching) {
         ) +
         '</span>'
       : bestSaving > 0
-        ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-semibold text-emerald-400">' +
+        ? '<span class="rounded-md bg-emerald-500/12 px-2 py-1 text-[11px] font-semibold text-emerald-400">' +
           escapeHtml(
             formatMessage('спестявате до {amount}', {
               amount: bestSaving.toFixed(2) + ' ' + priced[0].effectiveCurrency,
@@ -3864,41 +4461,46 @@ function renderCatalogueResults(hits, query, matching) {
 
   // When a shop's search guesses at everything, say so once at the top
   // rather than leaving the user to wonder why "СВТ" returned downlights.
+  // One note, not two saying the same thing. When nothing was confirmed, that
+  // is the more precise complaint and it wins.
   const anyMatched = hits.some((hit) => hit.matched);
-  const guessNote = anyMatched
-    ? ''
-    : '<div class="border-b border-white/8 bg-amber-500/[0.06] px-5 py-2.5 text-[12px] text-amber-400">' +
-      '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
-      'Никой магазин не намери точно „' +
-      escapeHtml(query) +
-      '". Показаното е това, което техните търсачки върнаха по подобие.</div>';
+  const guessNote =
+    unconfirmedNote ||
+    (anyMatched
+      ? ''
+      : '<div class="border-b border-white/8 bg-amber-500/[0.06] px-4 py-2.5 text-[11.5px] text-amber-400">' +
+        '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
+        'Никой магазин не намери точно „' +
+        escapeHtml(query) +
+        '". Показаното е това, което техните търсачки върнаха по подобие.</div>');
 
   results.innerHTML =
-    '<div class="overflow-hidden rounded-2xl border border-white/8 bg-ink-900 shadow-panel">' +
+    renderFacets(matching) +
+    '<div class="overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
     guessNote +
-    '<div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-5 py-3.5">' +
-    '<p class="text-[12.5px] text-slate-500">' +
-    '<strong class="text-slate-300">' +
-    hits.length +
-    '</strong> ' +
+    '<div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-2.5">' +
+    '<p class="text-[12.5px] text-slate-400">' +
     escapeHtml(
-      pluralMessage(suppliers.size, {
-        one: 'оферти в {n} магазин',
-        other: 'оферти в {n} магазина',
+      // Matches, never retrieved rows. This said `hits.length` and therefore
+      // announced "Намерихме 8 оферти" about eight things nobody could buy.
+      pluralMessage(offerCount, {
+        one: 'Намерихме {n} оферта',
+        other: 'Намерихме {n} оферти',
       }),
+    ) +
+    ' ' +
+    escapeHtml(
+      pluralMessage(offerSuppliers.size, { one: 'от {n} магазин', other: 'от {n} магазина' }),
     ) +
     range +
     '</p>' +
-    matchingSummaryHtml(matching) +
     spread +
     '</div>' +
     verdictHtml(best, priced, dearest) +
-    '<div class="hidden">' +
-    '</div>' +
     '<table class="w-full table-fixed text-left"><colgroup>' +
     columns +
     '</colgroup>' +
-    '<thead><tr class="border-b border-white/8 text-[10.5px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
+    '<thead><tr class="border-b border-white/8 text-[10px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
     '<th class="py-2.5 pl-5 pr-3 font-semibold">Артикул</th>' +
     '<th class="px-3 py-2.5 font-semibold">Магазин</th>' +
     (anyDiscount ? '<th class="px-3 py-2.5 text-right font-semibold">Етикет</th>' : '') +
@@ -3907,7 +4509,50 @@ function renderCatalogueResults(hits, query, matching) {
     '<th class="py-2.5 pl-3 pr-5 font-semibold">Наличност</th>' +
     '</tr></thead><tbody>' +
     rows +
-    '</tbody></table></div>';
+    '</tbody></table>' +
+    // What the search cost and how it was decided. Kept, because it is true
+    // and an operator asks for it; folded away, because a buyer placing an
+    // order has no use for a model's name.
+    detailsHtml(matching) +
+    '</div>';
+
+  bindFacets(allHits, query, matching, verdict);
+  bindWiden();
+}
+
+/**
+ * The search, explained to whoever asks.
+ *
+ * Everything that used to sit in the results header — how many pairs
+ * arithmetic settled, which model was consulted, what it cost, where the
+ * seconds went. None of it is a buyer's question, and putting it beside the
+ * price made the screen read like a console.
+ */
+function detailsHtml(matching) {
+  if (!matching) return '';
+
+  const summary = matchingSummaryHtml(matching);
+  const timings = matching.timings;
+
+  const timing = timings
+    ? '<p class="mt-1.5 text-[11px] text-slate-600">' +
+      'доставчици ' + Math.round(timings.retrieval) + ' ms · ' +
+      'разчитане ' + Math.round(timings.parse) + ' ms · ' +
+      'съпоставяне ' + Math.round(timings.matching) + ' ms' +
+      (timings.ai > 0 ? ' · AI ' + Math.round(timings.ai) + ' ms' : ' · без AI') +
+      '</p>'
+    : '';
+
+  if (!summary && !timing) return '';
+
+  return (
+    '<details class="border-t border-white/8 px-4 py-2.5">' +
+    '<summary class="cursor-pointer list-none text-[11px] text-slate-600 transition hover:text-slate-400">' +
+    'Как е намерено' +
+    '</summary>' +
+    '<div class="pt-2">' + summary + timing + '</div>' +
+    '</details>'
+  );
 }
 
 /**
@@ -3922,7 +4567,7 @@ function renderDidYouMean(matching, query) {
   if (!suggestion || suggestion === query.toLowerCase()) return;
 
   const box = document.createElement('div');
-  box.className = 'mt-3 text-[12.5px] text-slate-400';
+  box.className = 'mt-3 text-[11.5px] text-slate-400';
   box.innerHTML =
     'Имахте предвид <button type="button" class="font-semibold text-accent-500 underline underline-offset-2">' +
     escapeHtml(suggestion) +
@@ -3949,31 +4594,65 @@ function renderDidYouMean(matching, query) {
 function renderUnderstood(understood, shops) {
   const chips = [];
 
+  // What kind of thing, first: it is what the reader checks before anything
+  // else, and it is now whatever noun they typed rather than one of eight
+  // categories somebody compiled in advance.
+  if (understood.productType || understood.category) {
+    chips.push(['Вид', understood.productType || understood.category]);
+  }
   if (understood.brand) chips.push(['Марка', understood.brand]);
-  if (understood.category) chips.push(['Вид', CATEGORY_LABELS[understood.category] || understood.category]);
-  (understood.measurements || []).forEach(function (m) {
-    chips.push([UNIT_LABELS[m.unit] || m.unit, m.value + m.unit]);
-  });
-  Object.keys(understood.specs || {}).forEach(function (key) {
-    chips.push([SPEC_LABELS[key] || key, understood.specs[key]]);
+
+  // The attributes are dynamic. A laptop query shows memory and storage, a
+  // pipe query shows a bore and a length, and neither of them is listed
+  // anywhere in this file — the payload carries its own labels, and the map
+  // below is only a Bulgarian name for the keys we happen to know.
+  const attributes = understood.attributes || {};
+  Object.keys(attributes).forEach(function (key) {
+    const attribute = attributes[key];
+    if (!attribute || attribute.role === 'descriptive') return;
+    chips.push([attributeLabel(key, attribute.label), attribute.value]);
   });
 
+  // Older payloads, and anything the engine could not name.
+  if (chips.length <= 2) {
+    (understood.measurements || []).forEach(function (m) {
+      chips.push([attributeLabel(m.unit), m.value + m.unit]);
+    });
+    Object.keys(understood.specs || {}).forEach(function (key) {
+      chips.push([attributeLabel(key), understood.specs[key]]);
+    });
+  }
+
+  ((understood.identifiers || {}).modelCodes || []).slice(0, 2).forEach(function (code) {
+    chips.push(['Модел', code]);
+  });
+
+  // How many they want is not what the article is, and showing it apart from
+  // the specification is how the reader learns we know the difference.
+  const wanted =
+    understood.requestedQuantity && understood.requestedQuantity > 1
+      ? '<span class="ml-auto font-normal normal-case text-slate-500">× ' +
+        escapeHtml(String(understood.requestedQuantity)) +
+        '</span>'
+      : '<span class="ml-auto font-normal normal-case text-slate-500">' +
+        shops + ' ' + plural(shops, 'доставчик', 'доставчици') + '</span>';
+
   return (
-    '<div class="overflow-hidden rounded-2xl border border-accent-500/25 bg-accent-500/[0.05]">' +
-    '<div class="flex items-center gap-2 border-b border-accent-500/15 px-5 py-2.5 text-[12px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">' +
+    '<div class="overflow-hidden rounded-xl border border-accent-500/25 bg-accent-500/[0.05]">' +
+    '<div class="flex items-center gap-2 border-b border-accent-500/15 px-4 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-400">' +
     '<i class="fa-solid fa-wand-magic-sparkles text-[11px]"></i>Разчетох заявката' +
-    '<span class="ml-auto font-normal normal-case text-slate-500">' + shops + ' ' + plural(shops, 'доставчик', 'доставчици') + '</span>' +
+    wanted +
     '</div>' +
-    '<div class="px-5 py-4">' +
+    '<div class="px-4 py-2.5">' +
     (chips.length
       ? '<div class="flex flex-wrap gap-1.5">' +
         chips
           .map(
             ([label, value], index) =>
-              // Staggered so the attributes appear one after another —
-              // the reading is instant, and showing it instantly makes it
-              // look like a static label rather than something worked out.
-              '<span class="chip-in rounded-md bg-ink-900 px-2 py-1 text-[11.5px] text-slate-300 ring-1 ring-white/8" style="animation-delay:' +
+              // Staggered so the attributes appear one after another — the
+              // reading is instant, and showing it instantly makes it look
+              // like a static label rather than something worked out.
+              '<span class="chip-in rounded-md bg-ink-900 px-2 py-1 text-[11px] text-slate-300 ring-1 ring-white/8" style="animation-delay:' +
               index * 70 +
               'ms">' +
               '<span class="text-slate-500">' + escapeHtml(label) + ':</span> ' +
@@ -3982,7 +4661,7 @@ function renderUnderstood(understood, shops) {
           )
           .join('') +
         '</div>'
-      : '<p class="text-[12.5px] text-slate-400">Търся по описание — добавете мощност, размер или модел за по-точно сравнение.</p>') +
+      : '<p class="text-[11.5px] text-slate-400">Търся по описание — добавете мощност, размер или модел за по-точно сравнение.</p>') +
     '<div id="stream-shops" class="mt-3 space-y-1"></div>' +
     '<div id="stream-stage" class="mt-3"></div>' +
     '</div></div>'
@@ -4008,9 +4687,9 @@ function renderStage(stage) {
       '<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75"></span>' +
       '<span class="relative inline-flex h-2 w-2 rounded-full bg-accent-500"></span>' +
       '</span>' +
-      '<span class="text-[12.5px] text-slate-200">' +
+      '<span class="text-[11.5px] text-slate-200">' +
       '<strong class="font-semibold">AI проверява</strong> ' +
-      stage.count + ' ' + plural(stage.count, 'оферта', 'оферти') +
+      stage.count + ' ' + plural(stage.count, 'резултат', 'резултата') +
       ', които спецификациите не решават' +
       '</span>' +
       '<span class="ml-auto font-mono text-[11px] text-slate-500">' + escapeHtml(stage.model || '') + '</span>' +
@@ -4019,29 +4698,87 @@ function renderStage(stage) {
   }
 
   box.innerHTML =
-    '<div class="flex items-center gap-2.5 text-[12.5px] text-slate-400">' +
+    '<div class="flex items-center gap-2.5 text-[11.5px] text-slate-400">' +
     '<i class="fa-solid fa-circle-notch fa-spin text-[11px] text-slate-500"></i>' +
     escapeHtml(stage.text) +
     '</div>';
 }
 
-const CATEGORY_LABELS = {
-  'led-bulb': 'крушка',
-  cable: 'кабел',
-  laptop: 'лаптоп',
-  phone: 'телефон',
-  monitor: 'монитор',
-  tv: 'телевизор',
-  tool: 'инструмент',
-  breaker: 'прекъсвач',
-};
-const UNIT_LABELS = {
+/**
+ * Bulgarian names for the attribute keys we happen to recognise.
+ *
+ * A fallback, not a registry. Every attribute in the payload carries its own
+ * label, and one this map has never heard of renders under the name the
+ * engine gave it rather than disappearing — which is what lets a trade nobody
+ * has written a row for still get a readable search.
+ */
+const ATTRIBUTE_LABELS = {
+  ram: 'Памет (RAM)', storage: 'Диск', capacity: 'Обем', battery: 'Батерия',
+  length: 'Дължина', width: 'Ширина', height: 'Височина', depth: 'Дълбочина',
+  diameter: 'Диаметър', thickness: 'Дебелина', cross_section: 'Сечение',
+  dimensions: 'Размери', screen: 'Екран', power: 'Мощност', voltage: 'Напрежение',
+  current: 'Ток', colour_temperature: 'Цветна температура', luminous_flux: 'Светлинен поток',
+  frequency: 'Честота', refresh_rate: 'Опресняване', cpu: 'Процесор', pressure: 'Налягане',
+  torque: 'Въртящ момент', rotation: 'Обороти', weight: 'Тегло', grammage: 'Грамаж',
+  temperature_rating: 'Температура', package_quantity: 'Опаковка', warranty: 'Гаранция',
+  model_year: 'Година', socket: 'Фасунга', connector: 'Конектор', protection: 'Защита',
+  thread: 'Резба', paper_format: 'Формат', resolution: 'Резолюция', efficiency: 'Клас',
+  breaker_curve: 'Характеристика', standard: 'Стандарт', colour: 'Цвят', material: 'Материал',
+  position: 'Позиция', brand: 'Марка', type: 'Вид', family: 'Серия', model: 'Модел',
+  curve: 'Характеристика', data: 'Памет', volume: 'Обем', mass: 'Тегло', count: 'Брой',
   W: 'Мощност', K: 'Цвят', V: 'Напрежение', A: 'Ток', GB: 'Памет', TB: 'Памет',
   IN: 'Размер', M: 'Дължина', MM2: 'Сечение', HZ: 'Честота', LM: 'Поток',
 };
-const SPEC_LABELS = {
-  socket: 'Фасунга', cross_section: 'Сечение', resolution: 'Резолюция',
-  connector: 'Конектор', protection: 'Защита', curve: 'Характеристика',
+
+/**
+ * The name for an attribute key, whichever way it arrived.
+ *
+ * A listing stating two lengths sends them as `length` and `length_2`, and
+ * looking the second one up verbatim found nothing and printed the engine's
+ * English fallback next to the Bulgarian first one.
+ */
+function attributeLabel(key, fallback) {
+  return (
+    ATTRIBUTE_LABELS[key] ||
+    ATTRIBUTE_LABELS[String(key).replace(/_\d+$/, '')] ||
+    fallback ||
+    key
+  );
+}
+
+/**
+ * What each relation is called on a badge.
+ *
+ * The distinction a percentage could never carry: the same article, another
+ * size of the same article, something that merely fits, and something ruled
+ * out on a specification the buyer stated.
+ */
+const WEAK_GROUP_HEADINGS = {
+  same_family: 'Друг вариант на същия артикул',
+  same_type: 'Подобни артикули',
+  compatible: 'Съвместими',
+  conflict: 'Различна спецификация',
+  possible: 'Може да не е същият артикул',
+  unrelated: 'Върнато по подобие от магазина',
+};
+
+const WEAK_GROUP_NOTES = {
+  same_family: 'същата серия, друга големина или цвят',
+  same_type: 'същият вид, друг производител',
+  compatible: 'не е същият артикул, но пасва на търсеното',
+  conflict: 'нещо, което поискахте, е различно',
+  possible: 'показани, но извън сравнението на цените',
+  unrelated: 'търсачката на магазина беше щедра',
+};
+
+const RELATION_LABELS = {
+  same_product: 'съвпада',
+  same_family: 'друг вариант',
+  same_type: 'подобен',
+  compatible: 'съвместим',
+  possible: 'вероятно',
+  conflict: 'различен',
+  unrelated: 'слабо',
 };
 
 /* ------------------------------------------------------------------ *
@@ -4089,7 +4826,15 @@ const DEMO_CATALOGUE = [
     groupKey: 'bulb-12w',
     groupLabel: 'LED крушка E27 12W 4000K',
     understood: {
-      category: 'led-bulb',
+      // Shaped exactly like the real payload, dynamic attributes and all, so
+      // the demo cannot show a reading the product does not actually produce.
+      productType: 'крушка',
+      category: 'bulb',
+      attributes: {
+        socket: { value: 'E27', role: 'identity', label: 'Socket' },
+        power: { value: '12 W', role: 'identity', label: 'Power' },
+        colour_temperature: { value: '4000 K', role: 'identity', label: 'Colour temperature' },
+      },
       measurements: [
         { unit: 'W', value: 12 },
         { unit: 'K', value: 4000 },
@@ -4132,7 +4877,7 @@ const DEMO_CATALOGUE = [
       {
         shop: 'kabel-pro.example', price: 6.90,
         title: 'Стойка за лампа Philips E27',
-        band: 'weak', confidence: 0.42,
+        band: 'weak', relation: 'same_type', confidence: 0.42,
         explanation: 'Аксесоар, не самата лампа.',
         reasons: [{ agrees: false, label: 'Вид: стойка, не крушка' }],
       },
@@ -4143,7 +4888,11 @@ const DEMO_CATALOGUE = [
     groupKey: 'cable-3x25',
     groupLabel: 'Кабел СВТ 3x2.5 мм²',
     understood: {
+      productType: 'кабел',
       category: 'cable',
+      attributes: {
+        cross_section: { value: '3X2.5', role: 'identity', label: 'Cross-section' },
+      },
       measurements: [{ unit: 'MM2', value: 2.5 }],
       specs: { cross_section: '3x2.5' },
     },
@@ -4172,7 +4921,7 @@ const DEMO_CATALOGUE = [
       {
         shop: 'svetlina.example', price: 5.12,
         title: 'Кабел СВТ 3x1.5 мм²',
-        band: 'weak', confidence: 0.35,
+        band: 'weak', relation: 'conflict', confidence: 0.35,
         explanation: 'Различно сечение — 3x1.5 не е 3x2.5.',
         reasons: [{ agrees: false, label: 'Сечение', left: '3x2.5', right: '3x1.5' }],
       },
@@ -4231,9 +4980,18 @@ function demoHit(entry, offer) {
     groupLabel: entry.groupLabel,
     match: {
       band: offer.band,
+      // The relation the real engine would have reached: the demo feeds the
+      // real renderer, and a badge that reads "съвпада" for everything would
+      // hide the distinction the product is being demonstrated for.
+      relation: offer.relation || (offer.confidence >= 0.85 ? 'same_product' : 'possible'),
+      group: offer.confidence >= 0.85 ? 'strong' : 'possible',
       confidence: offer.confidence,
       explanation: offer.explanation,
       reasons: offer.reasons,
+      matchedAttributes: [],
+      missingAttributes: [],
+      conflicts: [],
+      attributes: {},
     },
   };
 }
@@ -4247,30 +5005,40 @@ const pause = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
  * staging is the demonstration. The delays are short enough not to feel like
  * a hang and long enough for each step to be read.
  */
-async function runDemoSearch(query) {
+async function runDemoSearch(query, signal) {
   const entry = demoEntryFor(query);
   const results = $('#catalogue-results');
+
+  // The demo is staged with timers rather than requests, so there is no socket
+  // to close — but stop must still stop it. Checked between stages, which is
+  // exactly where the real search checks its own signal.
+  const stopped = function () {
+    if (!signal || !signal.aborted) return false;
+    throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+  };
 
   if (!entry) {
     $('#live-results').innerHTML = '';
     results.innerHTML =
-      '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-10 text-center shadow-panel">' +
-      '<i class="fa-solid fa-flask mb-3 block text-2xl text-slate-700"></i>' +
-      '<p class="text-[13.5px] text-slate-400">' +
+      '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-6 text-center shadow-panel">' +
+      '<i class="fa-solid fa-flask mb-3 block text-[17px] text-slate-700"></i>' +
+      '<p class="text-[12.5px] text-slate-400">' +
       translate('Примерният каталог съдържа само крушки и кабели.') +
-      '</p><p class="mt-1.5 text-[12.5px] text-slate-500">' +
+      '</p><p class="mt-1.5 text-[11.5px] text-slate-500">' +
       translate('Влезте, за да търсите при вашите доставчици — там е целият им асортимент.') +
       '</p>' +
-      '<button type="button" data-signup class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+      '<button type="button" data-signup class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-3.5 py-2.5 text-[12.5px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
       translate('Започни 7 дни безплатно') +
       '</button></div>';
     return;
   }
 
+  stopped();
   handleSearchEvent({ type: 'understood', understood: entry.understood, shops: DEMO_SHOPS.length }, query);
 
   for (const shop of DEMO_SHOPS) {
     await pause(260 + Math.random() * 220);
+    stopped();
     const count = entry.offers.filter((offer) => offer.shop === shop.host).length;
     handleSearchEvent(
       { type: 'shop', name: shop.name, ok: true, count: count, durationMs: 700 + Math.random() * 900 },
@@ -4279,12 +5047,15 @@ async function runDemoSearch(query) {
   }
 
   await pause(320);
+  stopped();
   handleSearchEvent({ type: 'matching', candidates: entry.offers.length }, query);
 
   await pause(520);
+  stopped();
   handleSearchEvent({ type: 'ai', comparisons: 2, model: 'claude' }, query);
 
   await pause(240);
+  stopped();
   handleSearchEvent(
     {
       type: 'result',
@@ -4306,33 +5077,140 @@ async function runDemoSearch(query) {
 /** Says plainly that what is on screen is invented. */
 function demoNotice(container) {
   const note = document.createElement('p');
-  note.className = 'mt-3 text-center text-[12px] text-slate-500';
+  note.className = 'mt-3 text-center text-[11.5px] text-slate-500';
   note.textContent = translate(
     'Примерни данни и измислени доставчици. Влезте, за да питате вашите.',
   );
   container.appendChild(note);
 }
 
-async function searchCatalogue() {
-  const query = $('#catalogue-query').value.trim();
+/* --- Buttons that wait -------------------------------------------- *
+ *
+ * A search takes seconds, and for those seconds the button that started it
+ * used to look exactly like a button that had not been pressed. So people
+ * pressed it again. Every press opened another fan-out to every supplier —
+ * four more requests, four more rate-limiter queues — and the answers came
+ * back interleaved, so the screen showed whichever search finished last
+ * rather than the one the reader was waiting for.
+ *
+ * A button that starts something you cannot stop is a button that will be
+ * pressed twice. So it becomes the way to stop it:
+ *
+ *     Търси  →  Спри  →  Търси
+ *
+ * The second press aborts the work in flight — genuinely, through an
+ * AbortController the workers are handed — and puts the button back. Nothing
+ * queues, nothing overlaps, and the screen never shows the wrong search.
+ */
+
+/** What is running, keyed by the button that started it. */
+const running = new WeakMap();
+
+/**
+ * Makes one button start-and-stop.
+ *
+ * @param button   the control that was pressed
+ * @param worker   receives an AbortSignal; may be async
+ * @param busyText what the button says while the work runs
+ */
+function startable(button, worker, busyText) {
+  if (!button) return Promise.resolve();
+
+  const inFlight = running.get(button);
+
+  // Pressed while running: that is the stop, not a second start.
+  if (inFlight) {
+    inFlight.abort();
+    return Promise.resolve();
+  }
+
+  const controller = new AbortController();
+  running.set(button, controller);
+
+  const label = button.querySelector('[data-label]');
+  const idle = label ? label.textContent : '';
+  if (label) label.textContent = translate(busyText || 'Спри');
+
+  button.classList.add('is-busy');
+  button.setAttribute('aria-busy', 'true');
+
+  const release = function () {
+    running.delete(button);
+    if (label) label.textContent = idle;
+    button.classList.remove('is-busy');
+    button.removeAttribute('aria-busy');
+  };
+
+  return Promise.resolve()
+    .then(() => worker(controller.signal))
+    .catch(function (error) {
+      // A stop is not a failure. The reader asked for it.
+      if (!wasAborted(error)) throw error;
+    })
+    .finally(release);
+}
+
+/** True when this button is mid-flight. */
+function isRunning(button) {
+  return Boolean(button && running.get(button));
+}
+
+/** Whether a rejection is somebody having pressed stop. */
+function wasAborted(error) {
+  return Boolean(error) && (error.name === 'AbortError' || error.code === 20);
+}
+
+/** Where the next search will look. */
+function searchScope() {
+  const chosen = document.querySelector('input[name="catalogue-scope"]:checked');
+  return chosen ? chosen.value : 'my_suppliers';
+}
+
+/** Moves the scope, for the button that widens a search that found nothing. */
+function setSearchScope(scope) {
+  const radio = document.querySelector(
+    'input[name="catalogue-scope"][value="' + scope + '"]',
+  );
+  if (radio) radio.checked = true;
+}
+
+async function searchCatalogue(signal) {
+  const raw = $('#catalogue-query').value;
+  const query = raw.trim();
   const results = $('#catalogue-results');
   const live = $('#live-results');
 
   if (query.length < 2) {
-    results.innerHTML = '<p class="text-[13px] text-amber-400">Въведете поне 2 знака.</p>';
+    results.innerHTML = '<p class="text-[12.5px] text-amber-400">Въведете поне 2 знака.</p>';
+    return;
+  }
+
+  results.innerHTML = '';
+  live.innerHTML = '';
+  $('#basket-results').innerHTML = '';
+  aiShownUntil = 0;
+
+  // One article or a whole order — the same box, the same button, and the
+  // difference worked out here rather than asked of the buyer. It used to be
+  // two inputs behind a toggle, and a person pricing three cables had to
+  // decide which of them their question belonged in before they could ask it.
+  if (parseBasketLines(raw).length > 1) {
+    await priceBasket(raw, signal);
     return;
   }
 
   $('#catalogue-spinner').classList.remove('hidden');
-  results.innerHTML = '';
-  aiShownUntil = 0;
 
   // Nobody signed in means no suppliers to ask, so there is nothing for the
   // real endpoint to answer. The visitor came from a button that promised to
   // show them a search; they get one.
   if (!isIdentified()) {
     try {
-      await runDemoSearch(query);
+      await runDemoSearch(query, signal);
+    } catch (error) {
+      if (!wasAborted(error)) throw error;
+      live.innerHTML = '';
+      results.innerHTML = '<p class="text-[12.5px] text-slate-500">Търсенето е спряно.</p>';
     } finally {
       $('#catalogue-spinner').classList.add('hidden');
     }
@@ -4340,19 +5218,23 @@ async function searchCatalogue() {
   }
 
   live.innerHTML =
-    '<div class="flex items-center gap-2.5 rounded-2xl border border-accent-500/25 bg-accent-500/[0.05] px-5 py-3.5 text-[13px] text-slate-300">' +
-    '<i class="fa-solid fa-circle-notch fa-spin text-[12px] text-accent-400"></i>Разчитам заявката…</div>';
+    '<div class="flex items-center gap-2.5 rounded-xl border border-accent-500/25 bg-accent-500/[0.05] px-4 py-2.5 text-[12.5px] text-slate-300">' +
+    '<i class="fa-solid fa-circle-notch fa-spin text-[11.5px] text-accent-400"></i>Разчитам заявката…</div>';
 
   try {
     const url =
       ENDPOINTS.discoveryCompareStream +
       '?q=' + encodeURIComponent(query) +
+      '&scope=' + encodeURIComponent(searchScope()) +
       ($('#catalogue-instock').checked ? '&inStockOnly=true' : '');
 
     // fetch, not EventSource: the latter cannot send the auth header, and
     // this endpoint is scoped to an account like every other.
     const response = await fetch(url, {
       headers: authHeaders({ Accept: 'text/event-stream' }),
+      // Pressing stop closes the connection rather than leaving the suppliers
+      // being asked on behalf of somebody who has moved on.
+      signal: signal,
     });
 
     if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
@@ -4389,7 +5271,15 @@ async function searchCatalogue() {
     }
   } catch (error) {
     live.innerHTML = '';
-    results.innerHTML = failureHtml(error, 'Търсенето не успя');
+
+    // A stop is not a failure, and saying "търсенето не успя" to somebody who
+    // pressed стоп is the software arguing with them.
+    if (wasAborted(error)) {
+      results.innerHTML =
+        '<p class="text-[12.5px] text-slate-500">Търсенето е спряно.</p>';
+    } else {
+      results.innerHTML = failureHtml(error, 'Търсенето не успя');
+    }
   } finally {
     $('#catalogue-spinner').classList.add('hidden');
   }
@@ -4436,11 +5326,11 @@ function failureHtml(error, prefix) {
 
   if (status === 401 || status === 403) {
     return (
-      '<div class="rounded-2xl border border-white/8 bg-ink-900 px-5 py-8 text-center shadow-panel">' +
-      '<p class="text-[13.5px] text-slate-300">' +
+      '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-8 text-center shadow-panel">' +
+      '<p class="text-[12.5px] text-slate-300">' +
       translate('Сесията е изтекла. Влезте отново, за да продължите.') +
       '</p>' +
-      '<button type="button" data-signin class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+      '<button type="button" data-signin class="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-3.5 py-2.5 text-[12.5px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
       translate('Вход') +
       '</button></div>'
     );
@@ -4448,14 +5338,14 @@ function failureHtml(error, prefix) {
 
   if (status === 429) {
     return (
-      '<p class="text-[13px] text-amber-400">' +
+      '<p class="text-[12.5px] text-amber-400">' +
       translate('Твърде много заявки. Изчакайте минута и опитайте пак.') +
       '</p>'
     );
   }
 
   return (
-    '<p class="text-[13px] text-red-400">' +
+    '<p class="text-[12.5px] text-red-400">' +
     escapeHtml(translate(prefix)) +
     '. ' +
     translate('Опитайте пак след малко.') +
@@ -4478,11 +5368,11 @@ function handleSearchEvent(event, query) {
 
   if (event.type === 'shop') {
     const row = document.createElement('div');
-    row.className = 'flex items-center gap-2 text-[12.5px]';
+    row.className = 'flex items-center gap-2 text-[11.5px]';
     row.innerHTML = event.ok
       ? '<i class="fa-solid fa-check text-[10px] text-emerald-400"></i>' +
         '<span class="text-slate-300">' + escapeHtml(event.name) + '</span>' +
-        '<span class="text-slate-500">' + event.count + ' ' + plural(event.count, 'оферта', 'оферти') + '</span>' +
+        '<span class="text-slate-500">' + event.count + ' ' + plural(event.count, 'резултат', 'резултата') + '</span>' +
         '<span class="ml-auto num text-slate-600">' + (event.durationMs / 1000).toFixed(1) + ' сек</span>'
       : '<i class="fa-solid fa-xmark text-[10px] text-red-400"></i>' +
         '<span class="text-slate-400">' + escapeHtml(event.name) + '</span>' +
@@ -4497,7 +5387,7 @@ function handleSearchEvent(event, query) {
     renderStage({
       kind: 'matching',
       text:
-        'Сравнявам ' + event.candidates + ' ' + plural(event.candidates, 'оферта', 'оферти') + ' по спецификация…',
+        'Сравнявам ' + event.candidates + ' ' + plural(event.candidates, 'резултат', 'резултата') + ' по спецификация…',
     });
     return false;
   }
@@ -4516,14 +5406,14 @@ function handleSearchEvent(event, query) {
       const payload = event;
       window.setTimeout(function () {
         renderShopOutcomes(payload);
-        renderCatalogueResults(payload.hits, query, payload.matching);
+        renderCatalogueResults(payload.hits, query, payload.matching, payload);
         void refreshPlanBar();
       }, wait);
       return false;
     }
 
     renderShopOutcomes(event);
-    renderCatalogueResults(event.hits, query, event.matching);
+    renderCatalogueResults(event.hits, query, event.matching, event);
     // The search may have just spent from the allowance.
     void refreshPlanBar();
     return false;
@@ -4531,7 +5421,7 @@ function handleSearchEvent(event, query) {
 
   if (event.type === 'error') {
     $('#catalogue-results').innerHTML =
-      '<p class="text-[13px] text-red-400">' + escapeHtml(event.message) + '</p>';
+      '<p class="text-[12.5px] text-red-400">' + escapeHtml(event.message) + '</p>';
     return true;
   }
 
@@ -4539,10 +5429,6 @@ function handleSearchEvent(event, query) {
 }
 
 /* --- Pricing a whole order ---------------------------------------- */
-
-$('#basket-toggle').addEventListener('click', function () {
-  $('#basket-panel').classList.toggle('hidden');
-});
 
 /** "СВТ 3x2.5, 100" -> { query, quantity }. Quantity optional. */
 function parseBasketLines(text) {
@@ -4569,13 +5455,13 @@ function parseBasketLines(text) {
     .slice(0, 60);
 }
 
-async function priceBasket() {
-  const lines = parseBasketLines($('#basket-lines').value);
+async function priceBasket(text, signal) {
+  const raw = typeof text === 'string' ? text : $('#catalogue-query').value;
+  const lines = parseBasketLines(raw);
   const box = $('#basket-results');
 
   if (!lines.length) {
-    box.innerHTML =
-      '<p class="text-[13px] text-amber-400">Напишете поне един артикул.</p>';
+    box.innerHTML = '<p class="text-[12.5px] text-amber-400">Напишете поне един артикул.</p>';
     return;
   }
 
@@ -4584,27 +5470,40 @@ async function priceBasket() {
     return;
   }
 
-  $('#basket-spinner').classList.remove('hidden');
+  $('#catalogue-spinner').classList.remove('hidden');
   box.innerHTML =
-    '<p class="text-[13px] text-slate-500">Питам доставчиците за ' +
-    lines.length +
-    ' ' +
-    plural(lines.length, 'артикул', 'артикула') +
-    '…</p>';
+    '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-8 text-center shadow-panel">' +
+    '<i class="fa-solid fa-circle-notch fa-spin mb-3 block text-xl text-accent-400"></i>' +
+    '<p class="text-[12.5px] text-slate-400">Питам доставчиците за ' +
+    lines.length + ' ' + plural(lines.length, 'артикул', 'артикула') + '…</p>' +
+    '<p class="mt-1 text-[11.5px] text-slate-600">Всеки артикул е отделен въпрос към всеки магазин.</p>' +
+    '</div>';
 
   try {
     const response = await fetch(ENDPOINTS.discoveryBasket, {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ lines: lines, useCache: !$('#basket-fresh').checked }),
+      signal: signal,
+      // The raw text, not a parsed list. One parser, on the server, tested —
+      // rather than two that agree until the day somebody types a dash.
+      body: JSON.stringify(
+        Object.assign(
+          { text: raw },
+          // Omitted rather than sent as null: the endpoint rejects unknown and
+          // out-of-range values, and "no limit" is the absence of the field.
+          basketMaxSuppliers ? { maxSuppliers: basketMaxSuppliers } : {},
+        ),
+      ),
     });
 
     if (!response.ok) throw new Error('HTTP ' + response.status);
     renderBasket(await response.json());
   } catch (error) {
-    box.innerHTML = failureHtml(error, 'Остойностяването не успя');
+    box.innerHTML = wasAborted(error)
+      ? '<p class="text-[12.5px] text-slate-500">Остойностяването е спряно.</p>'
+      : failureHtml(error, 'Остойностяването не успя');
   } finally {
-    $('#basket-spinner').classList.add('hidden');
+    $('#catalogue-spinner').classList.add('hidden');
   }
 }
 
@@ -4627,74 +5526,1420 @@ function demoBasketHtml(lines) {
 
   return (
     '<div class="grid gap-3 sm:grid-cols-2">' +
-    '<div class="rounded-xl border border-white/8 bg-ink-850 px-4 py-3.5">' +
-    '<p class="text-[11.5px] uppercase tracking-wide text-slate-500">' +
+    '<div class="rounded-xl border border-white/8 bg-ink-850 px-3.5 py-2.5">' +
+    '<p class="text-[11px] uppercase tracking-wide text-slate-500">' +
     translate('Всичко от един доставчик') +
-    '</p><p class="num mt-1 text-2xl font-bold text-slate-200">' +
+    '</p><p class="num mt-1 text-[17px] font-bold text-slate-200">' +
     single.toFixed(2) +
-    ' <span class="text-[13px] font-normal text-slate-500">EUR</span></p>' +
-    '<p class="mt-0.5 text-[12px] text-slate-400">' +
+    ' <span class="text-[12.5px] font-normal text-slate-500">EUR</span></p>' +
+    '<p class="mt-0.5 text-[11.5px] text-slate-400">' +
     translate('Електро Склад') +
     '</p></div>' +
-    '<div class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3.5">' +
-    '<p class="text-[11.5px] uppercase tracking-wide text-emerald-400/80">' +
+    '<div class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-3.5 py-2.5">' +
+    '<p class="text-[11px] uppercase tracking-wide text-emerald-400/80">' +
     translate('Разделена по най-евтиния') +
-    '</p><p class="num mt-1 text-2xl font-bold text-emerald-400">' +
+    '</p><p class="num mt-1 text-[17px] font-bold text-emerald-400">' +
     split.toFixed(2) +
-    ' <span class="text-[13px] font-normal text-emerald-400/70">EUR</span></p>' +
-    '<p class="mt-0.5 text-[12px] text-slate-400">' +
+    ' <span class="text-[12.5px] font-normal text-emerald-400/70">EUR</span></p>' +
+    '<p class="mt-0.5 text-[11.5px] text-slate-400">' +
     translate('Електро Склад') +
     ', ' +
     translate('Кабел Про') +
     '</p></div></div>' +
-    '<p class="mt-3 rounded-xl border border-white/8 bg-ink-900 px-4 py-3 text-[12.5px] text-slate-400">' +
+    '<p class="mt-3 rounded-xl border border-white/8 bg-ink-900 px-3.5 py-3 text-[11.5px] text-slate-400">' +
     translate('Примерна сметка. Влезте, за да остойностите поръчката при вашите доставчици и с вашите отстъпки.') +
     '</p>' +
-    '<button type="button" data-signup class="mt-3 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
+    '<button type="button" data-signup class="mt-3 inline-flex items-center gap-2 rounded-xl bg-accent-500 px-3.5 py-2.5 text-[12.5px] font-semibold text-white shadow-glow transition hover:bg-accent-600">' +
     translate('Започни 7 дни безплатно') +
     '</button>'
   );
 }
 
-function renderBasket(result) {
-  const box = $('#basket-results');
+/**
+ * The plan, as the buyer reads it.
+ *
+ * Leads with what to do rather than with what things cost. The older
+ * per-supplier and per-line tables stay below it — they answer "what does this
+ * cost at each supplier", which is a real question, just not the first one.
+ */
+function planHtml(plan, currency) {
+  if (!plan || !plan.best) {
+    return (
+      '<div class="rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-3.5 py-2.5">' +
+      '<p class="text-[12.5px] font-semibold text-amber-300">Няма изпълнима поръчка</p>' +
+      '<p class="mt-1 text-[11.5px] text-slate-400">' +
+      escapeHtml(
+        (plan && plan.explanation && plan.explanation.tradeOffs[0]) ||
+          'Нито една комбинация от вашите доставчици не може да изпълни тази поръчка.',
+      ) +
+      '</p>' +
+      rejectedHtml(plan) +
+      '</div>'
+    );
+  }
+
+  const best = plan.best;
   const money = (value) =>
     value === null || value === undefined ? '—' : Number(value).toFixed(2);
 
-  // The headline is the comparison a spreadsheet cannot easily make:
-  // one supplier for everything, against the order split line by line.
+  // Widths follow the money, not the line count: what is being split is spend.
+  const segments = best.suppliers
+    .map(function (supplier) {
+      const share = best.total > 0 ? (supplier.total / best.total) * 100 : 0;
+      return (
+        '<div class="flex items-center justify-center overflow-hidden border-r-2 border-ink-950 px-1 text-[11px] font-semibold text-slate-300 last:border-r-0" ' +
+        'style="width:' +
+        share.toFixed(2) +
+        '%" title="' +
+        escapeHtml(supplier.name + ' · ' + money(supplier.total) + ' ' + currency) +
+        '"><span class="truncate">' +
+        escapeHtml(supplier.name) +
+        '</span></div>'
+      );
+    })
+    .join('');
+
+  const savingsBox =
+    plan.savings !== null && plan.savings > 0
+      ? '<div class="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-3.5 py-3">' +
+        '<div class="flex flex-wrap items-baseline justify-between gap-2">' +
+        '<span class="text-[11px] font-semibold uppercase tracking-wide text-emerald-400/80">Спестявате</span>' +
+        '<span class="num text-[17px] font-bold text-emerald-400">' +
+        money(plan.savings) +
+        ' <span class="text-[12.5px] font-normal text-emerald-400/70">' +
+        escapeHtml(currency) +
+        '</span></span></div>' +
+        '<p class="mt-1 text-[11.5px] text-slate-400">срещу ' +
+        money(plan.baseline ? plan.baseline.total : null) +
+        ' ' +
+        escapeHtml(currency) +
+        ' от един доставчик' +
+        (plan.savingsPercent !== null ? ' · ' + plan.savingsPercent + '%' : '') +
+        '</p></div>'
+      : plan.savings === null
+        ? '<p class="mt-4 rounded-lg bg-ink-850 px-3 py-2 text-[11.5px] text-slate-400">' +
+          'Никой доставчик не може да изпълни цялата поръчка сам, така че няма с какво да сравним спестяването.' +
+          '</p>'
+        : '';
+
+  const suppliers = best.suppliers
+    .map(function (supplier) {
+      const lines = supplier.lines
+        .map(function (line) {
+          const stale =
+            line.priceSource !== 'live' && line.recordedAt
+              ? '<span class="ml-1.5 text-[10px] text-violet-300">· ' +
+                escapeHtml(formatRelative(line.recordedAt)) +
+                '</span>'
+              : '';
+
+          return (
+            '<div class="flex items-baseline justify-between gap-3 border-b border-white/[0.05] px-3.5 py-1.5 last:border-b-0">' +
+            '<span class="min-w-0 flex-1 truncate text-[11.5px] text-slate-300">' +
+            escapeHtml(line.query) +
+            '<span class="ml-1.5 text-[11px] text-slate-600">×' +
+            line.quantity +
+            '</span>' +
+            stale +
+            '</span>' +
+            '<span class="num shrink-0 text-[11.5px] text-slate-200">' +
+            money(line.lineTotal) +
+            '</span></div>'
+          );
+        })
+        .join('');
+
+      const conditions = []
+        .concat(
+          supplier.shippingWaived
+            ? ['доставката отпада']
+            : supplier.shipping > 0
+              ? ['доставка ' + money(supplier.shipping) + ' ' + currency]
+              : [],
+        )
+        .concat(supplier.handlingFee > 0 ? ['такса ' + money(supplier.handlingFee)] : [])
+        .concat(
+          supplier.minOrderValue > 0
+            ? ['минимумът от ' + money(supplier.minOrderValue) + ' е покрит']
+            : [],
+        );
+
+      return (
+        '<details class="overflow-hidden rounded-xl border border-white/8 bg-ink-900" open>' +
+        '<summary class="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3.5 py-3">' +
+        '<span class="text-[12.5px] font-semibold text-slate-200">' +
+        escapeHtml(supplier.name) +
+        '<span class="ml-2 text-[11.5px] font-normal text-slate-500">' +
+        supplier.linesCovered +
+        (supplier.linesCovered === 1 ? ' ред' : ' реда') +
+        '</span></span>' +
+        '<span class="num text-[13px] font-semibold text-slate-200">' +
+        money(supplier.total) +
+        ' <span class="text-[11px] font-normal text-slate-500">' +
+        escapeHtml(currency) +
+        '</span></span></summary>' +
+        (conditions.length
+          ? '<p class="border-b border-white/[0.05] px-3.5 pb-2 text-[11px] text-slate-500">' +
+            escapeHtml(conditions.join(' · ')) +
+            '</p>'
+          : '') +
+        lines +
+        '</details>'
+      );
+    })
+    .join('');
+
+  const why = plan.explanation && plan.explanation.whyChosen.length
+    ? '<details class="mt-4 overflow-hidden rounded-xl border border-white/8">' +
+      '<summary class="cursor-pointer px-3.5 py-2.5 text-[11.5px] font-medium text-slate-400 hover:text-slate-200">Защо това разпределение</summary>' +
+      '<div class="border-t border-white/8 px-3.5 py-3">' +
+      plan.explanation.whyChosen
+        .map(
+          (sentence) =>
+            '<p class="mb-1.5 text-[11.5px] leading-relaxed text-slate-300 last:mb-0">' +
+            escapeHtml(sentence) +
+            '</p>',
+        )
+        .join('') +
+      (plan.explanation.tradeOffs.length
+        ? '<div class="mt-3 border-t border-white/[0.06] pt-3">' +
+          plan.explanation.tradeOffs
+            .map(
+              (sentence) =>
+                '<p class="mb-1 text-[11.5px] leading-relaxed text-slate-500 last:mb-0">' +
+                escapeHtml(sentence) +
+                '</p>',
+            )
+            .join('') +
+          '</div>'
+        : '') +
+      '</div></details>'
+    : '';
+
+  const alternatives = plan.alternatives && plan.alternatives.length
+    ? '<div class="mt-4 overflow-hidden rounded-xl border border-white/8">' +
+      '<p class="border-b border-white/8 bg-ink-950/50 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Други варианти</p>' +
+      plan.alternatives
+        .map(function (alternative) {
+          const difference = alternative.total - best.total;
+          return (
+            '<div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-white/[0.05] px-3.5 py-2.5 last:border-b-0">' +
+            '<span class="text-[11.5px] text-slate-300">' +
+            escapeHtml(alternative.label) +
+            '<span class="ml-2 text-[11px] text-slate-600">' +
+            escapeHtml(alternative.suppliers.map((s) => s.name).join(' + ')) +
+            '</span></span>' +
+            '<span class="num text-[11.5px] text-slate-400">' +
+            money(alternative.total) +
+            '<span class="ml-2 text-[11px] ' +
+            (difference > 0 ? 'text-slate-600' : 'text-emerald-400') +
+            '">' +
+            (difference > 0 ? '+' : '') +
+            money(difference) +
+            '</span></span></div>'
+          );
+        })
+        .join('') +
+      '</div>'
+    : '';
+
+  const unassigned = plan.unassigned && plan.unassigned.length
+    ? '<p class="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[11.5px] text-amber-300">' +
+      escapeHtml(
+        plan.unassigned.length === 1
+          ? '1 артикул не беше намерен при никой доставчик: ' + plan.unassigned[0].query
+          : plan.unassigned.length +
+              ' артикула не бяха намерени при никой доставчик: ' +
+              plan.unassigned.map((entry) => entry.query).slice(0, 3).join(', ') +
+              (plan.unassigned.length > 3 ? '…' : ''),
+      ) +
+      '</p>'
+    : '';
+
+  return (
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5">' +
+    '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Откъде да купите</p>' +
+    '<div class="mt-3 flex h-10 overflow-hidden rounded-lg bg-ink-850">' +
+    segments +
+    '</div>' +
+    '<div class="mt-4 space-y-1 text-[12.5px]">' +
+    '<div class="flex justify-between text-slate-400"><span>Стока</span>' +
+    '<span class="num text-slate-300">' +
+    money(best.productSubtotal) +
+    '</span></div>' +
+    (best.shipping > 0
+      ? '<div class="flex justify-between text-slate-400"><span>Доставка (' +
+        best.suppliersUsed +
+        ')</span><span class="num text-slate-300">' +
+        money(best.shipping) +
+        '</span></div>'
+      : '') +
+    (best.handlingFee > 0
+      ? '<div class="flex justify-between text-slate-400"><span>Такси</span>' +
+        '<span class="num text-slate-300">' +
+        money(best.handlingFee) +
+        '</span></div>'
+      : '') +
+    '<div class="flex justify-between border-t border-white/8 pt-2 text-[13px] font-semibold text-slate-200">' +
+    '<span>Общо</span><span class="num">' +
+    money(best.total) +
+    ' <span class="text-[11.5px] font-normal text-slate-500">' +
+    escapeHtml(currency) +
+    '</span></span></div></div>' +
+    savingsBox +
+    unassigned +
+    '</div>' +
+    '<div class="mt-4 space-y-3">' +
+    suppliers +
+    '</div>' +
+    why +
+    alternatives +
+    // The workings, and then the offer to keep them. In that order: a buyer
+    // decides whether to trust the number before deciding whether to act on
+    // it, and putting the button first asks for the second answer before the
+    // first one has been given.
+    calculationHtml(lastDecisionDraft && lastDecisionDraft.snapshot) +
+    '<div id="keep-plan-holder">' + keepPlanHtml() + '</div>' +
+    rejectedHtml(plan)
+  );
+}
+
+/** Suppliers who could not take part, and why — never silently absent. */
+function rejectedHtml(plan) {
+  if (!plan || !plan.rejectedSuppliers || !plan.rejectedSuppliers.length) return '';
+
+  return (
+    '<div class="mt-4 space-y-1.5">' +
+    plan.rejectedSuppliers
+      .map(
+        (entry) =>
+          '<p class="text-[11.5px] text-slate-500">▲ ' + escapeHtml(entry.message) + '</p>',
+      )
+      .join('') +
+    '</div>'
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * MONEY SCREEN  —  STOCLIFY-DESIGN-SPEC.md §3
+ *
+ * The dashboard's first number, and the rule behind it: it must be a number
+ * the product PRODUCED, not one the customer ENTERED. "Articles tracked" is
+ * work the customer did; savings is the answer to the only question that
+ * decides whether the subscription is renewed.
+ *
+ * Every figure here comes from stored purchase decisions — immutable
+ * snapshots of comparisons the buyer actually chose. Nothing is estimated,
+ * nothing is extrapolated, and an account with no decisions gets the checklist
+ * from §3.6 rather than a row of zeroes.
+ * ------------------------------------------------------------------ */
+
+/** Cached for the session: the dashboard and the savings screen ask the same
+ *  two questions, and asking twice per view switch is two round trips to
+ *  render the same numbers. */
+let moneyScreenCache = null;
+
+async function renderMoneyScreen(options) {
+  const holder = $('[data-money-screen]');
+  if (!holder) return;
+
+  if (!isIdentified()) {
+    holder.hidden = true;
+    return;
+  }
+
+  holder.hidden = false;
+
+  // A skeleton in the shape of the answer, not a spinner (§12.14). The card is
+  // tall and the number inside it is the largest thing on the page, so an
+  // unreserved space here moves the whole dashboard when it lands.
+  if (!moneyScreenCache || (options && options.force)) {
+    holder.innerHTML = moneyScreenSkeleton();
+  }
+
+  try {
+    if (!moneyScreenCache || (options && options.force)) {
+      const [summary, page, account, supplierList] = await Promise.all([
+        fetch(ENDPOINTS.purchaseDecisionsSummary, { headers: authHeaders() }).then(okJson),
+        fetch(ENDPOINTS.purchaseDecisions + '?limit=8', { headers: authHeaders() }).then(okJson),
+        accountOnce(),
+        // Asked for rather than read off the `shops` global: that is only
+        // populated once the catalogue view has been opened, so a customer
+        // landing straight on the dashboard was told to add their first
+        // supplier while already having several.
+        fetch(ENDPOINTS.shops, { headers: authHeaders() })
+          .then((response) => (response.ok ? response.json() : []))
+          .catch(() => []),
+      ]);
+
+      moneyScreenCache = { summary, page, account, supplierList };
+    }
+
+    const { summary, page, account, supplierList } = moneyScreenCache;
+
+    holder.innerHTML =
+      summary.allTime.decisions === 0
+        ? moneyScreenEmptyHtml(supplierList)
+        : moneyScreenHtml(summary, page, account);
+  } catch (error) {
+    // A dashboard that cannot reach the API says so once, quietly, rather than
+    // rendering zeroes that read as "you have saved nothing".
+    holder.innerHTML =
+      '<div class="card">' +
+      '<p class="text-sm text-content-muted">' +
+      escapeHtml(failureText(error, translate('Спестяванията не се заредиха'))) +
+      '</p></div>';
+  }
+}
+
+function moneyScreenSkeleton() {
+  return (
+    '<div class="card" aria-busy="true" aria-live="polite">' +
+    '<div class="skeleton skeleton--text" style="width:140px"></div>' +
+    '<div class="skeleton skeleton--metric" style="width:220px;height:44px;margin:16px 0"></div>' +
+    '<div class="skeleton skeleton--text" style="width:180px"></div>' +
+    '</div>' +
+    '<div class="mt-4 grid gap-3 sm:grid-cols-3">' +
+    '<div class="skeleton skeleton--card"></div>' +
+    '<div class="skeleton skeleton--card"></div>' +
+    '<div class="skeleton skeleton--card"></div>' +
+    '</div>'
+  );
+}
+
+/**
+ * The card that carries the whole argument for the subscription.
+ *
+ * Realized and potential are kept apart here exactly as they are in the
+ * database. The headline is what the account has actually been shown to save;
+ * a forecast is never printed in the position where a fact belongs.
+ */
+function moneyScreenHtml(summary, page, account) {
+  const currency = summary.currency;
+  const month = summary.month;
+
+  // The honest headline. Where a purchase was confirmed we can say "saved";
+  // everywhere else the only truthful word is "avoidable".
+  const proven = month.realized > 0;
+  const headline = proven ? month.realized : month.potential;
+  const headlineLabel = proven
+    ? translate('Спестени този месец')
+    : translate('Възможни спестявания този месец');
+
+  const roi =
+    account && typeof account.planPrice === 'number' && account.planPrice > 0 && headline > 0
+      ? translate('Абонаментът ви струва') +
+        ' ' +
+        money2(account.planPrice) +
+        ' ' +
+        escapeHtml(account.planCurrency || currency) +
+        ' · ' +
+        translate('възвръщаемост') +
+        ' ' +
+        (headline / account.planPrice).toFixed(1) +
+        '×'
+      : '';
+
+  const tile = (value, label, meta, tone) =>
+    '<div class="card card--compact">' +
+    '<p class="num text-[17px] font-semibold tracking-num ' +
+    (tone === 'caution' ? 'text-caution-text' : 'text-content-primary') +
+    '">' +
+    escapeHtml(value) +
+    '</p>' +
+    '<p class="mt-1 text-sm text-content-muted">' +
+    escapeHtml(label) +
+    '</p>' +
+    (meta ? '<p class="mt-0.5 text-xs text-content-faint">' + escapeHtml(meta) + '</p>' : '') +
+    '</div>';
+
+  return (
+    // The one positive-background element on the page (§3.4).
+    '<div class="card card--positive shadow-glow">' +
+    '<p class="section-label">' +
+    escapeHtml(headlineLabel) +
+    '</p>' +
+    '<div class="mt-3 flex flex-wrap items-end justify-between gap-3">' +
+    '<div>' +
+    '<p class="num text-[19px] font-bold tracking-num text-positive-text">' +
+    money2(headline) +
+    ' <span class="text-md font-normal">' +
+    escapeHtml(currency) +
+    '</span></p>' +
+    '<p class="mt-1 text-sm text-content-muted">' +
+    escapeHtml(
+      translate('от') +
+        ' ' +
+        month.decisions +
+        ' ' +
+        plural(month.decisions, 'оптимизирана поръчка', 'оптимизирани поръчки'),
+    ) +
+    (proven
+      ? ''
+      : ' · ' +
+        '<span class="text-caution-text">' +
+        escapeHtml(translate('още няма потвърдена покупка')) +
+        '</span>') +
+    '</p>' +
+    '</div>' +
+    '<button type="button" data-view="savings" class="nav-link btn btn--secondary btn--sm">' +
+    escapeHtml(translate('Как е сметнато')) +
+    '</button>' +
+    '</div>' +
+    (roi ? '<p class="mt-4 border-t border-positive-border/40 pt-3 text-sm text-content-muted">' + roi + '</p>' : '') +
+    '</div>' +
+    // Three tiles. At most one may be caution at a time (§3.3).
+    '<div class="mt-4 grid gap-3 sm:grid-cols-3">' +
+    tile(
+      summary.averageSavingsPercent === null
+        ? '—'
+        : summary.averageSavingsPercent.toFixed(1) + '%',
+      translate('средно спестяване на поръчка'),
+      translate('спрямо най-добрия единичен доставчик'),
+    ) +
+    tile(
+      String(summary.allTime.decisions),
+      translate('оптимизирани поръчки'),
+      summary.splitDecisions +
+        ' ' +
+        translate('разделени') +
+        ' · ' +
+        summary.singleSupplierDecisions +
+        ' ' +
+        translate('при един доставчик'),
+    ) +
+    tile(
+      money2(summary.allTime.realized + summary.allTime.potential) + ' ' + currency,
+      translate('спестени общо'),
+      money2(summary.allTime.realized) +
+        ' ' +
+        translate('доказани') +
+        ' · ' +
+        money2(summary.allTime.potential) +
+        ' ' +
+        translate('възможни'),
+    ) +
+    '</div>' +
+    recentDecisionsHtml(page, currency)
+  );
+}
+
+/** The last few decisions, as the dashboard's closing section (§3.2). */
+function recentDecisionsHtml(page, currency) {
+  if (!page.items.length) return '';
+
+  const rows = page.items
+    .slice(0, 5)
+    .map(function (decision) {
+      const proven = decision.savingsKind === 'realized';
+      const saving = proven ? decision.realizedSavings : decision.savings;
+
+      return (
+        '<div class="flex flex-wrap items-baseline justify-between gap-3 border-b border-subtle px-4 py-3 last:border-b-0">' +
+        '<span class="text-sm text-content-secondary">#' +
+        decision.number +
+        ' <span class="ml-2 text-xs text-content-faint">' +
+        escapeHtml(formatRelative(decision.createdAt)) +
+        ' · ' +
+        decision.lineCount +
+        ' ' +
+        plural(decision.lineCount, 'ред', 'реда') +
+        '</span></span>' +
+        '<span class="flex items-baseline gap-3">' +
+        '<span class="num text-sm text-content-muted">' +
+        money2(decision.optimisedTotal) +
+        ' ' +
+        escapeHtml(currency) +
+        '</span>' +
+        '<span class="num text-sm font-semibold ' +
+        (proven ? 'text-positive-text' : 'text-content-secondary') +
+        '">' +
+        (saving === null ? '—' : '−' + money2(saving)) +
+        '</span></span></div>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div class="mt-4">' +
+    '<div class="mb-3 flex items-baseline justify-between">' +
+    '<p class="section-label">' +
+    escapeHtml(translate('Последни решения')) +
+    '</p>' +
+    '<button type="button" data-view="savings" class="nav-link card__action text-sm">' +
+    escapeHtml(translate('всички')) +
+    ' →</button>' +
+    '</div>' +
+    '<div class="card card--flush">' +
+    rows +
+    '</div></div>'
+  );
+}
+
+/**
+ * The empty state, which is the most important screen in onboarding (§3.6).
+ *
+ * Not a row of zeroes. A zero next to "saved this month" reads as "this
+ * product has saved you nothing", when the truth is that it has not been asked
+ * yet. The checklist says what to do next, and the closing line turns the first
+ * use into a *check* rather than a demo — take your last invoice and compare
+ * our answer against what you actually paid.
+ */
+function moneyScreenEmptyHtml(supplierList) {
+  const supplierCount = Array.isArray(supplierList) ? supplierList.length : 0;
+
+  const step = (state, label, action) => {
+    const glyph = state === 'done' ? '✓' : state === 'next' ? '▸' : '○';
+    const tone =
+      state === 'done'
+        ? 'text-positive-text'
+        : state === 'next'
+          ? 'text-content-primary'
+          : 'text-content-faint';
+
+    return (
+      '<div class="flex items-center gap-3 py-2">' +
+      '<span class="' + tone + ' w-4 text-center text-sm">' + glyph + '</span>' +
+      '<span class="flex-1 text-base ' + tone + '">' + escapeHtml(label) + '</span>' +
+      (action || '') +
+      '</div>'
+    );
+  };
+
+  const cta = (label, view) =>
+    '<button type="button" data-view="' + view + '" class="nav-link btn btn--primary btn--sm">' +
+    escapeHtml(label) +
+    ' →</button>';
+
+  return (
+    '<div class="card">' +
+    '<h2 class="text-lg font-semibold text-content-primary">' +
+    escapeHtml(translate('Още не знаем колко ви спестяваме.')) +
+    '</h2>' +
+    '<p class="mt-1 text-sm text-content-muted">' +
+    escapeHtml(translate('Три стъпки и ще знаем — обикновено 5 минути.')) +
+    '</p>' +
+    '<div class="mt-3.5 divide-y divide-border-subtle">' +
+    step('done', translate('Акаунтът е готов')) +
+    step(
+      supplierCount >= 1 ? 'done' : 'next',
+      translate('Добавете първия си доставчик'),
+      supplierCount >= 1 ? '' : cta(translate('Добави'), 'catalogue'),
+    ) +
+    step(
+      supplierCount >= 2 ? 'done' : supplierCount >= 1 ? 'next' : 'todo',
+      translate('Добавете още един — с един няма какво да сравняваме'),
+      supplierCount === 1 ? cta(translate('Добави'), 'catalogue') : '',
+    ) +
+    step(
+      'todo',
+      translate('Остойностете една истинска поръчка'),
+      supplierCount >= 2 ? cta(translate('Остойности'), 'catalogue') : '',
+    ) +
+    '</div>' +
+    '<p class="mt-3.5 border-t border-subtle pt-4 text-sm leading-relaxed text-content-muted">' +
+    escapeHtml(
+      translate(
+        'Съвет: вземете последната си фактура. Ще сравним нашия отговор с това, което сте платили — така ще видите точно колко струваме.',
+      ),
+    ) +
+    '</p>' +
+    '</div>'
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * SECTION — savings
+ *
+ * What the product has been worth, built only from decisions the buyer chose
+ * to keep. Nothing here is an estimate of what might have been saved on a
+ * comparison somebody ran and walked away from.
+ *
+ * Potential and realized are shown side by side and never summed. They are
+ * different claims — one is what the optimiser said a chosen plan would avoid,
+ * the other is what was avoided on a purchase the buyer confirmed happened —
+ * and adding them counts the same saving twice, first as a forecast and then
+ * as a fact. That sum is how an ROI figure stops surviving contact with
+ * somebody's own accounts, which is the one place it will certainly be taken.
+ * ------------------------------------------------------------------ */
+
+async function loadSavings() {
+  const summaryBox = $('#savings-summary');
+  const historyBox = $('#savings-history');
+  const roiBox = $('#savings-roi');
+  if (!summaryBox) return;
+
+  if (!isIdentified()) {
+    summaryBox.innerHTML =
+      '<p class="rounded-xl border border-white/8 bg-ink-900 px-3.5 py-3 text-[12.5px] text-slate-400">' +
+      translate('Влезте, за да видите спестяванията по вашите решения.') +
+      '</p>';
+    historyBox.innerHTML = '';
+    roiBox.innerHTML = '';
+    return;
+  }
+
+  const spinner = $('#savings-spinner');
+  if (spinner) spinner.classList.remove('hidden');
+
+  try {
+    const [summary, page, account] = await Promise.all([
+      fetch(ENDPOINTS.purchaseDecisionsSummary, { headers: authHeaders() }).then(okJson),
+      fetch(ENDPOINTS.purchaseDecisions + '?limit=25', { headers: authHeaders() }).then(okJson),
+      // The plan, for the subscription side of the ROI panel. Allowed to fail
+      // on its own: an operator key has no account row, and the savings are
+      // still worth showing without a price to set them against.
+      accountOnce(),
+    ]);
+
+    summaryBox.innerHTML = savingsSummaryHtml(summary);
+    roiBox.innerHTML = roiHtml(summary, account);
+    historyBox.innerHTML = savingsHistoryHtml(page, summary.currency);
+  } catch (error) {
+    summaryBox.innerHTML = failureHtml(error, 'Спестяванията не се заредиха');
+    historyBox.innerHTML = '';
+    roiBox.innerHTML = '';
+  } finally {
+    if (spinner) spinner.classList.add('hidden');
+  }
+}
+
+function okJson(response) {
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  return response.json();
+}
+
+function savingsSummaryHtml(summary) {
+  const currency = summary.currency;
+  const withUnit = (value) => money2(value) + ' ' + currency;
+
+  const proven = summary.allTime.realized;
+  const possible = summary.allTime.potential;
+
+  /*
+   * Two numbers first, five after.
+   *
+   * This was seven tiles of equal weight, and on a new account all seven read
+   * "0.00" — a wall of zeroes that answers no question anybody arrived with.
+   * The page exists to answer one: how much has this saved me. That has
+   * exactly two halves, and the whole difficulty of the page is that they are
+   * easy to confuse — money confirmed against money still on the table — so
+   * they are the two things given room, side by side, with the periods
+   * demoted to the notes underneath where they belong.
+   */
+  const headline = (label, value, note, tone) =>
+    '<div class="rounded-xl border ' +
+    (tone === 'good'
+      ? 'border-emerald-500/25 bg-emerald-500/[0.06]'
+      : 'border-white/8 bg-ink-900') +
+    ' px-4 py-3.5">' +
+    '<p class="text-[11px] font-medium uppercase tracking-wide ' +
+    (tone === 'good' ? 'text-emerald-400/80' : 'text-slate-500') +
+    '">' + escapeHtml(label) + '</p>' +
+    '<p class="num mt-1 text-[22px] font-bold ' +
+    (tone === 'good' ? 'text-emerald-400' : 'text-slate-200') +
+    '">' + escapeHtml(value) + '</p>' +
+    '<p class="mt-1 text-[11.5px] text-slate-500">' + escapeHtml(note) + '</p></div>';
+
+  const small = (label, value, note) =>
+    '<div class="rounded-lg border border-white/8 bg-ink-900 px-3 py-2">' +
+    '<p class="text-[10px] uppercase tracking-wide text-slate-600">' + escapeHtml(label) + '</p>' +
+    '<p class="num mt-0.5 text-[14px] font-semibold text-slate-200">' + escapeHtml(value) + '</p>' +
+    '<p class="mt-0.5 text-[10.5px] text-slate-600">' + escapeHtml(note) + '</p></div>';
+
+  const period =
+    formatMessage('{month} този месец · {year} тази година', {
+      month: withUnit(summary.month.potential + summary.month.realized),
+      year: withUnit(summary.year.potential + summary.year.realized),
+    });
+
+  return (
+    '<div class="grid gap-3 sm:grid-cols-2">' +
+    headline(
+      'Доказано спестено',
+      withUnit(proven),
+      proven > 0 ? period : translate('още няма потвърдена поръчка'),
+      'good',
+    ) +
+    headline(
+      'Възможно спестяване',
+      withUnit(possible),
+      translate('чака потвърждение на поръчките'),
+    ) +
+    '</div>' +
+    '<div class="mt-3 grid gap-2 sm:grid-cols-3">' +
+    small(
+      'Оптимизирани поръчки',
+      String(summary.allTime.decisions),
+      summary.splitDecisions + ' разделени · ' + summary.singleSupplierDecisions + ' при един',
+    ) +
+    small(
+      'Средно спестяване',
+      summary.averageSavingsPercent === null ? '—' : summary.averageSavingsPercent.toFixed(1) + '%',
+      'спрямо най-добрия единичен доставчик',
+    ) +
+    small(
+      'Средна заявка',
+      summary.averageBasketLines === null ? '—' : summary.averageBasketLines.toFixed(1),
+      'реда на решение',
+    ) +
+    '</div>' +
+    '<p class="mt-3 text-[11px] leading-relaxed text-slate-500">' +
+    escapeHtml(
+      translate(
+        'Едно решение брои или като доказано, или като възможно — никога и двете. ' +
+          'Става доказано, когато всеки доставчик в плана има потвърдена поръчка.',
+      ),
+    ) +
+    '</p>'
+  );
+}
+
+/**
+ * The subscription against what it returned.
+ *
+ * Shown only when the account's own price is known, and built from the
+ * realized figure when there is one. A "value created" line resting on a
+ * forecast is a claim the customer can disprove with their own ledger, and one
+ * disproved claim costs more than the whole panel is worth — so when nothing
+ * has been confirmed yet, this says so instead of quietly using the forecast.
+ *
+ * The subscription figure and its currency both come from `/billing/me`, so
+ * this panel and the pricing page are rendering the same number from the same
+ * definition and cannot drift apart.
+ */
+function roiHtml(summary, account) {
+  const price = currentPlanPrice(account);
+  if (price === null || price <= 0) return '';
+
+  // The subscription's currency, not the savings' — they are two different
+  // amounts and only one of them is priced by us. They agree today, and the
+  // label should still name the right one if that ever stops being true.
+  const planCurrency = account.planCurrency || summary.currency;
+  const realized = summary.year.realized;
+  const potential = summary.year.potential;
+
+  if (realized <= 0 && potential <= 0) return '';
+
+  const proven = realized > 0;
+  const measured = proven ? realized : potential;
+
+  return (
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5">' +
+    '<p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Какво ви върна Stoclify</p>' +
+    '<div class="mt-3 grid gap-3 sm:grid-cols-3">' +
+    '<div><p class="text-[11.5px] text-slate-500">Абонамент</p>' +
+    '<p class="num mt-0.5 text-xl font-semibold text-slate-300">' +
+    money2(price) + ' <span class="text-[11.5px] font-normal text-slate-500">' + escapeHtml(planCurrency) + '</span></p></div>' +
+    '<div><p class="text-[11.5px] text-slate-500">' +
+    (proven ? 'Доказано спестено' : 'Възможно спестяване') +
+    '</p><p class="num mt-0.5 text-xl font-semibold ' +
+    (proven ? 'text-emerald-400' : 'text-slate-300') +
+    '">' + money2(measured) + '</p></div>' +
+    '<div><p class="text-[11.5px] text-slate-500">Разлика</p>' +
+    '<p class="num mt-0.5 text-xl font-semibold ' +
+    (measured - price >= 0 ? 'text-emerald-400' : 'text-slate-400') +
+    '">' + money2(measured - price) + '</p></div>' +
+    '</div>' +
+    '<p class="mt-3 text-[11px] text-slate-500">' +
+    escapeHtml(
+      proven
+        ? 'Спрямо потвърдени покупки тази година.'
+        : 'Никоя поръчка не е отбелязана като потвърдена, затова това е възможно, а не доказано спестяване. ' +
+          'Отбележете поръчките си като потвърдени, за да стане доказано.',
+    ) +
+    '</p></div>'
+  );
+}
+
+/**
+ * The signed-in account's monthly price, straight from the server.
+ *
+ * There is deliberately no table of prices in this file any more. There used
+ * to be one, and it was a second copy of a number that also lived in the
+ * pricing page's markup — two places to change, one of them to forget, and the
+ * figure it produced sat directly under "you paid X, we saved you Y". A
+ * subscription figure that disagrees with the pricing page discredits the
+ * saving beside it.
+ *
+ * `/billing/me` reports `planPrice` from the one server-side definition. Zero
+ * (the free plan) and null (a plan this deploy prices nothing for) both mean
+ * "there is no subscription to measure against", so both return null and the
+ * ROI panel is simply not drawn — rather than dividing by nothing or printing
+ * a price nobody is charged.
+ */
+function currentPlanPrice(account) {
+  if (!account || typeof account.planPrice !== 'number') return null;
+  return account.planPrice > 0 ? account.planPrice : null;
+}
+
+function savingsHistoryHtml(page, currency) {
+  if (!page.items.length) {
+    return (
+      '<p class="rounded-xl border border-white/8 bg-ink-900 px-3.5 py-3 text-[12.5px] text-slate-400">' +
+      translate('Още нямате запазени решения. Остойностете поръчка в „Търсене" и изберете плана, който ви устройва.') +
+      '</p>'
+    );
+  }
+
+  const rows = page.items
+    .map(function (decision) {
+      const proven = decision.savingsKind === 'realized';
+      const saving = proven ? decision.realizedSavings : decision.savings;
+
+      return (
+        /*
+         * The row has to look like it opens.
+         *
+         * It always did open — and nobody could tell. A `<summary>` set to
+         * `display: grid` loses the browser's own disclosure triangle, so the
+         * only remaining hint was the cursor, which you have to already be
+         * hovering to see. A row of numbers that silently hides the entire
+         * calculation behind it is worse than one that hides nothing.
+         *
+         * So: a chevron that turns when it opens, a hover tint, and the words
+         * for what is underneath.
+         */
+        '<details class="savings-row border-b border-white/[0.05] last:border-b-0">' +
+        '<summary class="grid cursor-pointer grid-cols-[14px_1fr_auto] items-baseline gap-2 px-3.5 py-2.5 transition hover:bg-white/[0.03] sm:grid-cols-[14px_1.3fr_1fr_1fr_1fr_1fr]">' +
+        '<i class="disclosure fa-solid fa-chevron-right self-center text-[9px] text-slate-600"></i>' +
+        '<span class="text-[11.5px] text-slate-400">' +
+        escapeHtml(formatAbsolute(decision.createdAt)) +
+        '</span>' +
+        '<span class="text-[11.5px] text-slate-300">#' + decision.number +
+        '<span class="ml-1.5 text-[11px] text-slate-600">' + decision.lineCount + ' ' +
+        plural(decision.lineCount, 'ред', 'реда') + '</span></span>' +
+        '<span class="num hidden text-[11.5px] text-slate-500 sm:block">' +
+        money2(decision.baselineTotal) + '</span>' +
+        '<span class="num hidden text-[11.5px] text-slate-300 sm:block">' +
+        money2(decision.optimisedTotal) + '</span>' +
+        '<span class="num text-right text-[11.5px] font-semibold ' +
+        (proven ? 'text-emerald-400' : 'text-slate-300') + '">' +
+        money2(saving) +
+        '<span class="ml-1.5 text-[10px] font-normal ' +
+        (proven ? 'text-emerald-400/70' : 'text-slate-600') + '">' +
+        (proven ? 'доказано' : 'възможно') +
+        '</span></span></summary>' +
+        '<div class="bg-ink-950/40 px-3.5 py-3" data-decision="' + escapeHtml(decision.id) + '">' +
+        '<p class="text-[11.5px] text-slate-500">' +
+        translate('Зареждам подробностите…') +
+        '</p></div></details>'
+      );
+    })
+    .join('');
+
+  return (
+    '<p class="mb-2 text-[11.5px] text-slate-500">' +
+    '<i class="fa-solid fa-chevron-right mr-1.5 text-[9px] text-slate-600"></i>' +
+    escapeHtml(translate('Отворете ред, за да видите сметката: базата, избрания план и разликата ред по ред.')) +
+    '</p>' +
+    '<div class="overflow-hidden rounded-xl border border-white/8">' +
+    '<div class="hidden grid-cols-[14px_1.3fr_1fr_1fr_1fr_1fr] gap-2 border-b border-white/8 bg-ink-950/50 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:grid">' +
+    '<span></span><span>Дата</span><span>Решение</span><span>База</span><span>Избрано</span>' +
+    '<span class="text-right">Спестено</span></div>' +
+    rows +
+    '</div>' +
+    (page.total > page.items.length
+      ? '<p class="mt-2 text-[11px] text-slate-600">' +
+        escapeHtml('Показани са последните ' + page.items.length + ' от ' + page.total + '.') +
+        '</p>'
+      : '')
+  );
+}
+
+/**
+ * Loads one decision's workings the first time its row is opened.
+ *
+ * Lazily, because a snapshot is a large document and twenty-five of them
+ * fetched to draw a list nobody has expanded is a slow screen paid for by
+ * nothing. Once loaded it stays: the record does not change, so there is never
+ * a reason to fetch it twice.
+ */
+document.addEventListener('toggle', function (event) {
+  const details = event.target;
+  if (!details || details.tagName !== 'DETAILS' || !details.open) return;
+
+  const holder = details.querySelector('[data-decision]');
+  if (!holder || holder.dataset.loaded) return;
+
+  holder.dataset.loaded = 'yes';
+
+  void fetch(ENDPOINTS.purchaseDecisions + '/' + holder.dataset.decision, {
+    headers: authHeaders(),
+  })
+    .then(okJson)
+    .then(function (decision) {
+      holder.innerHTML = calculationHtml(decision.snapshot);
+      // Opened by default here: the reader has already asked for this row, and
+      // making them open a second disclosure to see what they asked for is a
+      // click that answers nothing.
+      const panel = holder.querySelector('details');
+      if (panel) panel.open = true;
+    })
+    .catch(function (error) {
+      holder.dataset.loaded = '';
+      holder.innerHTML = failureHtml(error, 'Решението не се зареди');
+    });
+}, true);
+
+const savingsRefresh = $('#savings-refresh');
+if (savingsRefresh) savingsRefresh.addEventListener('click', function () { void loadSavings(); });
+
+/* --- Keeping a plan, and showing your work ------------------------- *
+ *
+ * Two features that are really one. A buyer will not trust a saving they
+ * cannot check, and they will not keep a record they cannot read — so the
+ * panel that explains the arithmetic and the button that files it away are
+ * built from the same object.
+ *
+ * That object is the sealed draft the basket returns. It is the whole
+ * decision: supplier terms, every price with where and when it was read,
+ * every match with what settled it, the plan and everything it beat. Held
+ * here until the buyer either keeps it or prices something else.
+ */
+
+/** The draft from the last comparison, or null before one has been run. */
+let lastDecisionDraft = null;
+
+/** The decision id, once this comparison has been kept. */
+let savedDecisionId = null;
+
+const money2 = (value) =>
+  value === null || value === undefined ? '—' : Number(value).toFixed(2);
+
+/**
+ * "How is this calculated?"
+ *
+ * Progressive disclosure, and the ordering is the argument. The headline
+ * comparison first, because that is the claim. Then the supplier terms, which
+ * are the reason two suppliers with the same shelf price are not the same
+ * price. Then the lines, where each figure carries where it came from and how
+ * old it was. Then the alternatives, which is the part that shows the answer
+ * was chosen rather than merely produced.
+ *
+ * Everything is read from the snapshot, never from today's data. That is the
+ * whole point: open this in November and it still shows August's discount
+ * beside August's price, because that is what the decision was made on.
+ */
+function calculationHtml(snapshot) {
+  if (!snapshot) return '';
+
+  const currency = snapshot.currency;
+  const optimisation = snapshot.optimisation;
+  const baseline = optimisation.baseline;
+
+  const row = (label, value, tone) =>
+    '<div class="flex items-baseline justify-between gap-3 py-1">' +
+    '<span class="text-[11.5px] ' + (tone || 'text-slate-400') + '">' +
+    escapeHtml(label) +
+    '</span><span class="num text-[11.5px] text-slate-200">' +
+    value +
+    '</span></div>';
+
+  // --- The claim, and what it is measured against ---
+  const comparison =
+    '<div class="grid gap-3 sm:grid-cols-2">' +
+    '<div class="rounded-xl border border-white/8 bg-ink-850 px-3.5 py-3">' +
+    '<p class="text-[11px] uppercase tracking-wide text-slate-500">Един доставчик</p>' +
+    '<p class="num mt-1 text-xl font-bold text-slate-300">' +
+    (baseline ? money2(baseline.total) : '—') +
+    ' <span class="text-[11.5px] font-normal text-slate-500">' + escapeHtml(currency) + '</span></p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">' +
+    escapeHtml(
+      baseline
+        ? baseline.suppliers.map((supplier) => supplier.name).join(', ')
+        : 'Никой доставчик не можеше да изпълни цялата поръчка сам',
+    ) +
+    '</p></div>' +
+    '<div class="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3.5 py-3">' +
+    '<p class="text-[11px] uppercase tracking-wide text-emerald-400/80">Избраният план</p>' +
+    '<p class="num mt-1 text-xl font-bold text-emerald-400">' +
+    money2(optimisation.optimised.total) +
+    ' <span class="text-[11.5px] font-normal text-emerald-400/70">' + escapeHtml(currency) + '</span></p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-400">' +
+    escapeHtml(optimisation.optimised.suppliers.map((supplier) => supplier.name).join(' + ')) +
+    '</p></div></div>' +
+    (optimisation.savings === null
+      ? '<p class="mt-3 rounded-lg bg-ink-850 px-3 py-2 text-[11.5px] text-slate-400">' +
+        'Няма база за сравнение: нито един доставчик не можеше да поеме цялата поръчка, ' +
+        'а сравняването на разделена поръчка с непълна е сравнение на две различни покупки.' +
+        '</p>'
+      : '');
+
+  // --- Why two suppliers with the same shelf price are not the same price ---
+  const suppliers = snapshot.suppliers
+    .map(function (supplier) {
+      const conditions = []
+        .concat(supplier.discountPercent > 0 ? ['отстъпка ' + supplier.discountPercent + '%'] : [])
+        .concat(
+          supplier.vatState === 'inclusive'
+            ? ['цените с ДДС ' + supplier.vatRate + '%']
+            : supplier.vatState === 'exclusive'
+              ? ['цените без ДДС']
+              : ['ДДС не е посочен'],
+        )
+        .concat(supplier.shippingCost > 0 ? ['доставка ' + money2(supplier.shippingCost)] : ['без доставка'])
+        .concat(
+          supplier.freeShippingOver !== null
+            ? ['безплатна над ' + money2(supplier.freeShippingOver)]
+            : [],
+        )
+        .concat(supplier.handlingFee > 0 ? ['такса ' + money2(supplier.handlingFee)] : [])
+        .concat(supplier.minOrderValue > 0 ? ['минимум ' + money2(supplier.minOrderValue)] : []);
+
+      return (
+        '<div class="border-b border-white/[0.05] px-3.5 py-2.5 last:border-b-0">' +
+        '<p class="text-[11.5px] font-medium text-slate-300">' +
+        escapeHtml(supplier.name) +
+        '</p><p class="mt-0.5 text-[11px] text-slate-500">' +
+        escapeHtml(conditions.join(' · ')) +
+        '</p></div>'
+      );
+    })
+    .join('');
+
+  // --- Every line, with where its price came from and what matched it ---
+  const lines = snapshot.lines
+    .map(function (line) {
+      const checked =
+        line.price.source === 'live'
+          ? 'проверена в момента на решението'
+          : line.price.recordedAt
+            ? 'проверена ' + formatAbsolute(line.price.recordedAt)
+            : 'без отбелязана дата';
+
+      const source =
+        line.price.source === 'manual'
+          ? 'ваша цена'
+          : line.price.source === 'cached'
+            ? 'от кеша'
+            : 'на живо';
+
+      const discount =
+        line.discountPercent > 0
+          ? ' · от ' + money2(line.listPrice) + ' с ' + line.discountPercent + '% отстъпка'
+          : '';
+
+      return (
+        '<details class="border-b border-white/[0.05] last:border-b-0">' +
+        '<summary class="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3.5 py-2">' +
+        '<span class="min-w-0 flex-1 truncate text-[11.5px] text-slate-300">' +
+        escapeHtml(line.query) +
+        '<span class="ml-1.5 text-[11px] text-slate-600">×' + line.quantity + '</span></span>' +
+        '<span class="num shrink-0 text-[11.5px] text-slate-200">' +
+        money2(line.lineTotal) +
+        '</span></summary>' +
+        '<div class="bg-ink-950/40 px-3.5 py-2.5">' +
+        '<p class="text-[11px] text-slate-400">' +
+        escapeHtml(line.supplierName) +
+        ' — ' +
+        escapeHtml(line.matchedName || line.query) +
+        '</p>' +
+        (line.url
+          ? '<p class="mt-1 truncate text-[11px]"><a class="text-accent-400 hover:text-accent-300" ' +
+            'target="_blank" rel="noopener noreferrer nofollow" href="' +
+            escapeHtml(line.url) +
+            '">' +
+            escapeHtml(line.url) +
+            '</a></p>'
+          : '') +
+        '<p class="mt-1 text-[11px] text-slate-500">' +
+        escapeHtml(
+          money2(line.unitPrice) + ' ' + currency + '/бр' + discount + ' · ' + source + ', ' + checked,
+        ) +
+        '</p>' +
+        '<p class="mt-1 text-[11px] text-slate-500">' +
+        escapeHtml(
+          'Съвпадение: ' +
+            Math.round(line.match.confidence * 100) + '% · ' +
+            matchMethodLabel(line.match.method) +
+            (line.match.aiUsed && line.match.model ? ' (' + line.match.model + ')' : '') +
+            (line.match.explanation ? ' — ' + line.match.explanation : ''),
+        ) +
+        '</p>' +
+        (line.match.attributes && line.match.attributes.length
+          ? '<div class="mt-1.5 flex flex-wrap gap-1">' +
+            line.match.attributes
+              .map(
+                (attribute) =>
+                  '<span class="rounded px-1.5 py-0.5 text-[10px] ' +
+                  (attribute.agrees
+                    ? 'bg-emerald-500/10 text-emerald-300/90'
+                    : 'bg-amber-500/10 text-amber-300/90') +
+                  '">' +
+                  escapeHtml(attribute.label + ': ' + attribute.left + ' / ' + attribute.right) +
+                  '</span>',
+              )
+              .join('') +
+            '</div>'
+          : '') +
+        '</div></details>'
+      );
+    })
+    .join('');
+
+  const alternatives = optimisation.alternatives.length
+    ? optimisation.alternatives
+        .map(
+          (alternative) =>
+            '<div class="flex items-baseline justify-between gap-3 border-b border-white/[0.05] px-3.5 py-2 last:border-b-0">' +
+            '<span class="text-[11.5px] text-slate-400">' +
+            escapeHtml(alternative.label + ' — ' + alternative.suppliers.map((s) => s.name).join(' + ')) +
+            '</span><span class="num text-[11.5px] text-slate-400">' +
+            money2(alternative.total) +
+            '</span></div>',
+        )
+        .join('')
+    : '<p class="px-3.5 py-2 text-[11.5px] text-slate-500">Нямаше друг изпълним вариант.</p>';
+
+  const section = (title, body) =>
+    '<p class="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500">' +
+    escapeHtml(title) +
+    '</p><div class="mt-1.5 overflow-hidden rounded-xl border border-white/8">' + body + '</div>';
+
+  return (
+    '<details class="mt-4 overflow-hidden rounded-xl border border-white/8">' +
+    '<summary class="cursor-pointer px-3.5 py-2.5 text-[11.5px] font-medium text-slate-300 hover:text-slate-100">' +
+    'Как е сметнато това?' +
+    '</summary>' +
+    '<div class="border-t border-white/8 px-3.5 py-2.5">' +
+    comparison +
+    '<div class="mt-4 rounded-xl border border-white/8 px-3.5 py-2">' +
+    row('Стока', money2(optimisation.optimised.productSubtotal)) +
+    row(
+      'Доставка (' + optimisation.optimised.suppliersUsed + ')',
+      money2(optimisation.optimised.shipping),
+    ) +
+    (optimisation.optimised.handlingFee > 0
+      ? row('Такси', money2(optimisation.optimised.handlingFee))
+      : '') +
+    '<div class="mt-1 flex items-baseline justify-between border-t border-white/8 pt-2">' +
+    '<span class="text-[12.5px] font-semibold text-slate-200">Общо</span>' +
+    '<span class="num text-[12.5px] font-semibold text-slate-200">' +
+    money2(optimisation.optimised.total) +
+    ' ' + escapeHtml(currency) + '</span></div></div>' +
+    section('Условия на доставчиците, както бяха тогава', suppliers) +
+    section('Редовете и откъде идва всяка цена', lines) +
+    section('Какво друго беше възможно', alternatives) +
+    '<p class="mt-3 text-[11px] leading-relaxed text-slate-600">' +
+    escapeHtml(
+      'Изчислено на ' +
+        formatAbsolute(snapshot.decidedAt) +
+        ' за ' +
+        (snapshot.durationMs / 1000).toFixed(1) +
+        ' с. Разгледани ' +
+        optimisation.diagnostics.combinationsEvaluated +
+        ' комбинации от ' +
+        optimisation.diagnostics.supplierCount +
+        ' доставчика' +
+        (optimisation.diagnostics.boundedSearch
+          ? '. Търсенето беше ограничено — резултатът е най-добрият от опитаните, не задължително най-добрият изобщо.'
+          : '.'),
+    ) +
+    '</p></div></details>'
+  );
+}
+
+/** What settled a match, in words rather than in the enum's. */
+function matchMethodLabel(method) {
+  const labels = {
+    gtin: 'по баркод',
+    sku: 'по артикулен номер',
+    model: 'по моделен код',
+    attributes: 'по характеристики',
+    text: 'по име',
+    ai: 'с модел',
+    conflict: 'разминаване',
+    none: 'без метод',
+  };
+
+  return labels[method] || method;
+}
+
+/** A date somebody can quote — "28 авг. 2026, 14:31" — rather than "преди 3 дни". */
+function formatAbsolute(value) {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  // Absolute rather than relative, deliberately. "Preди 30 дни" is the wrong
+  // sentence under an old decision: the buyer needs the moment the price was
+  // true, not how long ago that was from wherever they are standing now.
+  return date.toLocaleString('bg-BG', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
+ * The offer to keep this plan.
+ *
+ * Only offered when there is a plan worth keeping, and it says plainly what
+ * pressing it does. Nothing has been stored up to this point — a comparison
+ * run to see what an order would cost is not a decision, and filing every one
+ * of those away would put plans nobody chose into the savings history.
+ */
+function keepPlanHtml() {
+  if (!lastDecisionDraft) return '';
+
+  if (savedDecisionId) {
+    return (
+      '<div class="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3.5 py-3">' +
+      '<i class="fa-solid fa-circle-check text-[11.5px] text-emerald-400"></i>' +
+      '<span class="text-[11.5px] text-emerald-300">Решението е запазено. Цените в него остават такива, каквито са днес.</span>' +
+      '<button type="button" data-view="savings" class="nav-link ml-auto text-[11.5px] font-medium text-emerald-300 underline-offset-2 hover:underline">Виж в „Спестявания"</button>' +
+      '</div>'
+    );
+  }
+
+  return (
+    '<div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-white/8 bg-ink-900 px-3.5 py-3">' +
+    '<button type="button" id="keep-plan" class="inline-flex items-center gap-2 rounded-xl bg-accent-500 px-3.5 py-2 text-[12.5px] font-semibold text-ink-950 transition hover:bg-accent-400">' +
+    '<i id="keep-plan-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[11.5px]"></i>' +
+    'Използвай този план' +
+    '</button>' +
+    '<span class="text-[11.5px] text-slate-500">Запазва решението с днешните цени и условия, за да може да бъде проверено и след месеци.</span>' +
+    '</div>'
+  );
+}
+
+/**
+ * Files the plan away.
+ *
+ * Posts the draft back exactly as it arrived. The server checks its own
+ * signature before storing anything, so nothing here can change what gets
+ * recorded — which is what makes a saving from this record worth quoting.
+ */
+async function keepPlan() {
+  if (!lastDecisionDraft || savedDecisionId) return;
+
+  const button = $('#keep-plan');
+  const spinner = $('#keep-plan-spinner');
+  if (spinner) spinner.classList.remove('hidden');
+  if (button) button.disabled = true;
+
+  try {
+    const response = await fetch(ENDPOINTS.purchaseDecisions, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(lastDecisionDraft),
+    });
+
+    if (!response.ok) {
+      const problem = await response.json().catch(() => null);
+      throw new Error((problem && problem.message) || 'HTTP ' + response.status);
+    }
+
+    const decision = await response.json();
+    savedDecisionId = decision.id;
+    // The dashboard's headline just changed. Drop the cache so the next visit
+    // reads the new figure rather than the one from before this decision.
+    moneyScreenCache = null;
+
+    const holder = $('#keep-plan-holder');
+    if (holder) holder.innerHTML = keepPlanHtml();
+  } catch (error) {
+    const holder = $('#keep-plan-holder');
+    if (holder) {
+      holder.innerHTML =
+        '<p class="mt-4 rounded-xl border border-red-500/25 bg-red-500/[0.06] px-3.5 py-3 text-[11.5px] text-red-300">' +
+        escapeHtml(error.message || 'Решението не беше запазено.') +
+        '</p>';
+    }
+  } finally {
+    if (spinner) spinner.classList.add('hidden');
+    if (button) button.disabled = false;
+  }
+}
+
+// Delegated, because the button is written into the page after every
+// comparison and a listener bound to one instance dies with it.
+document.addEventListener('click', function (event) {
+  if (event.target.closest('#keep-plan')) void keepPlan();
+});
+
+function renderBasket(result) {
+  const box = $('#basket-results');
+
+  /**
+   * The one constraint worth offering, asked next to the thing it changes.
+   *
+   * Three deliveries to accept and three invoices to reconcile is often worth
+   * more than the €5 the third supplier saves — so this stayed. It moved out
+   * of the way of the question: on an empty screen it was a setting nobody
+   * could have an opinion about, and beside a plan it is a decision.
+   */
+  const cap =
+    '<label class="ml-auto flex items-center gap-2 text-[11.5px] text-slate-500">' +
+    'Максимум доставчици' +
+    '<select id="basket-cap" class="rounded-lg border border-white/12 bg-ink-850 px-2 py-1 text-[11.5px] text-slate-200">' +
+    ['', '1', '2', '3', '4']
+      .map(
+        (value) =>
+          '<option value="' + value + '"' +
+          (String(basketMaxSuppliers || '') === value ? ' selected' : '') +
+          '>' + (value || 'без ограничение') + '</option>',
+      )
+      .join('') +
+    '</select></label>';
+
+  // A fresh comparison is a fresh decision. Holding the previous draft would
+  // let the buyer file away a plan they are no longer looking at, which is the
+  // one way this record could come to disagree with what was on the screen.
+  lastDecisionDraft = result.decision || null;
+  savedDecisionId = null;
+  const money = (value) =>
+    value === null || value === undefined ? '—' : Number(value).toFixed(2);
+
+  // The plan leads: it is the only figure here that accounts for delivery,
+  // minimum orders and handling together, and the only one that will never
+  // recommend an order a supplier would refuse. The per-supplier and per-line
+  // tables stay below it — "what does this cost at each supplier" is a real
+  // question, just not the first one.
+  const plan = planHtml(result.plan, result.currency);
+
   const complete = result.suppliers.filter(
     (supplier) => supplier.linesCovered === supplier.linesTotal,
   );
 
   const headline =
+    '<div class="mb-3 flex flex-wrap items-center gap-3">' +
+    '<p class="text-[12.5px] text-slate-400">' +
+    escapeHtml(
+      formatMessage('{n} артикула в заявката', { n: result.lines.length }),
+    ) +
+    '</p>' + cap + '</div>' +
     '<div class="grid gap-3 sm:grid-cols-2">' +
-    '<div class="rounded-xl border border-white/8 bg-ink-850 px-4 py-3.5">' +
-    '<p class="text-[11.5px] uppercase tracking-wide text-slate-500">Всичко от един доставчик</p>' +
+    '<div class="rounded-xl border border-white/8 bg-ink-850 px-3.5 py-2.5">' +
+    '<p class="text-[11px] uppercase tracking-wide text-slate-500">Всичко от един доставчик</p>' +
     (complete.length
-      ? '<p class="num mt-1 text-2xl font-bold text-slate-200">' +
+      ? '<p class="num mt-1 text-[17px] font-bold text-slate-200">' +
         money(complete[0].total) +
-        ' <span class="text-[13px] font-normal text-slate-500">' +
+        ' <span class="text-[12.5px] font-normal text-slate-500">' +
         escapeHtml(result.currency) +
         '</span></p>' +
-        '<p class="mt-0.5 text-[12px] text-slate-400">' +
+        '<p class="mt-0.5 text-[11.5px] text-slate-400">' +
         escapeHtml(complete[0].name) +
         '</p>'
-      : '<p class="mt-1 text-[13px] text-amber-400">Никой не покрива цялата заявка</p>') +
+      : '<p class="mt-1 text-[12.5px] text-amber-400">Никой не покрива цялата заявка</p>') +
     '</div>' +
-    '<div class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3.5">' +
-    '<p class="text-[11.5px] uppercase tracking-wide text-emerald-400/80">Разделена по най-евтиния</p>' +
-    '<p class="num mt-1 text-2xl font-bold text-emerald-400">' +
+    '<div class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.07] px-3.5 py-2.5">' +
+    '<p class="text-[11px] uppercase tracking-wide text-emerald-400/80">Разделена по най-евтиния</p>' +
+    '<p class="num mt-1 text-[17px] font-bold text-emerald-400">' +
     money(result.split.total) +
-    ' <span class="text-[13px] font-normal text-emerald-400/70">' +
+    ' <span class="text-[12.5px] font-normal text-emerald-400/70">' +
     escapeHtml(result.currency) +
     '</span></p>' +
-    '<p class="mt-0.5 text-[12px] text-slate-400">' +
+    '<p class="mt-0.5 text-[11.5px] text-slate-400">' +
     escapeHtml(result.split.suppliers.join(', ') || '—') +
     '</p>' +
     '</div></div>' +
     (result.saving !== null && result.saving > 0
-      ? '<p class="mt-3 rounded-lg bg-emerald-500/12 px-3 py-2 text-[13px] font-semibold text-emerald-400">' +
+      ? '<p class="mt-3 rounded-lg bg-emerald-500/12 px-3 py-2 text-[12.5px] font-semibold text-emerald-400">' +
         'Разделянето спестява ' +
         money(result.saving) +
         ' ' +
@@ -4708,10 +6953,10 @@ function renderBasket(result) {
 
       return (
         '<tr class="border-b border-white/[0.06]">' +
-        '<td class="py-2.5 pl-4 pr-3 text-[13px] text-slate-200">' +
+        '<td class="py-2.5 pl-4 pr-3 text-[12.5px] text-slate-200">' +
         escapeHtml(supplier.name) +
         '</td>' +
-        '<td class="px-3 py-2.5 text-[12px] ' +
+        '<td class="px-3 py-2.5 text-[11.5px] ' +
         (partial ? 'text-amber-400' : 'text-slate-500') +
         '">' +
         supplier.linesCovered +
@@ -4726,7 +6971,7 @@ function renderBasket(result) {
             '</span>'
           : '') +
         '</td>' +
-        '<td class="num py-2.5 pl-3 pr-4 text-right text-[13.5px] font-semibold ' +
+        '<td class="num py-2.5 pl-3 pr-4 text-right text-[12.5px] font-semibold ' +
         (partial ? 'text-slate-500' : 'text-slate-200') +
         '">' +
         money(supplier.total) +
@@ -4741,56 +6986,128 @@ function renderBasket(result) {
 
       return (
         '<tr class="border-b border-white/[0.06]">' +
-        '<td class="py-2 pl-4 pr-3 text-[12.5px] text-slate-300">' +
+        '<td class="py-2 pl-4 pr-3 text-[11.5px] text-slate-300">' +
         escapeHtml(line.query) +
         '<span class="ml-1.5 text-[11px] text-slate-600">×' +
         line.quantity +
         '</span></td>' +
         (best
-          ? '<td class="px-3 py-2 text-[12px] text-slate-400">' +
+          ? '<td class="px-3 py-2 text-[11.5px] text-slate-400">' +
             escapeHtml(best.shopName) +
             (best.recordedAt
-              ? '<span class="ml-1.5 text-[10.5px] text-violet-300" title="Ваша цена или запазен отговор — не е четена в момента.">· ' +
+              ? '<span class="ml-1.5 text-[10px] text-violet-300" title="Ваша цена или запазен отговор — не е четена в момента.">· ' +
                 escapeHtml(formatRelative(best.recordedAt)) +
                 '</span>'
               : '') +
             '</td>' +
-            '<td class="num py-2 pl-3 pr-4 text-right text-[12.5px] text-slate-200">' +
+            '<td class="num py-2 pl-3 pr-4 text-right text-[11.5px] text-slate-200">' +
             money(best.effectivePrice * line.quantity) +
             '</td>'
-          : '<td class="px-3 py-2 text-[12px] text-amber-400">никой не го предлага</td>' +
-            '<td class="py-2 pl-3 pr-4 text-right text-[12px] text-slate-600">—</td>') +
+          : '<td class="px-3 py-2 text-[11.5px] text-amber-400">никой не го предлага</td>' +
+            '<td class="py-2 pl-3 pr-4 text-right text-[11.5px] text-slate-600">—</td>') +
         '</tr>'
       );
     })
     .join('');
 
   box.innerHTML =
+    plan +
+    '<details class="mt-3.5"><summary class="cursor-pointer text-[11.5px] font-medium text-slate-500 hover:text-slate-300">Пълната сметка при всеки доставчик</summary>' +
+    '<div class="mt-3">' +
     headline +
-    '<div class="mt-5 overflow-hidden rounded-xl border border-white/8">' +
-    '<p class="border-b border-white/8 bg-ink-950/50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Цялата поръчка при всеки доставчик</p>' +
+    '<div class="mt-3.5 overflow-hidden rounded-xl border border-white/8">' +
+    '<p class="border-b border-white/8 bg-ink-950/50 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Цялата поръчка при всеки доставчик</p>' +
     '<table class="w-full text-left"><tbody>' +
     suppliers +
     '</tbody></table></div>' +
     '<div class="mt-4 overflow-hidden rounded-xl border border-white/8">' +
-    '<p class="border-b border-white/8 bg-ink-950/50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ред по ред, най-евтиното</p>' +
+    '<p class="border-b border-white/8 bg-ink-950/50 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ред по ред, най-евтиното</p>' +
     '<table class="w-full text-left"><tbody>' +
     rows +
     '</tbody></table></div>' +
-    '<p class="mt-3 text-[11.5px] text-slate-600">Изчислено за ' +
+    '</div></details>' +
+    '<p class="mt-3 text-[11px] text-slate-600">Изчислено за ' +
     (result.durationMs / 1000).toFixed(1) +
     ' сек.</p>';
+
+  // Re-plans on change rather than waiting for a button: the suppliers have
+  // already been asked, so trying two or three values costs nothing.
+  const select = document.getElementById('basket-cap');
+  if (select) {
+    select.addEventListener('change', function () {
+      basketMaxSuppliers = Number(select.value) || null;
+
+      // Through the same button, so a cap changed twice in a second cannot
+      // put two pricings of the same order in flight against each other.
+      void startable($('#catalogue-search'), (signal) => priceBasket(undefined, signal), 'Спри');
+    });
+  }
 }
 
-$('#basket-run').addEventListener('click', priceBasket);
+/**
+ * How many suppliers the buyer is willing to split across.
+ *
+ * A real constraint rather than a tuning knob — three deliveries to accept and
+ * three invoices to reconcile is often worth more than the €5 the third
+ * supplier saves — so it stayed. It moved out of the way of the question,
+ * though: it is asked *after* a plan exists, next to the plan it changes,
+ * where it means something. On an empty screen it was a setting nobody could
+ * have an opinion about yet.
+ */
+let basketMaxSuppliers = null;
 
 $('#table-empty-action').addEventListener('click', function () {
   $('#add-product').click();
 });
 
-$('#catalogue-search').addEventListener('click', searchCatalogue);
+/**
+ * The box grows with what is pasted into it, and says how many articles it
+ * read — which is the whole of the multi-product interface.
+ */
+(function wireSearchBox() {
+  const box = $('#catalogue-query');
+  const count = $('#catalogue-lines');
+  if (!box) return;
+
+  const resize = function () {
+    // Counted, not measured.
+    //
+    // Measuring was the obvious way and it was wrong twice over: a textarea
+    // reports nonsense while its section is still hidden, and inside a flex
+    // column it reports the height of the space it was given rather than of
+    // the text in it. Both failures looked the same — a single line of text
+    // floating at the top of a box four lines tall.
+    //
+    // The box only ever holds short lines, so the number of them is the whole
+    // answer, and it needs no layout at all.
+    const written = box.value.split('\n').length;
+    box.rows = Math.min(8, Math.max(1, written));
+
+    if (!count) return;
+    const lines = parseBasketLines(box.value).length;
+    count.textContent = lines > 1 ? lines + ' ' + plural(lines, 'артикул', 'артикула') : '';
+  };
+
+  box.addEventListener('input', resize);
+  window.resizeSearchBox = resize;
+  resize();
+})();
+
+$('#catalogue-search').addEventListener('click', function () {
+  void startable(this, searchCatalogue, 'Спри');
+});
 $('#catalogue-query').addEventListener('keydown', function (event) {
-  if (event.key === 'Enter') searchCatalogue();
+  // Enter searches; Shift+Enter is a new article. The box takes a list, and a
+  // list needs a way to write the second line.
+  if (event.key !== 'Enter' || event.shiftKey) return;
+  event.preventDefault();
+
+  // Enter while a search is running does nothing. Stopping is a deliberate
+  // act with its own button, and losing a search to a stray keypress is not
+  // something anybody asked for.
+  if (isRunning($('#catalogue-search'))) return;
+
+  $('#catalogue-search').click();
 });
 
 /* ------------------------------------------------------------------ *
@@ -4809,7 +7126,7 @@ async function startCheckout(plan, button) {
   const original = button.innerHTML;
   button.disabled = true;
   button.innerHTML =
-    '<i class="fa-solid fa-circle-notch fa-spin text-[13px]"></i> Отварям плащането…';
+    '<i class="fa-solid fa-circle-notch fa-spin text-[12.5px]"></i> Отварям плащането…';
 
   try {
     const response = await fetch(ENDPOINTS.billingCheckout, {
@@ -5067,7 +7384,7 @@ function showSignInStatus(message, tone) {
   const element = $('#signin-status');
   element.textContent = message;
   element.className =
-    'mt-3 text-[12.5px] ' +
+    'mt-3 text-[11.5px] ' +
     (tone === 'error' ? 'text-red-400' : tone === 'success' ? 'text-emerald-400' : 'text-slate-400');
   element.classList.remove('hidden');
 }
@@ -5134,8 +7451,14 @@ $('#signout-button').addEventListener('click', async function () {
     // leave somebody unable to sign out of a shared computer.
   }
 
+  // The session and the customer key both go. The operator key is not touched:
+  // it is a different identity and was not what was signed out of — removing
+  // it here would log an operator out of the panel because they signed out of
+  // a customer account they happened to also hold.
   setSession(null);
+  setApiKey('');
   account = null;
+  forgetAccount();
   renderAccount();
   closeModal('signin-modal');
   toast('Излязохте от този браузър.', 'info');
@@ -5174,6 +7497,7 @@ async function promptForSecondFactor(challenge) {
       if (response.ok) {
         setSession(payload);
         account = payload;
+        forgetAccount();
         renderAccount();
 
         if (payload.apiKey) {
@@ -5239,6 +7563,7 @@ async function promptForSecondFactor(challenge) {
 
     setSession(payload);
     account = payload;
+    forgetAccount();
     renderAccount();
 
     if (payload.apiKey) {
@@ -5274,14 +7599,14 @@ function showIssuedKey(apiKey) {
   $('#account-plan').textContent = 'Акаунтът е отворен и потвърден.';
 
   $('#account-usage').innerHTML =
-    '<p class="text-[13px] leading-relaxed text-slate-300">Ето вашия API ключ — виждате го само сега.</p>' +
+    '<p class="text-[12.5px] leading-relaxed text-slate-300">Ето вашия API ключ — виждате го само сега.</p>' +
     '<div class="mt-2 flex items-center gap-2 rounded-xl border border-accent-500/30 bg-ink-900 p-3">' +
-    '<code id="issued-key" class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] text-accent-400">' +
+    '<code id="issued-key" class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-[11.5px] text-accent-400">' +
     escapeHtml(apiKey) +
     '</code>' +
-    '<button type="button" id="issued-copy" class="shrink-0 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100">' +
-    '<i class="fa-solid fa-copy text-[12px]"></i> Копирай</button></div>' +
-    '<p class="mt-2 text-[12px] leading-relaxed text-slate-500">Изпратихме копие и на имейла ви. Ключът е за програми — в браузъра оставате влезли и без него.</p>';
+    '<button type="button" id="issued-copy" class="shrink-0 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[11.5px] font-medium text-slate-300 transition hover:border-white/25 hover:text-slate-100">' +
+    '<i class="fa-solid fa-copy text-[11.5px]"></i> Копирай</button></div>' +
+    '<p class="mt-2 text-[11.5px] leading-relaxed text-slate-500">Изпратихме копие и на имейла ви. Ключът е за програми — в браузъра оставате влезли и без него.</p>';
 
   $('#issued-copy').addEventListener('click', async function () {
     try {
@@ -5323,11 +7648,20 @@ async function refreshPlanBar() {
     return;
   }
 
-  try {
-    const response = await fetch(ENDPOINTS.billingMe, { headers: authHeaders() });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
+  // `isIdentified` above already excluded the operator — it reads the customer
+  // slot only — so by here there is a customer credential and /billing/me is a
+  // question worth asking. The probe is still awaited once, to settle a browser
+  // whose key predates the split before anything is asked with it.
+  await operatorKnown();
 
-    account = await response.json();
+  if (usingOperatorKey || !isIdentified()) {
+    bars.forEach((bar) => (bar.hidden = true));
+    return;
+  }
+
+  try {
+    account = await accountOnce();
+    if (!account) throw new Error('no account');
   } catch (error) {
     // An operator key has no account row, and a dead session has none
     // either. Neither is worth an error message here.
@@ -5395,7 +7729,7 @@ function renderTrialPill(pill, account) {
     ? 'След това следим 10 артикула. Останалите спират, но не се изтриват.'
     : 'Пробен период ПРО. Натиснете за плановете.';
   pill.className =
-    'nav-link rounded-md px-2 py-0.5 text-[11.5px] font-semibold transition ' +
+    'nav-link rounded-md px-2 py-0.5 text-[11px] font-semibold transition ' +
     (urgent
       ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 dark:text-amber-300'
       : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200');
@@ -5417,7 +7751,7 @@ $$('[data-plan-manage]').forEach(function (button) {
 /** The account panel: who this is, and what is left of the month. */
 async function renderAccountPanel() {
   const box = $('#account-usage');
-  box.innerHTML = '<p class="text-[12.5px] text-slate-500">Зареждам…</p>';
+  box.innerHTML = '<p class="text-[11.5px] text-slate-500">Зареждам…</p>';
 
   try {
     const response = await fetch(ENDPOINTS.billingMe, { headers: authHeaders() });
@@ -5438,17 +7772,17 @@ async function renderAccountPanel() {
       ) +
       (account.aiMatchesRenew
         ? ''
-        : '<p class="text-[12px] leading-relaxed text-slate-500">Безплатният план дава ' +
+        : '<p class="text-[11.5px] leading-relaxed text-slate-500">Безплатният план дава ' +
           account.aiMatchesLimit +
           ' сравнения еднократно. Търсенето продължава и след това — по спецификации, без модел.</p>') +
       (account.apiKeyPrefix
-        ? '<p class="text-[12px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
+        ? '<p class="text-[11.5px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
           escapeHtml(account.apiKeyPrefix) +
           '…</span> — за програми. Този вход е за хора.</p>'
         : '');
   } catch (error) {
     box.innerHTML =
-      '<p class="text-[12.5px] text-red-400">Данните за акаунта не се заредиха.</p>';
+      '<p class="text-[11.5px] text-red-400">Данните за акаунта не се заредиха.</p>';
   }
 }
 
@@ -5460,8 +7794,8 @@ function meterHtml(label, used, limit, options) {
   return (
     '<div>' +
     '<div class="flex items-baseline justify-between gap-3">' +
-    '<span class="text-[12.5px] text-slate-400">' + escapeHtml(label) + '</span>' +
-    '<span class="num text-[12.5px] font-semibold text-slate-300">' + used + ' / ' + limit + '</span>' +
+    '<span class="text-[11.5px] text-slate-400">' + escapeHtml(label) + '</span>' +
+    '<span class="num text-[11.5px] font-semibold text-slate-300">' + used + ' / ' + limit + '</span>' +
     '</div>' +
     '<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">' +
     '<div class="h-full rounded-full ' + tone + '" style="width:' + share + '%"></div>' +
@@ -5470,7 +7804,7 @@ function meterHtml(label, used, limit, options) {
     // for sale. A permanent "buy more" next to a full meter is an advert.
     (offerTopUp
       ? '<a href="' + escapeHtml(topUpUrl) + '" target="_blank" rel="noopener" ' +
-        'class="mt-1.5 inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-accent-500 hover:underline">' +
+        'class="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent-500 hover:underline">' +
         '<i class="fa-solid fa-plus text-[9px]"></i>Купи още сравнения</a>'
       : '') +
     '</div>'
@@ -5503,7 +7837,7 @@ function showSignupStatus(message, tone) {
   const element = $('#signup-status');
   element.textContent = message;
   element.className =
-    'mt-3 text-[12.5px] ' +
+    'mt-3 text-[11.5px] ' +
     (tone === 'error'
       ? 'text-red-400'
       : tone === 'success'
@@ -5619,19 +7953,25 @@ const STATUS_STYLE = {
  * Inferring it from the key's own prefix would be guessing at a rule the
  * server owns.
  */
-async function detectOperator() {
-  if (!getApiKey()) return false;
+/** The desktop pill and the mobile tab, moved together. Two elements that
+ *  disagree about whether you are an operator is worse than neither. */
+function showOperatorEntries(visible) {
+  $('#nav-operator').hidden = !visible;
 
-  try {
-    const response = await fetch(ENDPOINTS.billingUsers, { headers: authHeaders() });
-    const isOperator = response.ok;
-    $('#nav-operator').hidden = !isOperator;
-    return isOperator;
-  } catch (error) {
-    $('#nav-operator').hidden = true;
-    return false;
-  }
+  const mobile = $('#nav-operator-mobile');
+  if (mobile) mobile.hidden = !visible;
 }
+
+/*
+ * `detectOperator` used to live here.
+ *
+ * It asked the server "is the key in the customer slot an operator's?" — a
+ * question that only had to be asked because both kinds shared one slot. They
+ * no longer do: which box a key is in *is* the answer, so the probe is gone
+ * and `usingOperatorKey` is read from storage. The one remaining server call
+ * is `migrateLegacyOperatorKey`, which runs once for a browser that still has
+ * a key stored under the old arrangement.
+ */
 
 /**
  * The four things that are either working or not.
@@ -5649,9 +7989,12 @@ async function loadOperatorHealth() {
   const strip = $('#operator-health');
   if (!strip) return;
 
+  // Operator credentials: this strip lives on the operator panel, and two of
+  // the four endpoints below are operator-only. `/health` is public and takes
+  // the header harmlessly.
   const ask = async (url) => {
     try {
-      const response = await fetch(url, { headers: authHeaders() });
+      const response = await fetch(url, { headers: operatorHeaders() });
       return response.ok ? await response.json() : null;
     } catch (error) {
       return null;
@@ -5666,15 +8009,15 @@ async function loadOperatorHealth() {
   ]);
 
   const tile = (label, value, ok, detail) =>
-    '<div class="bg-ink-900 px-4 py-3.5">' +
+    '<div class="bg-ink-900 px-3.5 py-2.5">' +
     '<div class="flex items-center gap-2">' +
     '<span class="h-1.5 w-1.5 shrink-0 rounded-full ' +
     (ok ? 'bg-emerald-400' : 'bg-amber-400') +
     '"></span>' +
-    '<span class="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">' +
+    '<span class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">' +
     escapeHtml(label) +
     '</span></div>' +
-    '<p class="mt-1.5 text-[13.5px] font-medium ' +
+    '<p class="mt-1.5 text-[12.5px] font-medium ' +
     (ok ? 'text-slate-200' : 'text-amber-300') +
     '">' +
     escapeHtml(value) +
@@ -5715,39 +8058,95 @@ async function loadOperatorHealth() {
     );
 }
 
+/**
+ * Opens the panel: the health strip, which every tab keeps overhead, and
+ * whichever tab is current. The strip is deliberately outside the tabs —
+ * "is anything on fire" is the question you carry in with you, whichever
+ * screen you actually came for.
+ */
 async function loadOperatorPanel() {
   void loadOperatorHealth();
 
+  // The range buttons carry their state in a class, and nothing has set it
+  // until the panel opens for the first time.
+  $$('[data-op-range]').forEach((button) =>
+    button.classList.toggle('tab-active', Number(button.dataset.opRange) === operatorRange),
+  );
+
+  openOperatorTab(operatorTab, { force: true });
+}
+
+/** The customer list. Its own function since the panel grew tabs — before
+ *  that it *was* the panel. */
+/** Everyone, as last fetched. Filtering happens here rather than on the
+ *  server: the whole customer list is small enough to hold, and a search
+ *  that answers as you type beats one that waits for a round trip. */
+let operatorCustomers = [];
+
+async function loadOperatorCustomers() {
   const list = $('#operator-list');
   list.innerHTML =
-    '<p class="px-5 py-8 text-center text-[13px] text-slate-500">Зареждам…</p>';
+    '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
 
-  let users;
   try {
-    const response = await fetch(ENDPOINTS.billingUsers, { headers: authHeaders() });
+    const response = await fetch(ENDPOINTS.billingUsers, { headers: operatorHeaders() });
 
     if (response.status === 403) {
       list.innerHTML =
-        '<p class="px-5 py-10 text-center text-[13px] text-slate-500">' +
-        'Този екран иска операторски ключ — този от <code class="font-mono text-slate-400">API_KEY</code> в средата, ' +
-        'не клиентски.</p>';
+        '<p class="px-4 py-6 text-center text-[12.5px] text-slate-500">' +
+        'Този екран иска операторски ключ, не клиентски.</p>';
       return;
     }
 
     if (!response.ok) throw new Error('HTTP ' + response.status);
-    users = await response.json();
+    operatorCustomers = await response.json();
   } catch (error) {
     list.innerHTML =
-      '<p class="px-5 py-10 text-center text-[13px] text-red-400">' +
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
       escapeHtml(failureText(error, 'Не се зареди')) +
       '</p>';
     return;
   }
 
+  renderOperatorCustomers();
+}
+
+/** Draws the table from whatever survives the search box and the two
+ *  dropdowns. Separate from the fetch so typing does not hit the network. */
+function renderOperatorCustomers() {
+  const list = $('#operator-list');
+  const term = $('#operator-customer-search').value.trim().toLowerCase();
+  const status = $('#operator-customer-status').value;
+  const plan = $('#operator-customer-plan').value;
+
+  const users = operatorCustomers.filter(function (user) {
+    if (status && user.status !== status) return false;
+    if (plan && user.plan !== plan) return false;
+    if (!term) return true;
+
+    return (
+      (user.email || '').toLowerCase().includes(term) ||
+      (user.name || '').toLowerCase().includes(term)
+    );
+  });
+
+  const counter = $('#operator-customer-count');
+  counter.textContent =
+    users.length === operatorCustomers.length
+      ? operatorCustomers.length + ' общо'
+      : users.length + ' от ' + operatorCustomers.length;
+
+  if (operatorCustomers.length && !users.length) {
+    list.innerHTML =
+      '<p class="px-4 py-7 text-center text-[12.5px] text-slate-500">' +
+      'Никой не отговаря на този филтър.</p>';
+    return;
+  }
+
   if (!users.length) {
     list.innerHTML =
-      '<div class="px-5 py-12 text-center text-[13.5px] text-slate-500">' +
-      '<i class="fa-solid fa-users mb-3 block text-2xl text-slate-700"></i>' +
+      '<div class="px-4 py-7 text-center text-[12.5px] text-slate-500">' +
+      '<i class="fa-solid fa-users mb-3 block text-[17px] text-slate-700"></i>' +
       'Още няма клиенти. Акаунт се създава сам при първото успешно плащане.</div>';
     return;
   }
@@ -5758,17 +8157,17 @@ async function loadOperatorPanel() {
 
       return (
         '<tr class="border-b border-white/[0.06] transition hover:bg-white/[0.03]">' +
-        '<td class="py-3 pl-5 pr-3">' +
-        '<span class="block truncate text-[13px] font-medium text-slate-200">' +
+        '<td data-label="Клиент" class="py-3 pl-5 pr-3">' +
+        '<span class="block truncate text-[12.5px] font-medium text-slate-200">' +
         escapeHtml(user.email) +
         '</span>' +
         (user.name
-          ? '<span class="block truncate text-[11.5px] text-slate-500">' +
+          ? '<span class="block truncate text-[11px] text-slate-500">' +
             escapeHtml(user.name) +
             '</span>'
           : '') +
         '</td>' +
-        '<td class="px-3 py-3">' +
+        '<td data-label="Състояние" class="px-3 py-3">' +
         '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ' +
         status.class +
         '">' +
@@ -5776,10 +8175,10 @@ async function loadOperatorPanel() {
         '</span></td>' +
         // Editable in place rather than behind a dialog: this is a table an
         // operator scans and corrects, and a modal per row is a modal too many.
-        '<td class="px-3 py-3">' +
+        '<td data-label="План" class="px-3 py-3">' +
         '<select data-plan="' +
         escapeHtml(user.id) +
-        '" class="rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-[12.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none">' +
+        '" class="rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-[11.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none">' +
         ['free', 'starter', 'pro', 'business']
           .map(
             (value) =>
@@ -5793,16 +8192,16 @@ async function loadOperatorPanel() {
           )
           .join('') +
         '</select></td>' +
-        '<td class="px-3 py-3 text-right">' +
+        '<td data-label="Лимит" class="px-3 py-3 text-right">' +
         '<input type="number" min="0" max="100000" data-limit="' +
         escapeHtml(user.id) +
         '" value="' +
         user.productLimit +
-        '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-right text-[12.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none" />' +
+        '" class="num w-20 rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-right text-[11.5px] text-slate-300 transition hover:border-accent-500/40 focus:border-accent-500/60 focus:outline-none" />' +
         '</td>' +
         // What they are actually spending, next to what they are allowed.
         // A limit on its own says what we sold; this says whether it fits.
-        '<td class="num px-3 py-3 text-right text-[12.5px]">' +
+        '<td data-label="AI" class="num px-3 py-3 text-right text-[11.5px]">' +
         '<span class="' +
         (user.aiMatchesUsed >= user.aiMatchesLimit ? 'text-amber-400' : 'text-slate-400') +
         '">' +
@@ -5810,23 +8209,23 @@ async function loadOperatorPanel() {
         ' / ' +
         user.aiMatchesLimit +
         '</span></td>' +
-        '<td class="px-3 py-3 text-[11.5px] text-slate-500">' +
+        '<td data-label="Език" class="px-3 py-3 text-[11px] text-slate-500">' +
         escapeHtml(user.locale ? user.locale.toUpperCase() : '—') +
         '</td>' +
-        '<td class="px-3 py-3">' +
+        '<td data-label="Ключ" class="px-3 py-3">' +
         (user.apiKeyPrefix
-          ? '<span class="font-mono text-[11.5px] text-slate-400">' +
+          ? '<span class="font-mono text-[11px] text-slate-400">' +
             escapeHtml(user.apiKeyPrefix) +
             '…</span>'
-          : '<span class="text-[11.5px] text-slate-600">няма ключ</span>') +
+          : '<span class="text-[11px] text-slate-600">няма ключ</span>') +
         '</td>' +
-        '<td class="px-3 py-3 text-[11.5px] text-slate-500">' +
+        '<td data-label="Ползван" class="px-3 py-3 text-[11px] text-slate-500">' +
         escapeHtml(
           user.apiKeyLastUsedAt ? formatRelative(user.apiKeyLastUsedAt) : 'не е ползван',
         ) +
         '</td>' +
         '<td class="py-3 pl-3 pr-5 text-right">' +
-        '<span class="inline-flex items-center gap-1.5">' +
+        '<span class="op-actions inline-flex items-center gap-1.5">' +
         '<button type="button" data-suspend="' +
         escapeHtml(user.id) +
         '" data-suspended="' +
@@ -5842,16 +8241,21 @@ async function loadOperatorPanel() {
         ' text-[10px]"></i></button>' +
         '<button type="button" data-reissue="' +
         escapeHtml(user.email) +
-        '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-amber-500/40 hover:text-amber-300">' +
-        '<i class="fa-solid fa-key text-[10px]"></i>Нов ключ</button>' +
+        '" class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[11.5px] font-medium text-slate-300 transition hover:border-amber-500/40 hover:text-amber-300">' +
+        '<i class="fa-solid fa-key text-[10px]"></i><span class="whitespace-nowrap">Нов ключ</span></button>' +
         '</span></td></tr>'
       );
     })
     .join('');
 
   list.innerHTML =
-    '<table class="w-full text-left">' +
-    '<thead><tr class="border-b border-white/8 text-[10.5px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
+    // The wrapper is what makes the buttons reachable between the card
+    // breakpoint and the width the full table needs: without it the card
+    // this sits in is `overflow-hidden` for its rounded corners, and the
+    // last two columns were simply cut off the right edge.
+    '<div class="overflow-x-auto md:overflow-x-auto">' +
+    '<table class="op-table w-full text-left">' +
+    '<thead><tr class="border-b border-white/8 text-[10px] uppercase tracking-wide text-slate-500 [&>th]:whitespace-nowrap">' +
     '<th class="py-2.5 pl-5 pr-3 font-semibold">Клиент</th>' +
     '<th class="px-3 py-2.5 font-semibold">Състояние</th>' +
     '<th class="px-3 py-2.5 font-semibold">План</th>' +
@@ -5863,7 +8267,7 @@ async function loadOperatorPanel() {
     '<th class="py-2.5 pl-3 pr-5"></th>' +
     '</tr></thead><tbody>' +
     rows +
-    '</tbody></table>';
+    '</tbody></table></div>';
 
   $$('[data-reissue]').forEach(function (button) {
     button.addEventListener('click', () => reissueKey(button.dataset.reissue));
@@ -5895,7 +8299,7 @@ async function patchUser(id, changes, failure) {
   try {
     const response = await fetch(ENDPOINTS.billingUsers + '/' + encodeURIComponent(id), {
       method: 'PATCH',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      headers: operatorHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(changes),
     });
 
@@ -5965,22 +8369,22 @@ async function reissueKey(email) {
     // plaintext exists anywhere, and a toast that fades after three
     // seconds is how it gets lost a second time.
     $('#operator-issued').innerHTML =
-      '<div class="rounded-2xl border border-amber-500/30 bg-amber-500/[0.07] px-5 py-4">' +
-      '<p class="text-[13.5px] font-semibold text-amber-400">' +
+      '<div class="rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-4 py-2.5">' +
+      '<p class="text-[12.5px] font-semibold text-amber-400">' +
       '<i class="fa-solid fa-key mr-1.5"></i>Нов ключ за ' +
       escapeHtml(issued.email) +
       '</p>' +
-      '<p class="mt-1.5 text-[12.5px] text-slate-400">Копирайте го сега — след като напуснете страницата, ' +
+      '<p class="mt-1.5 text-[11.5px] text-slate-400">Копирайте го сега — след като напуснете страницата, ' +
       'няма откъде да се прочете отново.</p>' +
       '<div class="mt-3 flex flex-wrap items-center gap-2">' +
-      '<code class="min-w-0 flex-1 overflow-x-auto rounded-lg border border-white/10 bg-ink-950 px-3 py-2.5 font-mono text-[13px] text-emerald-400">' +
+      '<code class="min-w-0 flex-1 overflow-x-auto rounded-lg border border-white/10 bg-ink-950 px-3 py-2.5 font-mono text-[12.5px] text-emerald-400">' +
       escapeHtml(issued.apiKey) +
       '</code>' +
-      '<button type="button" id="copy-issued-key" class="rounded-lg border border-white/10 bg-ink-850 px-3 py-2.5 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40">' +
+      '<button type="button" id="copy-issued-key" class="rounded-lg border border-white/10 bg-ink-850 px-3 py-2.5 text-[11.5px] font-medium text-slate-300 transition hover:border-accent-500/40">' +
       '<i class="fa-solid fa-copy mr-1.5 text-[11px]"></i>Копирай</button>' +
       '</div>' +
       (issued.replacedPreviousKey
-        ? '<p class="mt-2.5 text-[11.5px] text-amber-400/80">Предишният ключ вече не работи.</p>'
+        ? '<p class="mt-2.5 text-[11px] text-amber-400/80">Предишният ключ вече не работи.</p>'
         : '') +
       '</div>';
 
@@ -5996,6 +8400,1565 @@ async function reissueKey(email) {
     toast(failureText(error, 'Ключът не се издаде'), 'error');
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * SECTION — operator panel: overview, payments, supplier sites
+ *
+ * Three screens that had no endpoint until now, because everything the
+ * API exposes is filtered by owner and none of these questions has one:
+ * how the business is growing, whether the money actually arrived, and
+ * which supplier sites we are leaning on across every customer.
+ *
+ * Charts are inline SVG. The page ships no bundler, and pulling in a
+ * charting library to draw thirty rectangles would cost more bytes than
+ * the whole operator panel — while a strict Content-Security-Policy
+ * forbids fetching one from a CDN anyway.
+ * ------------------------------------------------------------------ */
+
+/** Which tab is open. Kept so "Опресни" reloads what you are looking at
+ *  rather than everything, and so a tab is fetched the first time it is
+ *  opened instead of on every visit to the panel. */
+let operatorTab = 'overview';
+const operatorLoaded = {
+  overview: false,
+  scrape: false,
+  alerts: false,
+  customers: false,
+  payments: false,
+  shops: false,
+};
+
+const OPERATOR_LEDE = {
+  overview: 'Как расте всичко и дали парите пристигат. Числата са за всички клиенти, не за акаунт.',
+  scrape:
+    'Дали обиколката минава и къде се спъва. Провалите са по сайт, защото сайтът е поправката, не обявата.',
+  alerts:
+    'Какво е тръгнало към клиентите и дали е стигнало. Потвърдените остават в списъка, избледнени.',
+  search:
+    'Защо търсенето отговори точно това. Числата отгоре са здравето му за деня; проследяването отдолу пуска един въпрос на живо и показва всеки етап — какво разчете, какво попита всеки доставчик, какво съвпадна, какво липсва и кое го отхвърли.',
+  customers:
+    'Кой е платил, на какъв план е и с кой ключ работи. Ключът не може да се прочете — пази се само отпечатък. Загубен ключ се заменя с нов, не се възстановява.',
+  decisions:
+    'Какво са решили клиентите и дали машината, която ги съветва, работи. Стойностите са формата на решението, не съдържанието му — какво купува един клиент не отговаря на нито един от тези въпроси.',
+  payments:
+    'Всяко събитие от Stripe, както е дошло. Тук се проверява оплакването „платих и не получих нищо“.',
+  shops:
+    'Сайтовете на доставчиците, по един ред на домейн, не по един на клиент. Счупен селектор на сайт, който трима клиенти ползват, е три оплаквания.',
+};
+
+/**
+ * A bar per day.
+ *
+ * `peak` is at least 1, so a month with nothing in it draws a flat floor
+ * rather than dividing by zero. `bad` shades the failed part of the same
+ * bar instead of adding a second series: a day with four webhooks of which
+ * one failed is one fact, and two bars side by side invite reading it as
+ * five events.
+ */
+function dailyBars(points, accent) {
+  const slot = 10;
+  const height = 80;
+  const width = Math.max(points.length, 1) * slot;
+  const peak = Math.max(1, ...points.map((point) => point.value || 0));
+
+  const bars = points
+    .map(function (point, index) {
+      const value = point.value || 0;
+      const bad = Math.min(point.bad || 0, value);
+      const full = value > 0 ? Math.max(2, Math.round((value / peak) * (height - 6))) : 0;
+      const badHeight = value > 0 ? Math.round((bad / value) * full) : 0;
+      const x = index * slot + 1.5;
+      const label = point.day + ' — ' + value + (bad ? ' (' + bad + ' необработени)' : '');
+
+      // An empty day still gets a hairline. Without it the axis disappears
+      // wherever nothing happened, and a gap reads as missing data rather
+      // than as a quiet Sunday.
+      if (full === 0) {
+        return (
+          '<rect x="' + x + '" y="' + (height - 1) + '" width="7" height="1" rx="0.5" ' +
+          'fill="currentColor" opacity="0.18"><title>' + escapeHtml(label) + '</title></rect>'
+        );
+      }
+
+      return (
+        '<g><title>' + escapeHtml(label) + '</title>' +
+        '<rect x="' + x + '" y="' + (height - full) + '" width="7" height="' + full +
+        '" rx="1.5" fill="' + accent + '" opacity="0.85"></rect>' +
+        (badHeight > 0
+          ? '<rect x="' + x + '" y="' + (height - badHeight) + '" width="7" height="' +
+            badHeight + '" rx="1.5" fill="#f87171"></rect>'
+          : '') +
+        '</g>'
+      );
+    })
+    .join('');
+
+  return (
+    '<svg viewBox="0 0 ' + width + ' ' + height + '" class="h-24 w-full text-slate-400" ' +
+    'role="img" preserveAspectRatio="none">' + bars + '</svg>'
+  );
+}
+
+/** A chart with its title, total and date range around it. */
+function chartCard(title, note, total, points, accent) {
+  const first = points.length ? points[0].day : '';
+  const last = points.length ? points[points.length - 1].day : '';
+
+  return (
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5 shadow-panel">' +
+    '<div class="flex items-baseline justify-between gap-3">' +
+    '<div><p class="text-[12.5px] font-semibold text-slate-200">' + escapeHtml(title) + '</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">' + escapeHtml(note) + '</p></div>' +
+    '<p class="num text-[17px] font-bold text-slate-200">' + total + '</p></div>' +
+    '<div class="mt-4">' + dailyBars(points, accent) + '</div>' +
+    '<div class="mt-2 flex justify-between text-[11px] text-slate-600">' +
+    '<span>' + escapeHtml(first) + '</span><span>' + escapeHtml(last) + '</span></div>' +
+    '</div>'
+  );
+}
+
+/** One headline number. `tone` amber marks a figure that wants attention;
+ *  everything else stays neutral, so the amber ones actually stand out. */
+function headlineTile(label, value, note, tone) {
+  return (
+    '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-2.5 shadow-panel">' +
+    '<p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">' +
+    escapeHtml(label) + '</p>' +
+    '<p class="num mt-1.5 text-[19px] font-bold ' +
+    (tone === 'amber' ? 'text-amber-300' : 'text-slate-200') + '">' + value + '</p>' +
+    '<p class="mt-1 text-[11px] text-slate-500">' + escapeHtml(note) + '</p></div>'
+  );
+}
+
+/** A horizontal bar per plan, so the mix is readable without a legend. */
+function planBars(byPlan) {
+  const entries = Object.keys(byPlan).map((plan) => ({ plan, count: byPlan[plan] }));
+  const peak = Math.max(1, ...entries.map((entry) => entry.count));
+
+  return (
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5 shadow-panel">' +
+    '<p class="text-[12.5px] font-semibold text-slate-200">Разпределение по план</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">Всеки план се показва, включително празните.</p>' +
+    '<div class="mt-4 space-y-2.5">' +
+    entries
+      .map(function (entry) {
+        const width = Math.round((entry.count / peak) * 100);
+        return (
+          '<div class="flex items-center gap-3">' +
+          '<span class="w-20 shrink-0 text-[11.5px] text-slate-400">' +
+          escapeHtml(PLAN_LABELS[entry.plan] || entry.plan) + '</span>' +
+          '<span class="h-2 flex-1 overflow-hidden rounded-full bg-white/5">' +
+          '<span class="block h-full rounded-full bg-accent-500/70" style="width:' +
+          Math.max(entry.count ? 3 : 0, width) + '%"></span></span>' +
+          '<span class="num w-8 shrink-0 text-right text-[11.5px] text-slate-300">' +
+          entry.count + '</span></div>'
+        );
+      })
+      .join('') +
+    '</div></div>'
+  );
+}
+
+async function loadOperatorOverview() {
+  const headline = $('#operator-headline');
+  const charts = $('#operator-charts');
+  if (!headline || !charts) return;
+
+  headline.innerHTML =
+    '<p class="col-span-full px-1 py-6 text-[12.5px] text-slate-500">Зареждам…</p>';
+  charts.innerHTML = '';
+
+  let data;
+  try {
+    const response = await fetch(ENDPOINTS.adminOverview + '?days=' + operatorRange, {
+      headers: operatorHeaders(),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    data = await response.json();
+  } catch (error) {
+    headline.innerHTML =
+      '<p class="col-span-full px-1 py-6 text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Прегледът не се зареди')) + '</p>';
+    return;
+  }
+
+  const customers = data.customers;
+  const events = data.events;
+  const scrape = data.scrape;
+
+  headline.innerHTML =
+    headlineTile(
+      'Клиенти',
+      customers.total,
+      customers.active + ' активни · ' + customers.newInWindow + ' нови за ' + data.days + ' дни',
+    ) +
+    headlineTile(
+      'В проба',
+      customers.onTrial,
+      customers.pending + ' чакат плащане',
+    ) +
+    headlineTile(
+      'Следени артикули',
+      data.workload.products,
+      data.workload.competitors + ' обявени цени при ' + data.workload.shops + ' доставчика',
+    ) +
+    headlineTile(
+      'Необработени плащания',
+      events.unprocessed,
+      events.total + ' събития общо',
+      events.unprocessed > 0 ? 'amber' : null,
+    );
+
+  // Badges live on the rail, so a problem on a screen you are not looking at
+  // still reaches you. Sourced from the overview because it is the one call
+  // that already knows all three numbers.
+  paintOperatorBadges({
+    payments: events.unprocessed,
+    scrape: scrape.failed,
+    alerts: 0,
+  });
+  stampUpdated();
+
+  const signupTotal = data.signups.reduce((sum, point) => sum + point.count, 0);
+  const billingTotal = data.billing.reduce((sum, point) => sum + point.received, 0);
+
+  charts.innerHTML =
+    chartCard(
+      'Регистрации',
+      'по дни, последните ' + data.days,
+      signupTotal,
+      data.signups.map((point) => ({ day: point.day, value: point.count })),
+      '#2dd4bf',
+    ) +
+    chartCard(
+      'Плащания от Stripe',
+      'webhook-и по дни; червеното не е свършило работа',
+      billingTotal,
+      data.billing.map((point) => ({
+        day: point.day,
+        value: point.received,
+        bad: point.unprocessed,
+      })),
+      '#818cf8',
+    ) +
+    planBars(customers.byPlan) +
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5 shadow-panel">' +
+    '<p class="text-[12.5px] font-semibold text-slate-200">Състояние на обиколката</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">Последната проверка на всяка следена обява.</p>' +
+    '<div class="mt-4 grid grid-cols-3 gap-3 text-center">' +
+    '<div><p class="num text-[17px] font-bold text-emerald-400">' + scrape.ok + '</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">успешни</p></div>' +
+    '<div><p class="num text-[17px] font-bold ' +
+    (scrape.failed ? 'text-red-400' : 'text-slate-300') + '">' + scrape.failed + '</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">с грешка</p></div>' +
+    '<div><p class="num text-[17px] font-bold ' +
+    (scrape.stale ? 'text-amber-300' : 'text-slate-300') + '">' + scrape.stale + '</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">без проверка &gt;24ч</p></div>' +
+    '</div></div>';
+}
+
+async function loadOperatorEvents() {
+  const target = $('#operator-events');
+  if (!target) return;
+
+  const onlyUnprocessed = $('#operator-events-unprocessed').checked;
+  target.innerHTML = '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+
+  let events;
+  try {
+    const response = await fetch(
+      ENDPOINTS.adminEvents + '?limit=100' + (onlyUnprocessed ? '&unprocessed=true' : ''),
+      { headers: operatorHeaders() },
+    );
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    events = await response.json();
+  } catch (error) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Плащанията не се заредиха')) + '</p>';
+    return;
+  }
+
+  if (!events.length) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-slate-500">' +
+      (onlyUnprocessed
+        ? 'Няма необработени събития. Всичко, което е дошло, е свършило работа.'
+        : 'Няма получени събития. Докато Stripe не е свързан, тук е празно.') +
+      '</p>';
+    return;
+  }
+
+  target.innerHTML =
+    '<div class="overflow-x-auto"><table class="op-table w-full text-left text-[12.5px]">' +
+    '<thead><tr class="border-b border-white/8 text-[10px] uppercase tracking-wide text-slate-500">' +
+    '<th class="px-4 py-3 font-semibold">Кога</th>' +
+    '<th class="px-4 py-3 font-semibold">Събитие</th>' +
+    '<th class="px-4 py-3 font-semibold">Имейл</th>' +
+    '<th class="px-4 py-3 font-semibold">Състояние</th>' +
+    '<th class="px-4 py-3 font-semibold">Данни</th></tr></thead><tbody>' +
+    events
+      .map(function (event) {
+        // A note is written both when handling failed and when the event was
+        // one we deliberately ignore, so it colours nothing on its own — it
+        // is the explanation printed under whichever state applies.
+        const state = event.processed
+          ? '<span class="rounded-md bg-emerald-500/12 px-2 py-0.5 text-[11px] text-emerald-400">обработено</span>'
+          : '<span class="rounded-md bg-amber-500/12 px-2 py-0.5 text-[11px] text-amber-400">необработено</span>';
+
+        return (
+          '<tr class="border-b border-white/5 align-top">' +
+          '<td data-label="Кога" class="whitespace-nowrap px-4 py-3 text-slate-400">' +
+          escapeHtml(formatRelative(event.receivedAt)) + '</td>' +
+          '<td data-label="Събитие" class="px-4 py-3 font-mono text-[11.5px] text-slate-300">' +
+          escapeHtml(event.eventType || '—') + '</td>' +
+          '<td data-label="Имейл" class="px-4 py-3 text-slate-400">' + escapeHtml(event.email || '—') + '</td>' +
+          '<td data-label="Състояние" class="px-4 py-3">' + state +
+          (event.note
+            ? '<p class="mt-1 max-w-xs text-[11px] ' +
+              (event.processed ? 'text-slate-500' : 'text-amber-400/80') + '">' +
+              escapeHtml(event.note) + '</p>'
+            : '') +
+          '</td>' +
+          // Collapsed by default: the payload is the reason this screen
+          // exists and also the reason it cannot be the default view — one
+          // Stripe object is longer than the rest of the row put together.
+          '<td data-label="Данни" class="px-4 py-3">' +
+          '<details><summary class="cursor-pointer text-[11.5px] text-slate-500 hover:text-slate-300">покажи</summary>' +
+          '<pre class="mt-2 max-h-64 max-w-xl overflow-auto rounded-lg bg-ink-950 p-3 text-[11px] leading-relaxed text-slate-400">' +
+          escapeHtml(JSON.stringify(event.payload, null, 2)) + '</pre></details></td></tr>'
+        );
+      })
+      .join('') +
+    '</tbody></table></div>';
+}
+
+const OUTREACH_STATUS = {
+  sent: { label: 'писано', class: 'bg-white/[0.06] text-slate-400' },
+  replied: { label: 'отговориха', class: 'bg-amber-500/12 text-amber-400' },
+  granted: { label: 'дадоха достъп', class: 'bg-emerald-500/12 text-emerald-400' },
+  declined: { label: 'отказаха', class: 'bg-red-500/12 text-red-400' },
+};
+
+/** Host -> the letter we sent it, so the table can say so instead of
+ *  offering to write again. */
+let outreachByHost = {};
+
+async function loadOperatorShops() {
+  const target = $('#operator-shops');
+  if (!target) return;
+
+  target.innerHTML = '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+
+  let shops;
+  let outreach;
+  try {
+    // Together: the table is one thing and half of it is not worth drawing.
+    const [shopsResponse, outreachResponse] = await Promise.all([
+      fetch(ENDPOINTS.adminShops, { headers: operatorHeaders() }),
+      fetch(ENDPOINTS.adminOutreach, { headers: operatorHeaders() }),
+    ]);
+    if (!shopsResponse.ok) throw new Error('HTTP ' + shopsResponse.status);
+    if (!outreachResponse.ok) throw new Error('HTTP ' + outreachResponse.status);
+
+    shops = await shopsResponse.json();
+    outreach = await outreachResponse.json();
+  } catch (error) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Сайтовете не се заредиха')) + '</p>';
+    return;
+  }
+
+  outreachByHost = {};
+  outreach.forEach(function (record) {
+    outreachByHost[record.host] = record;
+  });
+
+  paletteHosts = shops.map((shop) => shop.host);
+
+  if (!shops.length) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-slate-500">' +
+      'Още никой клиент не е добавил доставчик.</p>';
+    return;
+  }
+
+  target.innerHTML =
+    '<div class="overflow-x-auto"><table class="op-table w-full text-left text-[12.5px]">' +
+    '<thead><tr class="border-b border-white/8 text-[10px] uppercase tracking-wide text-slate-500">' +
+    '<th class="px-4 py-3 font-semibold">Сайт</th>' +
+    '<th class="px-4 py-3 font-semibold">Клиенти</th>' +
+    '<th class="px-4 py-3 font-semibold">Търсене</th>' +
+    '<th class="px-4 py-3 font-semibold">Последно</th>' +
+    '<th class="px-4 py-3 font-semibold">Проблем</th>' +
+    '<th class="px-4 py-3 font-semibold">API достъп</th></tr></thead><tbody>' +
+    shops
+      .map(function (shop) {
+        const problem = shop.blockedReason || shop.lastError;
+        const record = outreachByHost[shop.host];
+
+        // A supplier with no website has no API to ask for — the prices come
+        // in as a spreadsheet the customer uploads. Offering to write to them
+        // about a feed would be asking for something that cannot exist.
+        const outreachCell = !shop.hasWebsite
+          ? '<span class="text-[11.5px] text-slate-600">няма сайт</span>'
+          : record
+            ? '<div class="flex flex-col gap-1.5">' +
+              '<select data-outreach-status="' + escapeHtml(record.id) + '" ' +
+              'class="rounded-lg border border-white/10 bg-ink-850 px-2 py-1 text-[11.5px] ' +
+              escapeHtml((OUTREACH_STATUS[record.status] || OUTREACH_STATUS.sent).class) + '">' +
+              Object.keys(OUTREACH_STATUS)
+                .map(
+                  (key) =>
+                    '<option value="' + key + '"' + (key === record.status ? ' selected' : '') +
+                    '>' + escapeHtml(OUTREACH_STATUS[key].label) + '</option>',
+                )
+                .join('') +
+              '</select>' +
+              '<span class="text-[11px] text-slate-600" title="' +
+              escapeHtml(record.recipient) + '">' +
+              escapeHtml(formatRelative(record.sentAt)) + ' · ' + escapeHtml(record.locale) +
+              '</span></div>'
+            : '<button type="button" data-outreach-host="' + escapeHtml(shop.host) + '" ' +
+              'class="rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[11.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300">' +
+              '<i class="fa-solid fa-handshake mr-1.5 text-[11px]"></i>Поискай</button>';
+
+        return (
+          '<tr class="border-b border-white/5">' +
+          // Most suppliers are named after their domain, and printing
+          // "homefinishing.bg" over "homefinishing.bg" is a wasted line in
+          // every row. The host goes underneath only when it adds something.
+          '<td data-label="Сайт" class="px-4 py-3"><p class="font-medium text-slate-200">' +
+          escapeHtml(shop.name || shop.host) + '</p>' +
+          (shop.name && shop.name !== shop.host
+            ? '<p class="font-mono text-[11px] text-slate-500">' + escapeHtml(shop.host) + '</p>'
+            : '') +
+          '</td>' +
+          '<td data-label="Клиенти" class="num px-4 py-3 text-slate-300">' + shop.owners +
+          (shop.active < shop.owners
+            ? '<span class="ml-1 text-[11px] text-slate-500">(' + shop.active + ' вкл.)</span>'
+            : '') + '</td>' +
+          '<td data-label="Търсене" class="px-4 py-3 text-slate-400">' +
+          (shop.hasWebsite
+            ? escapeHtml(shop.searchMethod)
+            : '<span class="text-slate-500">ръчен ценоразпис · ' + shop.manualPrices + ' цени</span>') +
+          '</td>' +
+          '<td data-label="Последно" class="whitespace-nowrap px-4 py-3 text-slate-400">' +
+          escapeHtml(shop.lastSearchedAt ? formatRelative(shop.lastSearchedAt) : '—') + '</td>' +
+          '<td data-label="Проблем" class="px-4 py-3">' +
+          (problem
+            ? '<span class="text-[11.5px] text-amber-400/90" title="' + escapeHtml(problem) + '">' +
+              escapeHtml(problem.length > 60 ? problem.slice(0, 60) + '…' : problem) + '</span>'
+            : '<span class="text-slate-600">—</span>') +
+          '</td>' +
+          '<td data-label="API достъп" class="px-4 py-3">' + outreachCell + '</td></tr>'
+        );
+      })
+      .join('') +
+    '</tbody></table></div>';
+
+  $$('[data-outreach-host]').forEach(function (button) {
+    button.addEventListener('click', () => void openOutreach(button.dataset.outreachHost));
+  });
+
+  $$('[data-outreach-status]').forEach(function (select) {
+    select.addEventListener('change', () =>
+      void recordOutreachOutcome(select.dataset.outreachStatus, select.value),
+    );
+  });
+}
+
+/* --- Asking a supplier for a feed ----------------------------------- *
+ *
+ * The only letter this system sends to somebody who never signed up for
+ * it. So it is composed on the server, shown in full, and sent only when
+ * a person has read it and pressed the button — never as a side effect
+ * of clicking a row.
+ * ------------------------------------------------------------------- */
+
+let outreachHost = null;
+
+function showOutreachStatus(message, tone) {
+  const element = $('#outreach-status');
+  element.textContent = message;
+  element.className =
+    'text-[11.5px] ' +
+    (tone === 'error' ? 'text-red-400' : tone === 'success' ? 'text-emerald-400' : 'text-slate-400');
+  element.classList.remove('hidden');
+}
+
+/** Fetches the draft and fills the form. Called again when the language
+ *  changes, which is why the warning about losing edits is on the label. */
+async function loadOutreachDraft(host, locale) {
+  showOutreachStatus('Съставям писмото…', 'info');
+
+  try {
+    const response = await fetch(ENDPOINTS.adminOutreachPreview, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, operatorHeaders()),
+      body: JSON.stringify(locale ? { host, locale } : { host }),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const draft = await response.json();
+
+    $('#outreach-locale').value = draft.locale;
+    $('#outreach-locale-reason').textContent = draft.localeReason;
+    $('#outreach-subject').value = draft.subject;
+    $('#outreach-body').value = draft.body;
+    $('#outreach-context').textContent =
+      draft.buyers > 1
+        ? host + ' — ' + draft.buyers + ' клиенти следят този сайт.'
+        : draft.buyers === 1
+          ? host + ' — един клиент следи този сайт.'
+          : host;
+
+    // Shown, never filled in. The address a customer gave us was for sending
+    // *their* orders to this supplier; using it for our own approach is a
+    // different purpose, and it should be a decision, not a default.
+    $('#outreach-hint').textContent = draft.knownOrderEmail
+      ? 'Клиент е посочил ' + draft.knownOrderEmail + ' за поръчки. Той е за друга цел — попълни адрес сам.'
+      : 'Вземи адреса от страницата за контакти на сайта.';
+
+    $('#outreach-status').classList.add('hidden');
+  } catch (error) {
+    showOutreachStatus(failureText(error, 'Черновата не се състави'), 'error');
+  }
+}
+
+async function openOutreach(host) {
+  outreachHost = host;
+  $('#outreach-recipient').value = '';
+  $('#outreach-status').classList.add('hidden');
+  openModal('outreach-modal');
+  await loadOutreachDraft(host, null);
+}
+
+$('#outreach-locale').addEventListener('change', function () {
+  if (outreachHost) void loadOutreachDraft(outreachHost, this.value);
+});
+
+$('#outreach-form').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  if (!outreachHost) return;
+
+  $('#outreach-send-spinner').classList.remove('hidden');
+  $('#outreach-send-icon').classList.add('hidden');
+  showOutreachStatus('Изпращам…', 'info');
+
+  try {
+    const response = await fetch(ENDPOINTS.adminOutreach, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, operatorHeaders()),
+      body: JSON.stringify({
+        host: outreachHost,
+        recipient: $('#outreach-recipient').value.trim(),
+        locale: $('#outreach-locale').value,
+        subject: $('#outreach-subject').value.trim(),
+        body: $('#outreach-body').value,
+      }),
+    });
+
+    if (!response.ok) {
+      const problem = await response.json().catch(() => null);
+      showOutreachStatus(
+        (problem && problem.message) || 'Писмото не тръгна (HTTP ' + response.status + ').',
+        'error',
+      );
+      return;
+    }
+
+    toast('Писмото тръгна към ' + outreachHost + '.', 'success');
+    closeModal('outreach-modal');
+    await loadOperatorShops();
+  } catch (error) {
+    showOutreachStatus(failureText(error, 'Писмото не тръгна'), 'error');
+  } finally {
+    $('#outreach-send-spinner').classList.add('hidden');
+    $('#outreach-send-icon').classList.remove('hidden');
+  }
+});
+
+/** Records what came back. Saved on change, like the customer rows: a
+ *  choice already made is the answer, and a confirmation on top of it is
+ *  a click nobody reads twice. */
+async function recordOutreachOutcome(id, status) {
+  try {
+    const response = await fetch(ENDPOINTS.adminOutreach + '/' + id, {
+      method: 'PATCH',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, operatorHeaders()),
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    await loadOperatorShops();
+  } catch (error) {
+    toast(failureText(error, 'Промяната не се записа'), 'error');
+  }
+}
+
+/* --- Sections, ranges, and keeping the screen current ---------------- */
+
+const OPERATOR_TABS = [
+  'overview',
+  'scrape',
+  'alerts',
+  'search',
+  'customers',
+  'decisions',
+  'payments',
+  'shops',
+];
+
+/** How often the panel re-reads itself when live mode is on. Thirty seconds:
+ *  long enough that a row is not moving under the pointer, short enough that
+ *  a webhook arriving during a support call shows up while still on it. */
+const LIVE_INTERVAL_MS = 30000;
+
+let operatorRange = 30;
+let liveTimer = null;
+
+/** Counts worth a badge on the rail, so a problem on a screen you are not
+ *  looking at still reaches you. Refreshed with the overview. */
+function paintOperatorBadges(counts) {
+  $$('[data-op-badge]').forEach(function (badge) {
+    const value = counts[badge.dataset.opBadge] || 0;
+    badge.textContent = value > 99 ? '99+' : String(value);
+    badge.hidden = value === 0;
+  });
+}
+
+function stampUpdated() {
+  const element = $('#operator-updated');
+  if (!element) return;
+
+  const now = new Date();
+  element.textContent =
+    'обновено ' +
+    now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') +
+    ':' + String(now.getSeconds()).padStart(2, '0');
+}
+
+function setLive(on) {
+  const button = $('#operator-live');
+  const dot = $('#operator-live-dot');
+
+  button.setAttribute('aria-pressed', on ? 'true' : 'false');
+  dot.classList.toggle('op-live-on', on);
+  button.classList.toggle('border-emerald-500/30', on);
+  button.classList.toggle('text-emerald-300', on);
+
+  if (liveTimer) {
+    window.clearInterval(liveTimer);
+    liveTimer = null;
+  }
+
+  // Only while the panel is actually on screen. A timer left running behind
+  // another view is a request every thirty seconds for a screen nobody is
+  // reading, and the first thing to blame when the log looks busy.
+  if (on) {
+    liveTimer = window.setInterval(function () {
+      if ($('#view-operator').hidden) return;
+      void loadOperatorHealth();
+      void loadOperatorTab(operatorTab, { quiet: true });
+    }, LIVE_INTERVAL_MS);
+  }
+}
+
+$('#operator-live').addEventListener('click', function () {
+  setLive(this.getAttribute('aria-pressed') !== 'true');
+});
+
+$$('[data-op-range]').forEach(function (button) {
+  button.addEventListener('click', function () {
+    operatorRange = Number(button.dataset.opRange);
+    $$('[data-op-range]').forEach((other) =>
+      other.classList.toggle('tab-active', other === button),
+    );
+    void loadOperatorOverview();
+  });
+});
+
+/** Loads one section. `quiet` skips the spinner, so a live refresh does not
+ *  blank a table the operator is reading. */
+function loadOperatorTab(name, options) {
+  const quiet = Boolean(options && options.quiet);
+
+  if (name === 'overview') return loadOperatorOverview();
+  if (name === 'scrape') return loadOperatorScrape(quiet);
+  if (name === 'alerts') return loadOperatorAlerts(quiet);
+  if (name === 'search') return loadOperatorSearchQuality();
+  if (name === 'customers') return loadOperatorCustomers();
+  if (name === 'decisions') return loadOperatorDecisions();
+  if (name === 'payments') return loadOperatorEvents();
+  if (name === 'shops') return loadOperatorShops();
+
+  return Promise.resolve();
+}
+
+/**
+ * How search is behaving, in numbers.
+ *
+ * The honest version of "is the new engine better": how often a query
+ * produces a strong match, how often it produces nothing at all, how much of
+ * the work arithmetic settles without paying a model, and how often a
+ * supplier has to be asked a second, wider question.
+ */
+async function loadOperatorSearchQuality() {
+  const box = $('#operator-search-quality');
+  if (!box) return;
+
+  try {
+    const response = await fetch(ENDPOINTS.adminSearchQuality, { headers: operatorHeaders() });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const stats = await response.json();
+
+    if (!stats.samples) {
+      box.innerHTML =
+        '<div class="sm:col-span-2 xl:col-span-4 rounded-xl border border-white/8 bg-ink-900 px-4 py-8 text-center text-[12.5px] text-slate-500 shadow-panel">' +
+        'Още няма търсения в прозореца. Числата се пълнят от живия трафик и се нулират при разгръщане.</div>';
+      return;
+    }
+
+    const percent = (value) => Math.round(value * 100) + '%';
+
+    const tiles = [
+      ['Силни съвпадения', percent(stats.strongMatchRate), 'търсения с поне един сигурен резултат'],
+      ['Без резултат', percent(stats.zeroResultRate), 'търсения, върнали нищо'],
+      ['Решено без модел', percent(stats.deterministicRate), 'сравнения, отговорени с аритметика'],
+      ['Разширена заявка', percent(stats.queryWideningRate), 'търсения с втори, по-широк въпрос'],
+      ['Покритие на доставчици', percent(stats.supplierCoverage), 'запитани магазини, които отговориха'],
+      ['Конфликти', percent(stats.conflictRate), 'кандидати, отхвърлени по спецификация'],
+      ['Средна увереност', Math.round(stats.averageConfidence * 100) + '%', 'на най-добрия резултат'],
+      ['Време', stats.durationMs.average + ' ms', 'средно, при ' + stats.durationMs.p95 + ' ms за 95-и процентил'],
+    ];
+
+    box.innerHTML = tiles
+      .map(
+        ([label, value, note]) =>
+          '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-2.5 shadow-panel">' +
+          '<p class="text-[11px] uppercase tracking-wide text-slate-500">' + escapeHtml(label) + '</p>' +
+          '<p class="mt-1 num text-[17px] font-bold text-slate-200">' + escapeHtml(value) + '</p>' +
+          '<p class="mt-1 text-[11px] text-slate-500">' + escapeHtml(note) + '</p>' +
+          '</div>',
+      )
+      .join('');
+  } catch (error) {
+    box.innerHTML = failureHtml(error, 'Показателите за търсене не се заредиха');
+  }
+}
+
+/**
+ * One search, traced end to end.
+ *
+ * Every stage in the order it happened: what was typed, what the engine read
+ * out of it, what each supplier was asked and answered, and then for every
+ * candidate the relation, the confidence, what agreed, what neither side
+ * mentioned and what ruled it out. This is what turns "search is broken" into
+ * a specific, fixable sentence.
+ */
+async function runSearchTrace(signal) {
+  const box = $('#operator-search-trace');
+  const query = $('#operator-search-query').value.trim();
+  if (!box || query.length < 2) return;
+
+  const owner = $('#operator-search-owner').value.trim();
+  const ai = $('#operator-search-ai').checked;
+
+  box.innerHTML =
+    '<div class="rounded-xl border border-white/8 bg-ink-900 px-4 py-8 text-center text-[12.5px] text-slate-500 shadow-panel">' +
+    '<i class="fa-solid fa-circle-notch fa-spin mr-2"></i>Пита доставчиците на живо…</div>';
+
+  try {
+    const url =
+      ENDPOINTS.adminSearchDebug +
+      '?q=' + encodeURIComponent(query) +
+      (owner ? '&ownerId=' + encodeURIComponent(owner) : '') +
+      (ai ? '&ai=true' : '');
+
+    const response = await fetch(url, { headers: operatorHeaders(), signal: signal });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    box.innerHTML = renderSearchTrace(await response.json());
+  } catch (error) {
+    box.innerHTML = wasAborted(error)
+      ? '<p class="text-[12.5px] text-slate-500">Проследяването е спряно.</p>'
+      : failureHtml(error, 'Проследяването не успя');
+  }
+}
+
+function renderSearchTrace(trace) {
+  if (!trace) return '';
+
+  const stage = (title, body) =>
+    '<div class="overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
+    '<div class="border-b border-white/8 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-accent-400">' +
+    escapeHtml(title) +
+    '</div><div class="px-4 py-2.5 text-[11.5px] text-slate-300">' + body + '</div></div>';
+
+  const chip = (label, value) =>
+    '<span class="rounded-md bg-ink-950 px-2 py-1 text-[11px] text-slate-300 ring-1 ring-white/8">' +
+    '<span class="text-slate-500">' + escapeHtml(label) + ':</span> ' + escapeHtml(String(value)) +
+    '</span>';
+
+  const understood = trace.understood || {};
+  const attributes = understood.attributes || {};
+
+  const readChips = [
+    understood.productType ? chip('Вид', understood.productType) : '',
+    understood.brand ? chip('Марка', understood.brand) : '',
+    understood.requestedQuantity ? chip('Количество', understood.requestedQuantity) : '',
+  ]
+    .concat(
+      Object.keys(attributes).map((key) =>
+        chip(attributeLabel(key, attributes[key].label), attributes[key].value),
+      ),
+    )
+    .join('');
+
+  const variants = (trace.variants || [])
+    .map(
+      (variant) =>
+        '<li class="flex flex-wrap items-baseline gap-2 py-1">' +
+        '<code class="rounded bg-ink-950 px-1.5 py-0.5 text-[11.5px] text-slate-200">' +
+        escapeHtml(variant.query) + '</code>' +
+        '<span class="text-[11px] uppercase tracking-wide text-slate-600">' + escapeHtml(variant.kind) + '</span>' +
+        '<span class="text-[11px] text-slate-500">' + escapeHtml(variant.reason) + '</span></li>',
+    )
+    .join('');
+
+  const shops = (trace.shops || [])
+    .map(
+      (shop) =>
+        '<tr class="border-t border-white/5">' +
+        '<td class="py-2 pr-3 text-slate-200">' + escapeHtml(shop.name) + '</td>' +
+        '<td class="py-2 pr-3"><code class="text-[11px] text-slate-400">' + escapeHtml(shop.usedQuery) + '</code></td>' +
+        '<td class="py-2 pr-3 num text-right">' + shop.products.length + '</td>' +
+        '<td class="py-2 pr-3 num text-right text-slate-500">' + shop.durationMs + ' ms</td>' +
+        '<td class="py-2 text-[11px] ' + (shop.ok ? 'text-emerald-400' : 'text-rose-400') + '">' +
+        escapeHtml(shop.ok ? 'отговори' : shop.error || 'отказа') + '</td></tr>',
+    )
+    .join('');
+
+  const attributeLines = (entries, mark) =>
+    (entries || [])
+      .map(
+        (entry) =>
+          '<li>' + mark + ' ' + escapeHtml(attributeLabel(entry.key, entry.label)) +
+          ': ' + escapeHtml(entry.query || '—') + ' / ' + escapeHtml(entry.candidate || '—') + '</li>',
+      )
+      .join('');
+
+  const candidates = (trace.candidates || [])
+    .map(
+      (candidate) =>
+        '<div class="border-t border-white/5 py-3">' +
+        '<div class="flex flex-wrap items-baseline gap-2">' +
+        '<span class="font-medium text-slate-200">' + escapeHtml(candidate.name) + '</span>' +
+        '<span class="rounded-md bg-ink-950 px-1.5 py-0.5 text-[11px] text-slate-400 ring-1 ring-white/8">' +
+        escapeHtml(candidate.shop) + '</span>' +
+        '<span class="rounded-md px-1.5 py-0.5 text-[11px] font-semibold ' +
+        (candidate.group === 'strong'
+          ? 'bg-emerald-500/12 text-emerald-400'
+          : candidate.group === 'excluded'
+            ? 'bg-rose-500/12 text-rose-300'
+            : 'bg-amber-500/12 text-amber-400') +
+        '">' + escapeHtml(candidate.relation) + ' ' + Math.round(candidate.confidence * 100) + '%</span>' +
+        '<span class="text-[11px] uppercase tracking-wide text-slate-600">' + escapeHtml(candidate.method) + '</span>' +
+        '<span class="ml-auto num text-slate-400">' +
+        (candidate.effectivePrice === null ? '—' : candidate.effectivePrice.toFixed(2) + ' ' + escapeHtml(candidate.currency)) +
+        '</span></div>' +
+        '<p class="mt-1 text-[11.5px] text-slate-400">' + escapeHtml(candidate.explanation) + '</p>' +
+        '<ul class="mt-1.5 space-y-0.5 text-[11px] text-slate-500">' +
+        attributeLines(candidate.conflicts, '✕') +
+        attributeLines(candidate.matched, '✓') +
+        attributeLines(candidate.missing, '?') +
+        '</ul></div>',
+    )
+    .join('');
+
+  const matching = trace.matching || {};
+
+  return [
+    stage(
+      'Заявка, както е написана',
+      '<code class="rounded bg-ink-950 px-2 py-1 text-[12.5px] text-slate-200">' +
+        escapeHtml(trace.query) + '</code>',
+    ),
+    stage('Какво разчете двигателят', '<div class="flex flex-wrap gap-1.5">' + readChips + '</div>'),
+    stage('Заявки към доставчиците', '<ul class="space-y-0.5">' + variants + '</ul>'),
+    stage(
+      'Какво отговори всеки доставчик',
+      '<div class="overflow-x-auto"><table class="w-full text-left text-[11.5px]">' +
+        '<thead><tr class="text-[10px] uppercase tracking-wide text-slate-600">' +
+        '<th class="pb-1 pr-3">Магазин</th><th class="pb-1 pr-3">Попитан за</th>' +
+        '<th class="pb-1 pr-3 text-right">Резултати</th><th class="pb-1 pr-3 text-right">Време</th>' +
+        '<th class="pb-1">Изход</th></tr></thead><tbody>' + shops + '</tbody></table></div>',
+    ),
+    stage(
+      'Съпоставяне',
+      '<p class="mb-2 text-[11.5px] text-slate-500">' +
+        matching.candidates + ' кандидата · ' + matching.decidedDeterministically +
+        ' решени с аритметика · ' + matching.aiCallsMade + ' заявки към модел' +
+        (matching.aiModel ? ' (' + escapeHtml(matching.aiModel) + ')' : '') + '</p>' +
+        (candidates || '<p class="text-slate-500">Никой кандидат не стигна до съпоставяне.</p>'),
+    ),
+    stage(
+      'Време',
+      trace.timings
+        ? '<div class="grid gap-1 sm:grid-cols-2">' +
+          [
+            ['Разчитане на заявката', trace.timings.parse],
+            ['Питане на доставчиците', trace.timings.retrieval],
+            ['Подреждане', trace.timings.ranking],
+            ['Съпоставяне по спецификация', trace.timings.matching],
+            ['Модел', trace.timings.ai],
+          ]
+            .map(
+              ([label, value]) =>
+                '<div class="flex items-baseline justify-between gap-3">' +
+                '<span class="text-slate-400">' + escapeHtml(label) + '</span>' +
+                '<span class="num text-slate-300">' + Math.round(value) + ' ms</span></div>',
+            )
+            .join('') +
+          '</div><p class="mt-2 text-[11.5px] text-slate-500">Общо ' + trace.durationMs + ' ms' +
+          (trace.timings.widened ? ' · заявката е разширена веднъж' : '') +
+          (trace.timings.ai === 0 ? ' · без модел' : '') + '</p>'
+        : trace.durationMs + ' ms',
+    ),
+  ].join('');
+}
+
+/** Opens one tab, fetching it the first time it is asked for. */
+function openOperatorTab(name, options) {
+  const force = Boolean(options && options.force);
+  if (OPERATOR_TABS.indexOf(name) === -1) name = 'overview';
+  operatorTab = name;
+
+  $$('[data-op-tab]').forEach(function (button) {
+    const active = button.dataset.opTab === name;
+    button.classList.toggle('tab-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+
+    // On a phone the rail scrolls, and a section opened from the palette or
+    // from a badge could be off the right edge — highlighted, and invisible.
+    if (active && button.scrollIntoView) {
+      button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  });
+
+  $$('[data-op-panel]').forEach(function (panel) {
+    panel.hidden = panel.dataset.opPanel !== name;
+  });
+
+  const lede = $('#operator-lede');
+  if (lede) lede.textContent = OPERATOR_LEDE[name] || '';
+
+  if (!force && operatorLoaded[name]) return;
+  operatorLoaded[name] = true;
+
+  void loadOperatorTab(name);
+}
+
+$$('[data-op-tab]').forEach(function (button) {
+  button.addEventListener('click', () => openOperatorTab(button.dataset.opTab));
+});
+
+const searchRun = $('#operator-search-run');
+if (searchRun) {
+  searchRun.addEventListener('click', function () {
+    void startable(this, runSearchTrace, 'Спри');
+  });
+
+  $('#operator-search-query').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !isRunning(searchRun)) searchRun.click();
+  });
+}
+
+$('#operator-events-unprocessed').addEventListener('change', () => void loadOperatorEvents());
+$('#operator-alerts-undelivered').addEventListener('change', () => void loadOperatorAlerts());
+
+['#operator-customer-search', '#operator-customer-status', '#operator-customer-plan'].forEach(
+  function (selector) {
+    $(selector).addEventListener('input', renderOperatorCustomers);
+  },
+);
+
+/* --- Purchase decisions ---------------------------------------------- *
+ *
+ * The operator's view of what customers decided. The shape of each decision
+ * rather than its contents: enough to answer "is the optimiser working" and
+ * "is this customer getting value", and nothing that says what anybody buys.
+ * The API declines to send the snapshot here for the same reason.
+ */
+
+async function loadOperatorDecisions() {
+  const analyticsBox = $('#operator-decisions-analytics');
+  const listBox = $('#operator-decisions');
+  if (!listBox) return;
+
+  listBox.innerHTML =
+    '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+
+  try {
+    const [analytics, page] = await Promise.all([
+      fetch(ENDPOINTS.adminDecisionAnalytics + '?days=' + operatorRange, {
+        headers: operatorHeaders(),
+      }).then(okJson),
+      fetch(ENDPOINTS.adminDecisions + '?limit=50', { headers: operatorHeaders() }).then(okJson),
+    ]);
+
+    analyticsBox.innerHTML = decisionAnalyticsHtml(analytics);
+    listBox.innerHTML = operatorDecisionsHtml(page);
+  } catch (error) {
+    analyticsBox.innerHTML = '';
+    listBox.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Решенията не се заредиха')) +
+      '</p>';
+  }
+}
+
+function decisionAnalyticsHtml(analytics) {
+  const tile = (label, value, note) =>
+    '<div class="rounded-xl border border-white/8 bg-ink-900 px-3.5 py-2.5">' +
+    '<p class="text-[11px] uppercase tracking-wide text-slate-500">' + escapeHtml(label) + '</p>' +
+    '<p class="num mt-1 text-[17px] font-bold text-slate-200">' + escapeHtml(value) + '</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">' + escapeHtml(note) + '</p></div>';
+
+  const percent = (share) => (share * 100).toFixed(0) + '%';
+
+  return (
+    tile(
+      'Решения',
+      String(analytics.decisions),
+      analytics.customers + ' ' + plural(analytics.customers, 'клиент', 'клиента') +
+        ' за ' + analytics.days + ' дни',
+    ) +
+    tile(
+      'Със спестяване',
+      percent(analytics.shareWithSavings),
+      analytics.averageSavingsPercent === null
+        ? 'няма средно'
+        : 'средно ' + analytics.averageSavingsPercent.toFixed(1) + '%',
+    ) +
+    tile(
+      'Разделени поръчки',
+      percent(analytics.shareSplit),
+      percent(analytics.shareSingleSupplier) + ' при един доставчик',
+    ) +
+    tile(
+      'Стигнали до поръчка',
+      String(analytics.decisionsWithOrders),
+      analytics.ordersPlaced + ' ' + plural(analytics.ordersPlaced, 'поръчка', 'поръчки'),
+    ) +
+    tile(
+      'Възможно спестяване',
+      money2(analytics.potentialSavings),
+      'решения без потвърдена покупка',
+    ) +
+    tile('Доказано спестено', money2(analytics.realizedSavings), 'по потвърдени поръчки') +
+    tile(
+      'Средна заявка',
+      analytics.averageBasketLines === null ? '—' : analytics.averageBasketLines.toFixed(1),
+      'реда · ' +
+        (analytics.averageSuppliersUsed === null
+          ? '—'
+          : analytics.averageSuppliersUsed.toFixed(1) + ' доставчика'),
+    ) +
+    tile(
+      'Оптимизация',
+      analytics.averageDurationMs === null
+        ? '—'
+        : (analytics.averageDurationMs / 1000).toFixed(1) + ' с',
+      // Worth a glance rather than an alarm: a capped search still returns the
+      // best of what it tried, and says so on the decision itself.
+      'ограничено търсене при ' + percent(analytics.shareBoundedSearch),
+    )
+  );
+}
+
+function operatorDecisionsHtml(page) {
+  if (!page.items.length) {
+    return (
+      '<p class="rounded-xl border border-white/8 bg-ink-900 px-4 py-6 text-center text-[12.5px] text-slate-500">' +
+      'Още никой не е запазил решение.</p>'
+    );
+  }
+
+  const rows = page.items
+    .map(function (decision) {
+      const proven = decision.savingsKind === 'realized';
+      const saving = proven ? decision.realizedSavings : decision.savings;
+
+      // Flags rather than columns: they are exceptions, and a column of
+      // mostly-empty cells makes the table harder to scan than the four or
+      // five rows a week that actually carry one.
+      const flags = []
+        .concat(decision.boundedSearch ? ['ограничено търсене'] : [])
+        .concat(
+          decision.unassignedLines > 0
+            ? [decision.unassignedLines + ' ' + plural(decision.unassignedLines, 'ред без доставчик', 'реда без доставчик')]
+            : [],
+        )
+        .concat(decision.baselineTotal === null ? ['без база за сравнение'] : []);
+
+      return (
+        '<tr class="border-b border-white/[0.05] last:border-b-0">' +
+        '<td class="px-3 py-2 text-[11.5px] text-slate-500">' +
+        escapeHtml(formatAbsolute(decision.createdAt)) +
+        '</td>' +
+        '<td class="px-3 py-2 text-[11.5px] text-slate-300">' +
+        escapeHtml(decision.customerEmail || decision.ownerId) +
+        '<span class="ml-1.5 text-[11px] text-slate-600">#' + decision.number + '</span>' +
+        (flags.length
+          ? '<p class="mt-0.5 text-[10px] text-amber-300/70">' +
+            escapeHtml(flags.join(' · ')) + '</p>'
+          : '') +
+        '</td>' +
+        '<td class="px-3 py-2 text-right text-[11.5px] text-slate-400">' +
+        decision.lineCount + ' / ' + decision.suppliersUsed +
+        '</td>' +
+        '<td class="num px-3 py-2 text-right text-[11.5px] text-slate-500">' +
+        money2(decision.baselineTotal) + '</td>' +
+        '<td class="num px-3 py-2 text-right text-[11.5px] text-slate-300">' +
+        money2(decision.optimisedTotal) + '</td>' +
+        '<td class="num px-3 py-2 text-right text-[11.5px] font-semibold ' +
+        (proven ? 'text-emerald-400' : 'text-slate-300') + '">' +
+        money2(saving) +
+        '<span class="ml-1 text-[10px] font-normal ' +
+        (proven ? 'text-emerald-400/70' : 'text-slate-600') + '">' +
+        (proven ? 'док.' : 'възм.') + '</span></td>' +
+        '<td class="px-3 py-2 text-right text-[11.5px] text-slate-400">' +
+        (decision.ordersLinked
+          ? decision.ordersConfirmed + ' / ' + decision.ordersLinked
+          : '—') +
+        '</td>' +
+        '<td class="num px-3 py-2 text-right text-[11px] text-slate-600">' +
+        (decision.durationMs / 1000).toFixed(1) + ' с' +
+        (decision.combinationsEvaluated !== null
+          ? '<span class="ml-1 text-[10px]">· ' + decision.combinationsEvaluated + ' комб.</span>'
+          : '') +
+        '</td></tr>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div class="overflow-x-auto rounded-xl border border-white/8">' +
+    '<table class="w-full min-w-[860px] border-collapse">' +
+    '<thead><tr class="border-b border-white/8 bg-ink-950/50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">' +
+    '<th class="px-3 py-2 text-left">Дата</th>' +
+    '<th class="px-3 py-2 text-left">Клиент</th>' +
+    '<th class="px-3 py-2 text-right">Реда / дост.</th>' +
+    '<th class="px-3 py-2 text-right">База</th>' +
+    '<th class="px-3 py-2 text-right">Избрано</th>' +
+    '<th class="px-3 py-2 text-right">Спестено</th>' +
+    '<th class="px-3 py-2 text-right">Поръчки</th>' +
+    '<th class="px-3 py-2 text-right">Оптимизация</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    (page.total > page.items.length
+      ? '<p class="mt-2 text-[11px] text-slate-600">' +
+        escapeHtml('Показани са последните ' + page.items.length + ' от ' + page.total + '.') +
+        '</p>'
+      : '')
+  );
+}
+
+/* --- The sweep ------------------------------------------------------- */
+
+async function loadOperatorScrape(quiet) {
+  const target = $('#operator-scrape');
+  if (!target) return;
+
+  if (!quiet) {
+    target.innerHTML = '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+  }
+
+  let report;
+  try {
+    const response = await fetch(ENDPOINTS.adminScrape, { headers: operatorHeaders() });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    report = await response.json();
+  } catch (error) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Обиколката не се зареди')) + '</p>';
+    return;
+  }
+
+  const status = report.status;
+  const last = status.lastRun;
+
+  const fact = (label, value, tone) =>
+    '<div><p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">' +
+    escapeHtml(label) + '</p><p class="num mt-1 text-[13px] font-medium ' +
+    (tone === 'amber' ? 'text-amber-300' : tone === 'good' ? 'text-emerald-400' : 'text-slate-200') +
+    '">' + escapeHtml(String(value)) + '</p></div>';
+
+  target.innerHTML =
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5 shadow-panel">' +
+    '<div class="flex flex-wrap items-start justify-between gap-3">' +
+    '<div><p class="text-[12.5px] font-semibold text-slate-200">Планирана обиколка</p>' +
+    '<p class="mt-0.5 text-[11px] text-slate-500">' +
+    (status.enabled ? 'по график ' : 'спряна · графикът беше ') +
+    '<code class="font-mono text-slate-400">' + escapeHtml(status.cron) + '</code>' +
+    ' · четец <code class="font-mono text-slate-400">' + escapeHtml(status.driver) + '</code></p></div>' +
+    '<button type="button" id="operator-sweep" ' +
+    'class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40">' +
+    '<i class="fa-solid fa-play text-[11px]"></i>Пусни сега</button></div>' +
+    '<div class="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-4">' +
+    fact('Изпълнява се', status.running ? 'да' : 'не', status.running ? 'good' : null) +
+    fact('Чакат ред', status.dueNow, status.dueNow > 0 ? 'amber' : null) +
+    fact('Последна', status.lastRunAt ? formatRelative(status.lastRunAt) : 'още не е минала',
+      status.lastRunAt ? null : 'amber') +
+    fact('Робот', status.respectRobots ? 'спазва robots.txt' : 'пренебрегва robots.txt',
+      status.respectRobots ? null : 'amber') +
+    '</div>' +
+    (last
+      ? '<div class="mt-3.5 border-t border-white/8 pt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">' +
+        fact('Проверени', last.processed) +
+        fact('Успешни', last.succeeded, 'good') +
+        fact('Провалени', last.failed, last.failed > 0 ? 'amber' : null) +
+        fact('Сменена цена', last.changed) +
+        '</div>'
+      : '') +
+    '</div>' +
+
+    // Failures first and grouped: a retailer that changed its markup breaks
+    // every listing on it at once, so the host is the fix, not the listing.
+    '<div class="mt-4 overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
+    '<p class="border-b border-white/8 px-4 py-2.5 text-[12.5px] font-semibold text-slate-200">' +
+    'Провали по сайт</p>' +
+    (report.failures.length
+      ? '<div class="overflow-x-auto"><table class="op-table w-full text-left text-[12.5px]"><tbody>' +
+        report.failures
+          .map(
+            (failure) =>
+              '<tr class="border-b border-white/5"><td data-label="Сайт" class="px-4 py-3 font-mono text-[11.5px] text-slate-300">' +
+              escapeHtml(failure.host) + '</td>' +
+              '<td data-label="Обхват" class="num px-4 py-3 text-slate-400">' + failure.listings + ' обяви · ' +
+              failure.attempts + ' опита</td>' +
+              '<td data-label="Грешка" class="px-4 py-3 text-[11.5px] text-amber-400/90">' +
+              escapeHtml(failure.lastError || '—') + '</td>' +
+              '<td data-label="Последно" class="whitespace-nowrap px-4 py-3 text-[11.5px] text-slate-500">' +
+              escapeHtml(failure.lastCheckedAt ? formatRelative(failure.lastCheckedAt) : '—') +
+              '</td></tr>',
+          )
+          .join('') +
+        '</tbody></table></div>'
+      : '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">' +
+        'Нито една включена обява не е в грешка.</p>') +
+    '</div>' +
+
+    '<div class="mt-4 overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
+    '<p class="border-b border-white/8 px-4 py-2.5 text-[12.5px] font-semibold text-slate-200">' +
+    'Без проверка над 24 часа <span class="ml-1 font-normal text-slate-500">' +
+    report.stale.length + '</span></p>' +
+    (report.stale.length
+      ? '<div class="max-h-96 overflow-auto"><table class="op-table w-full text-left text-[12.5px]"><tbody>' +
+        report.stale
+          .map(
+            (listing) =>
+              '<tr class="border-b border-white/5">' +
+              '<td data-label="Артикул" class="px-4 py-2.5 text-slate-300">' + escapeHtml(listing.product) + '</td>' +
+              '<td data-label="Обява" class="px-4 py-2.5 text-slate-500">' + escapeHtml(listing.competitor) + '</td>' +
+              '<td data-label="Сайт" class="px-4 py-2.5 font-mono text-[11.5px] text-slate-500">' +
+              escapeHtml(listing.host) + '</td>' +
+              '<td data-label="Последно" class="whitespace-nowrap px-4 py-2.5 text-[11.5px] text-slate-500">' +
+              escapeHtml(listing.lastUpdated ? formatRelative(listing.lastUpdated) : 'никога') +
+              '</td></tr>',
+          )
+          .join('') +
+        '</tbody></table></div>'
+      : '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Всичко е проверявано скоро.</p>') +
+    '</div>';
+
+  $('#operator-sweep').addEventListener('click', runOperatorSweep);
+}
+
+async function runOperatorSweep() {
+  const button = $('#operator-sweep');
+  button.disabled = true;
+  button.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-[11px]"></i>Обикалям…';
+
+  try {
+    const response = await fetch(ENDPOINTS.adminScrapeRun, {
+      method: 'POST',
+      headers: operatorHeaders(),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const run = await response.json();
+    toast(
+      run.processed
+        ? 'Обиколката мина: ' + run.succeeded + ' от ' + run.processed + ' успешни.'
+        : 'Нищо не чакаше ред.',
+      'success',
+    );
+  } catch (error) {
+    toast(failureText(error, 'Обиколката не тръгна'), 'error');
+  }
+
+  await loadOperatorScrape(true);
+}
+
+/* --- Alerts ---------------------------------------------------------- */
+
+const ALERT_SEVERITY = {
+  info: 'text-slate-400',
+  warning: 'text-amber-400',
+  critical: 'text-red-400',
+};
+
+const DELIVERY_STYLE = {
+  delivered: { label: 'доставено', class: 'bg-emerald-500/12 text-emerald-400' },
+  pending: { label: 'чака', class: 'bg-white/[0.06] text-slate-400' },
+  failed: { label: 'провалено', class: 'bg-red-500/12 text-red-400' },
+  skipped: { label: 'без канал', class: 'bg-amber-500/12 text-amber-400' },
+};
+
+async function loadOperatorAlerts(quiet) {
+  const target = $('#operator-alerts');
+  if (!target) return;
+
+  const undeliveredOnly = $('#operator-alerts-undelivered').checked;
+
+  if (!quiet) {
+    target.innerHTML = '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+  }
+
+  let alerts;
+  try {
+    const response = await fetch(
+      ENDPOINTS.adminAlerts + '?limit=150' + (undeliveredOnly ? '&undelivered=true' : ''),
+      { headers: operatorHeaders() },
+    );
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    alerts = await response.json();
+  } catch (error) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Известията не се заредиха')) + '</p>';
+    return;
+  }
+
+  if (!alerts.length) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-slate-500">' +
+      (undeliveredOnly ? 'Всяко известие е стигнало до канал.' : 'Още няма известия.') + '</p>';
+    return;
+  }
+
+  target.innerHTML =
+    '<div class="max-h-[70vh] overflow-auto"><table class="op-table w-full text-left text-[12.5px]">' +
+    '<thead class="sticky top-0 bg-ink-900"><tr class="border-b border-white/8 text-[10px] uppercase tracking-wide text-slate-500">' +
+    '<th class="px-4 py-3 font-semibold">Кога</th>' +
+    '<th class="px-4 py-3 font-semibold">Какво</th>' +
+    '<th class="px-4 py-3 font-semibold">Клиент</th>' +
+    '<th class="px-4 py-3 font-semibold">Доставка</th></tr></thead><tbody>' +
+    alerts
+      .map(function (alert) {
+        const delivery = DELIVERY_STYLE[alert.deliveryStatus] || DELIVERY_STYLE.pending;
+
+        return (
+          // Acknowledged alerts stay in the list, dimmed. Removing them would
+          // make the feed disagree with the count beside it, and "I saw this"
+          // is not the same as "this did not happen".
+          '<tr class="border-b border-white/5 align-top' +
+          (alert.acknowledged ? ' opacity-50' : '') + '">' +
+          '<td data-label="Кога" class="whitespace-nowrap px-4 py-3 text-slate-500">' +
+          escapeHtml(formatRelative(alert.createdAt)) + '</td>' +
+          '<td data-label="Какво" class="px-4 py-3"><p class="' +
+          (ALERT_SEVERITY[alert.severity] || ALERT_SEVERITY.info) +
+          ' text-[11.5px] font-medium uppercase tracking-wide">' +
+          escapeHtml(alert.type.replace(/_/g, ' ')) + '</p>' +
+          '<p class="mt-0.5 max-w-xl text-slate-300">' + escapeHtml(alert.message) + '</p></td>' +
+          '<td data-label="Клиент" class="px-4 py-3 text-slate-400">' + escapeHtml(alert.owner || '—') +
+          '<p class="text-[11px] text-slate-600">' + escapeHtml(alert.product) + '</p></td>' +
+          '<td data-label="Доставка" class="px-4 py-3">' +
+          '<span class="rounded-md px-2 py-0.5 text-[11px] ' + delivery.class + '">' +
+          delivery.label + '</span>' +
+          (alert.deliveryError
+            ? '<p class="mt-1 max-w-xs text-[11px] text-slate-600">' +
+              escapeHtml(alert.deliveryError) + '</p>'
+            : '') +
+          '</td></tr>'
+        );
+      })
+      .join('') +
+    '</tbody></table></div>';
+}
+
+/* --- Command palette -------------------------------------------------- *
+ *
+ * Everything on this screen is two clicks away; the palette makes it one
+ * keystroke away, and more importantly makes *customers* reachable by
+ * typing their email rather than by finding them in a table.
+ * --------------------------------------------------------------------- */
+
+const PALETTE_SECTIONS = [
+  { tab: 'overview', label: 'Преглед', hint: 'числа и графики', icon: 'fa-chart-simple' },
+  { tab: 'scrape', label: 'Обиколка', hint: 'провали и закъснели проверки', icon: 'fa-tower-broadcast' },
+  { tab: 'alerts', label: 'Известия', hint: 'какво е пратено на клиентите', icon: 'fa-bell' },
+  { tab: 'customers', label: 'Клиенти', hint: 'планове, лимити, ключове', icon: 'fa-users' },
+  { tab: 'payments', label: 'Плащания', hint: 'webhook-и от Stripe', icon: 'fa-receipt' },
+  { tab: 'shops', label: 'Сайтове', hint: 'доставчици и заявки за API', icon: 'fa-store' },
+];
+
+let paletteItems = [];
+let paletteCursor = 0;
+
+function paletteCandidates(term) {
+  const lower = term.trim().toLowerCase();
+  const items = [];
+
+  PALETTE_SECTIONS.forEach(function (section) {
+    if (!lower || section.label.toLowerCase().includes(lower) || section.hint.includes(lower)) {
+      items.push({
+        icon: section.icon,
+        label: section.label,
+        hint: section.hint,
+        run: () => openOperatorTab(section.tab),
+      });
+    }
+  });
+
+  items.push({
+    icon: 'fa-play',
+    label: 'Пусни обиколка сега',
+    hint: 'проверява обявите, които чакат ред',
+    run: async () => {
+      openOperatorTab('scrape');
+      await loadOperatorScrape(true);
+      const button = $('#operator-sweep');
+      if (button) button.click();
+    },
+  });
+
+  if (lower) {
+    operatorCustomers
+      .filter(
+        (user) =>
+          (user.email || '').toLowerCase().includes(lower) ||
+          (user.name || '').toLowerCase().includes(lower),
+      )
+      .slice(0, 6)
+      .forEach(function (user) {
+        items.push({
+          icon: 'fa-user',
+          label: user.email,
+          hint: 'клиент · ' + (PLAN_LABELS[user.plan] || user.plan),
+          run: function () {
+            $('#operator-customer-search').value = user.email;
+            $('#operator-customer-status').value = '';
+            $('#operator-customer-plan').value = '';
+            openOperatorTab('customers');
+            renderOperatorCustomers();
+          },
+        });
+      });
+
+    Object.keys(outreachByHost)
+      .concat(paletteHosts)
+      .filter((host, index, all) => all.indexOf(host) === index)
+      .filter((host) => host.toLowerCase().includes(lower))
+      .slice(0, 6)
+      .forEach(function (host) {
+        items.push({
+          icon: 'fa-store',
+          label: host,
+          hint: 'сайт на доставчик',
+          run: () => openOperatorTab('shops'),
+        });
+      });
+  }
+
+  // Filtering to nothing is a real answer, and an empty list says it better
+  // than a list of everything would.
+  return items.slice(0, 12);
+}
+
+/** Hosts seen in the sites table, so the palette can find them before that
+ *  tab has ever been opened. Filled by loadOperatorShops. */
+let paletteHosts = [];
+
+function renderPalette() {
+  const container = $('#palette-results');
+
+  if (!paletteItems.length) {
+    container.innerHTML =
+      '<p class="px-3 py-8 text-center text-[12.5px] text-slate-500">Нищо не съвпада.</p>';
+    return;
+  }
+
+  container.innerHTML = paletteItems
+    .map(
+      (item, index) =>
+        '<button type="button" data-palette-index="' + index + '" ' +
+        'class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ' +
+        (index === paletteCursor ? 'bg-white/[0.07]' : 'hover:bg-white/[0.04]') + '">' +
+        '<i class="fa-solid ' + item.icon + ' w-4 text-[11.5px] text-slate-500"></i>' +
+        '<span class="min-w-0 flex-1"><span class="block truncate text-[12.5px] text-slate-200">' +
+        escapeHtml(item.label) + '</span>' +
+        '<span class="block truncate text-[11px] text-slate-500">' +
+        escapeHtml(item.hint) + '</span></span></button>',
+    )
+    .join('');
+
+  $$('[data-palette-index]').forEach(function (button) {
+    button.addEventListener('click', () => runPalette(Number(button.dataset.paletteIndex)));
+  });
+}
+
+function runPalette(index) {
+  const item = paletteItems[index];
+  if (!item) return;
+
+  closeModal('palette-modal');
+  void item.run();
+}
+
+function refreshPalette() {
+  paletteItems = paletteCandidates($('#palette-input').value);
+  paletteCursor = 0;
+  renderPalette();
+}
+
+function openPalette() {
+  if ($('#view-operator').hidden) return;
+
+  $('#palette-input').value = '';
+  refreshPalette();
+  openModal('palette-modal');
+  $('#palette-input').focus();
+}
+
+$('#operator-palette-open').addEventListener('click', openPalette);
+$('#palette-input').addEventListener('input', refreshPalette);
+
+$('#palette-input').addEventListener('keydown', function (event) {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    paletteCursor = (paletteCursor + step + paletteItems.length) % paletteItems.length;
+    renderPalette();
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    runPalette(paletteCursor);
+  }
+});
+
+document.addEventListener('keydown', function (event) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    openPalette();
+  }
+});
 
 $('#operator-refresh').addEventListener('click', () => void loadOperatorPanel());
 
@@ -6024,7 +9987,7 @@ $('#supplier-form').addEventListener('submit', async function (event) {
 
   function showSupplierStatus(message, tone) {
     const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
-    status.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+    status.className = 'text-[11.5px] ' + (palette[tone] || palette.info);
     status.textContent = message;
     status.classList.remove('hidden');
   }
@@ -6141,7 +10104,7 @@ function renderUrlPreview() {
 
       if (!host) {
         return (
-          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/12 px-2.5 py-1 text-[11.5px] font-medium text-red-300">' +
+          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/12 px-2.5 py-1 text-[11px] font-medium text-red-300">' +
           '<i class="fa-solid fa-xmark text-[10px]"></i>невалиден линк</span>'
         );
       }
@@ -6151,7 +10114,7 @@ function renderUrlPreview() {
       // it is caught here rather than after it lands in a report.
       if (isListingUrl(url)) {
         return (
-          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/12 px-2.5 py-1 text-[11.5px] font-medium text-amber-300" title="Отворете конкретния продукт и копирайте неговия адрес">' +
+          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/12 px-2.5 py-1 text-[11px] font-medium text-amber-300" title="Отворете конкретния продукт и копирайте неговия адрес">' +
           '<i class="fa-solid fa-triangle-exclamation text-[10px]"></i>' +
           escapeHtml(host) +
           ' — начална страница</span>'
@@ -6159,7 +10122,7 @@ function renderUrlPreview() {
       }
 
       return (
-        '<span class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-medium ' +
+        '<span class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium ' +
         (retailer
           ? 'bg-emerald-500/12 text-emerald-300'
           : 'bg-white/5 text-slate-400') +
@@ -6228,7 +10191,7 @@ async function renderDiscoveryShops() {
   const indexedChips = indexed
     .map(function (shop) {
       return (
-        '<span class="inline-flex items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[12.5px] text-accent-300" title="Индексиран каталог — търси се локално">' +
+        '<span class="inline-flex items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[11.5px] text-accent-300" title="Индексиран каталог — търси се локално">' +
         '<i class="fa-solid fa-database text-[10px]"></i>' +
         escapeHtml(shop.name) +
         '<span class="num text-[11px] text-accent-300/70">' +
@@ -6248,7 +10211,7 @@ async function renderDiscoveryShops() {
       const blocked = shop.searchable === false;
 
       return (
-        '<label class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12.5px] transition ' +
+        '<label class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11.5px] transition ' +
         (blocked
           ? 'cursor-not-allowed border-white/8 bg-ink-850/60 text-slate-600'
           : 'cursor-pointer border-white/10 bg-ink-850 text-slate-300 hover:border-accent-500/40') +
@@ -6307,7 +10270,7 @@ async function renderDiscoveryShops() {
     notes
       .map(
         (note) =>
-          '<p class="w-full text-[11.5px] leading-relaxed text-slate-500">' + note + '</p>',
+          '<p class="w-full text-[11px] leading-relaxed text-slate-500">' + note + '</p>',
       )
       .join(''),
   );
@@ -6340,7 +10303,7 @@ function renderDiscoveryResults(results) {
 
   if (!results.length) {
     container.innerHTML =
-      '<p class="text-[12px] text-slate-500">Нищо не се намери. Пробвайте с модел вместо с описание.</p>';
+      '<p class="text-[11.5px] text-slate-500">Нищо не се намери. Пробвайте с модел вместо с описание.</p>';
     return;
   }
 
@@ -6360,7 +10323,7 @@ function renderDiscoveryResults(results) {
 
   const summary =
     '<div class="rounded-lg border border-white/8 bg-ink-850 px-3 py-2.5">' +
-    '<p class="text-[12.5px] font-medium ' +
+    '<p class="text-[11.5px] font-medium ' +
     (carrying.length ? 'text-slate-200' : 'text-slate-400') +
     '">' +
     (carrying.length
@@ -6373,7 +10336,7 @@ function renderDiscoveryResults(results) {
           .map(function (shop) {
             const cheapest = cheapestOf(shop);
             return (
-              '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11.5px] font-medium text-emerald-400">' +
+              '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11px] font-medium text-emerald-400">' +
               '<i class="fa-solid fa-store text-[9px]"></i>' +
               escapeHtml(shop.name) +
               '<span class="text-emerald-400/70">' +
@@ -6409,7 +10372,7 @@ function renderDiscoveryResults(results) {
     .map(function (shop) {
       const header =
         '<div class="flex items-baseline justify-between gap-2">' +
-        '<span class="text-[12.5px] font-medium text-slate-300">' +
+        '<span class="text-[11.5px] font-medium text-slate-300">' +
         escapeHtml(shop.name) +
         '</span><span class="text-[11px] text-slate-500">' +
         shop.products.length +
@@ -6425,15 +10388,15 @@ function renderDiscoveryResults(results) {
             '<input type="checkbox" data-discovered="' +
             escapeHtml(item.url) +
             '" class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-ink-800 accent-accent-500" />' +
-            '<span class="min-w-0 flex-1"><span class="block truncate text-[12px] text-slate-200" title="' +
+            '<span class="min-w-0 flex-1"><span class="block truncate text-[11.5px] text-slate-200" title="' +
             escapeHtml(item.title) +
             '">' +
             escapeHtml(item.title) +
-            '</span><span class="block truncate font-mono text-[10.5px] text-slate-500">' +
+            '</span><span class="block truncate font-mono text-[10px] text-slate-500">' +
             escapeHtml(item.url) +
             '</span></span>' +
             (typeof item.price === 'number'
-              ? '<span class="num shrink-0 text-[12px] font-semibold text-slate-300">' +
+              ? '<span class="num shrink-0 text-[11.5px] font-semibold text-slate-300">' +
                 item.price.toFixed(2) +
                 ' ' +
                 escapeHtml(item.currency || '') +
@@ -6465,7 +10428,7 @@ $('#discovery-search').addEventListener('click', async function () {
 
   if (query.length < 2) {
     $('#discovery-results').innerHTML =
-      '<p class="text-[12px] text-amber-400">Въведете поне 2 знака за търсене.</p>';
+      '<p class="text-[11.5px] text-amber-400">Въведете поне 2 знака за търсене.</p>';
     return;
   }
 
@@ -6475,7 +10438,7 @@ $('#discovery-search').addEventListener('click', async function () {
 
   $('#discovery-spinner').classList.remove('hidden');
   $('#discovery-results').innerHTML =
-    '<p class="text-[12px] text-slate-500">Търсене…</p>';
+    '<p class="text-[11.5px] text-slate-500">Търсене…</p>';
 
   // One source now: the shops themselves, asked at this moment. There
   // used to be a second — our own indexed copy of their catalogues — and
@@ -6516,7 +10479,7 @@ $('#add-product').addEventListener('click', function () {
 function showProductStatus(message, tone) {
   const element = $('#product-status');
   const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
-  element.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+  element.className = 'text-[11.5px] ' + (palette[tone] || palette.info);
   element.innerHTML = message;
   element.classList.remove('hidden');
 }
@@ -6811,7 +10774,7 @@ $('#edit-product-form').addEventListener('submit', async function (event) {
   const status = $('#edit-product-status');
   function show(message, tone) {
     const palette = { success: 'text-emerald-500', error: 'text-red-500', info: 'text-slate-400' };
-    status.className = 'text-[12.5px] ' + (palette[tone] || palette.info);
+    status.className = 'text-[11.5px] ' + (palette[tone] || palette.info);
     status.textContent = message;
     status.classList.remove('hidden');
   }
@@ -7001,11 +10964,11 @@ $('#copy-api-link').addEventListener('click', async function () {
     document.body.removeChild(helper);
   }
 
-  $('#copy-icon').className = 'fa-solid fa-check text-[12px]';
+  $('#copy-icon').className = 'fa-solid fa-check text-[11.5px]';
   $('#copy-label').textContent = 'Копирано';
 
   window.setTimeout(function () {
-    $('#copy-icon').className = 'fa-solid fa-link text-[12px]';
+    $('#copy-icon').className = 'fa-solid fa-link text-[11.5px]';
     $('#copy-label').textContent = 'Копирай API линк';
   }, 2000);
 
@@ -7036,7 +10999,7 @@ function showTotpStatus(message, tone) {
   const element = $('#totp-status');
   element.textContent = message;
   element.className =
-    'mt-2 text-[12.5px] ' + (tone === 'error' ? 'text-red-400' : 'text-slate-400');
+    'mt-2 text-[11.5px] ' + (tone === 'error' ? 'text-red-400' : 'text-slate-400');
   element.classList.remove('hidden');
 }
 
@@ -7060,7 +11023,7 @@ async function renderSessions() {
 
     if (!sessions.length) {
       list.innerHTML =
-        '<p class="text-[12.5px] text-slate-500">' + translate('Няма други активни входове.') + '</p>';
+        '<p class="text-[11.5px] text-slate-500">' + translate('Няма други активни входове.') + '</p>';
       return;
     }
 
@@ -7070,9 +11033,9 @@ async function renderSessions() {
           '<div class="flex items-center gap-3 rounded-lg border border-white/8 bg-ink-900 px-3 py-2">' +
           '<i class="fa-solid ' +
           (isPhone(session.userAgent) ? 'fa-mobile-screen' : 'fa-laptop') +
-          ' text-[12px] text-slate-500"></i>' +
+          ' text-[11.5px] text-slate-500"></i>' +
           '<div class="min-w-0 flex-1">' +
-          '<p class="truncate text-[12.5px] text-slate-300">' +
+          '<p class="truncate text-[11.5px] text-slate-300">' +
           escapeHtml(describeDevice(session.userAgent)) +
           (session.current
             ? '<span class="ml-1.5 rounded bg-accent-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-600 dark:text-accent-300">' +
@@ -7113,7 +11076,7 @@ async function renderSessions() {
     });
   } catch (error) {
     list.innerHTML =
-      '<p class="text-[12.5px] text-slate-500">' + escapeHtml(failureText(error, 'Не се зареди')) + '</p>';
+      '<p class="text-[11.5px] text-slate-500">' + escapeHtml(failureText(error, 'Не се зареди')) + '</p>';
   }
 }
 
@@ -7291,20 +11254,41 @@ $$('[data-year]').forEach(function (element) {
  * language is settled is the only version that comes out right the first time,
  * and it costs one small same-origin fetch on a page that has already loaded.
  */
-function boot() {
+async function boot() {
   refreshDemoBanner();
+
+  /*
+   * Settled before anything is asked, not alongside it.
+   *
+   * This await is the whole repair for a browser upgrading from the single
+   * shared key slot. `operatorKnown` is what moves an operator key out of the
+   * customer slot, and until it has, `authHeaders` will still find one there
+   * and attach it to every customer request. Fired and not awaited — which is
+   * what this used to do — the first view opens against un-migrated storage
+   * and reproduces the original bug exactly: /products, /shops, /billing/me
+   * and the rest all answering "this is an operator key" at once.
+   *
+   * It costs one same-origin request, and only for a browser that still has a
+   * key stored under the old arrangement. Every other browser resolves it from
+   * storage without touching the network.
+   */
+  await operatorKnown();
+
   renderApiKeyBadge();
   // Decides which navigation the header shows, so it runs before the first
   // view is opened rather than after the reader has seen the wrong one.
   renderAccount();
   rebuildSupplierFilter();
   renderTable();
-  void detectOperator();
+  // After `$$` exists: this reads the pricing cards out of the document, and
+  // called at the top of the file it ran inside the temporal dead zone of the
+  // helper it uses.
+  void paintPlanPrices();
   switchView(window.location.hash.replace('#', '') || 'landing', { force: true });
 }
 
 if (window.PG_I18N && window.PG_I18N.ready) {
   void window.PG_I18N.ready.then(boot, boot);
 } else {
-  boot();
+  void boot();
 }
