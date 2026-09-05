@@ -698,6 +698,12 @@ npm run migration:run    # apply pending migrations
 
 ---
 
+### End-to-end
+
+`npm run test:e2e` boots the real application against the `.env` database. Two files: `test/app.e2e-spec.ts` guards the API surface — the OpenAPI document, the key boundaries, the immutability of a stored purchase decision — and `test/account-lifecycle.e2e-spec.ts` runs the path that sells, in order, on one account: register, prove the mailbox, get the trial and the key, add the supplier with no website, upload its price list as a windows-1251 spreadsheet, re-upload it and see rows updated rather than doubled, run a comparison that answers with that uploaded price at this account's discount, then end the trial and watch the articles above the free limit be parked rather than deleted.
+
+Mail is the only thing stubbed, and it is also how the test opens the account: the verification link exists nowhere but in the email. The account and everything hanging off it is deleted afterwards.
+
 ## 10a. Continuous integration
 
 `.github/workflows/ci.yml` runs lint, types, the 230 unit tests, the build and
