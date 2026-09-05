@@ -54,7 +54,9 @@ npm install
 ```
 DB_HOST=aws-1-eu-west-3.pooler.supabase.com   # verified against the live pooler
 SCRAPER_DRIVER=http                            # http = real pages, simulation = generated
-PADDLE_WEBHOOK_SECRET=...                      # required for billing
+BILLING_PROVIDER=stripe                        # which webhook signature is verified
+STRIPE_SECRET_KEY=...                          # required for billing
+STRIPE_WEBHOOK_SECRET=...                      # without it a buyer pays and nothing is provisioned
 ```
 
 Apply the schema, seed a demo catalog, run:
@@ -586,11 +588,25 @@ Lookups are cached for `API_KEY_CACHE_TTL_MS` (default 30s), including misses, s
 
 ### Testing the webhook locally
 
+With `BILLING_PROVIDER=stripe`, the Stripe CLI forwards real test-mode events to the running app and signs them with the secret it prints on start — put that value in `STRIPE_WEBHOOK_SECRET`:
+
 ```bash
-node -e "const c=require('crypto'),b=JSON.stringify({event_id:'evt_'+Date.now(),event_type:'subscription.created',data:{id:'sub_1',customer:{email:'you@example.com'}}}),t=Math.floor(Date.now()/1000);require('fs').writeFileSync('/tmp/wh.json',b);console.log('ts='+t+';h1='+c.createHmac('sha256',process.env.PADDLE_WEBHOOK_SECRET).update(t+':'+b).digest('hex'))"
+stripe listen --forward-to localhost:3000/api/v1/billing/webhook
 ```
 
-Then POST `/tmp/wh.json` with that value as the `Paddle-Signature` header.
+```bash
+stripe trigger checkout.session.completed
+```
+
+Without the CLI, sign a body by hand. Stripe's header is `Stripe-Signature: t=<unix>,v1=<hex>` over `<t>.<raw body>`:
+
+```bash
+node -e "const c=require('crypto'),b=JSON.stringify({id:'evt_'+Date.now(),type:'checkout.session.completed',data:{object:{id:'cs_1',customer_details:{email:'you@example.com'},metadata:{plan:'pro'}}}}),t=Math.floor(Date.now()/1000);require('fs').writeFileSync('/tmp/wh.json',b);console.log('t='+t+',v1='+c.createHmac('sha256',process.env.STRIPE_WEBHOOK_SECRET).update(t+'.'+b).digest('hex'))"
+```
+
+Then POST `/tmp/wh.json` with that value as the `Stripe-Signature` header.
+
+For `BILLING_PROVIDER=paddle` the header is `Paddle-Signature: ts=<unix>;h1=<hex>` over `<ts>:<raw body>`, signed with `PADDLE_WEBHOOK_SECRET`.
 
 ---
 

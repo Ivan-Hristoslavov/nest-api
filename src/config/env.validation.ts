@@ -115,9 +115,14 @@ export class EnvironmentVariables {
   API_KEY_CACHE_TTL_MS = 30000;
 
   // --- Billing -------------------------------------------------------------
+  /**
+   * Stripe by default, because that is what the launch is wired for. The
+   * default matters: a deployment that forgets this variable verifies every
+   * webhook against the wrong header and silently rejects each payment.
+   */
   @IsEnum(BillingProvider)
   @IsOptional()
-  BILLING_PROVIDER: BillingProvider = BillingProvider.Paddle;
+  BILLING_PROVIDER: BillingProvider = BillingProvider.Stripe;
 
   @IsString()
   @IsOptional()
