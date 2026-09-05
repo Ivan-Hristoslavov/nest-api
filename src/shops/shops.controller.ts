@@ -7,10 +7,14 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  BadRequestException,
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
@@ -20,6 +24,8 @@ import {
   ApiOperation,
   ApiParam,
   ApiConflictResponse,
+  ApiConsumes,
+  ApiBody,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
@@ -29,7 +35,13 @@ import { Owner } from '../common/decorators/owner.decorator';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { PurgeQueryDto } from '../common/dto/purge-query.dto';
 import { ShopProbeService } from '../discovery/shop-probe.service';
-import { ImportManualPricesDto, ImportResultDto, ManualPriceDto } from './dto/manual-prices.dto';
+import {
+  ImportManualPricesDto,
+  ImportResultDto,
+  ManualPriceDto,
+  UploadPriceListResultDto,
+} from './dto/manual-prices.dto';
+import { parsePriceList } from './price-list-parser';
 import { CreateShopDto, UpdateShopDto } from './dto/shops.dto';
 import { ManualPrice } from './entities/manual-price.entity';
 import { Shop } from './entities/shop.entity';
@@ -158,6 +170,83 @@ export class ShopsController {
     return this.manualPrices.importList(ownerId, id, dto.prices);
   }
 
+  @Post(':id/prices/upload')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // Five megabytes is a price list with tens of thousands of rows; the
+      // import itself is capped at five thousand, so anything larger is not
+      // a price list.
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload a price list as the supplier sent it',
+    description:
+      'The Excel sheet or CSV a supplier emails, taken as it is. Headers in Bulgarian or English or none at all; prices written „1 234,56" or „1.42 лв"; windows-1251 or UTF-8 — the columns are worked out from the headings where there are any and from the values where there are not, and what was read is reported back.\n\nWith `dryRun=true` nothing is written: the response says which column was taken for what and shows the first rows as they would be stored. Without it the rows are imported exactly like `POST /shops/{id}/prices/import` — re-uploading updates rather than duplicates.\n\nRows without a readable price are skipped and listed, not refused: a list with three „по запитване" lines is still a list.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'dryRun', required: false, example: true })
+  @ApiOkResponse({ type: UploadPriceListResultDto })
+  @ApiBadRequestResponse({ description: 'No file, or one that holds no price list.', type: ErrorResponseDto })
+  @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
+  async uploadPriceList(
+    @Owner() ownerId: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFile() file: UploadedPriceList | undefined,
+    @Query('dryRun') dryRun?: string,
+  ): Promise<UploadPriceListResultDto> {
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('Прикачете файл — Excel или CSV — в полето „file".');
+    }
+
+    const shop = await this.shops.findOne(ownerId, id);
+    const parsed = parsePriceList(file.buffer, file.originalname ?? '');
+    const currency = parsed.currency ?? shop.currency;
+
+    if (parsed.rows.length === 0) {
+      throw new BadRequestException(
+        parsed.problems[0] ?? 'Във файла не намерих нито един ред с наименование и цена.',
+      );
+    }
+
+    if (parsed.rows.length > 5000) {
+      throw new BadRequestException(
+        `Файлът има ${parsed.rows.length} реда с цени; наведнъж се качват до 5000.`,
+      );
+    }
+
+    const rows = parsed.rows.map((row) => ({ ...row, currency: row.currency ?? currency }));
+
+    const read = {
+      rows: rows.length,
+      skipped: parsed.skipped,
+      problems: parsed.problems,
+      columns: parsed.columns,
+      encoding: parsed.encoding,
+      delimiter: parsed.delimiter,
+      headerRow: parsed.headerRow,
+      currency,
+      sample: rows.slice(0, 8) as ManualPriceDto[],
+    };
+
+    if (dryRun === 'true' || dryRun === '1') {
+      return { read, result: null };
+    }
+
+    const result = await this.manualPrices.importList(ownerId, id, rows);
+
+    return { read, result };
+  }
+
   @Delete(':id/prices/:priceId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove one hand-entered price' })
@@ -210,4 +299,15 @@ export class ShopsController {
   ): Promise<void> {
     return this.shops.remove(ownerId, id, query.purge);
   }
+}
+
+/**
+ * What multer hands over. Declared here rather than as `Express.Multer.File`
+ * so the controller does not depend on a type package for one field of one
+ * request.
+ */
+interface UploadedPriceList {
+  buffer: Buffer;
+  originalname?: string;
+  size?: number;
 }

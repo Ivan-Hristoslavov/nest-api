@@ -616,7 +616,7 @@ $$('[data-close-modal]').forEach(function (button) {
   button.addEventListener('click', () => closeModal(button.dataset.closeModal));
 });
 
-['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(function (id) {
+['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'prices-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(function (id) {
   // Clicking the backdrop closes; clicking the panel must not.
   document.getElementById(id).addEventListener('click', function (event) {
     if (event.target === this) closeModal(id);
@@ -633,7 +633,7 @@ document.addEventListener('keydown', function (event) {
     return;
   }
 
-  ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(closeModal);
+  ['key-modal', 'signup-modal', 'signin-modal', 'supplier-modal', 'product-modal', 'edit-product-modal', 'shop-modal', 'prices-modal', 'detect-modal', 'outreach-modal', 'palette-modal'].forEach(closeModal);
 });
 
 /* ------------------------------------------------------------------ *
@@ -2799,8 +2799,16 @@ function shopRowHtml(shop) {
   // One action, and it is the same one whatever state the row is in:
   // work out again how this shop can be searched. A storefront that has
   // moved platform may have gained a usable search, or lost one.
+  // A supplier without a website has nothing to probe. What it has is a
+  // price list, and the one action its row can usefully offer is the list.
   const action = off
     ? '<span class="text-[11.5px] text-slate-600">—</span>'
+    : shop.hasWebsite === false || shop.searchMethod === 'manual'
+    ? '<button type="button" data-prices="' +
+      escapeHtml(shop.id) +
+      '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[11.5px] font-medium text-slate-300 transition hover:border-violet-400/40 hover:text-violet-300" ' +
+      'title="Качете ценоразписа, който този доставчик ви праща — Excel или CSV.">' +
+      '<i class="fa-solid fa-file-invoice text-[11px]"></i>Ценоразпис</button>'
     : '<button type="button" data-reprobe="' +
       escapeHtml(shop.id) +
       '" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[11.5px] font-medium text-slate-300 transition hover:border-accent-500/40 hover:text-accent-300" ' +
@@ -2859,7 +2867,406 @@ function shopRowHtml(shop) {
   );
 }
 
+/* --- A supplier's price list ---------------------------------------- *
+ *
+ * The local warehouse emails an Excel sheet once a quarter. It goes in
+ * here as it is: the server reads the columns, shows what it read, and
+ * writes only when the buyer has looked at the first rows and agreed.
+ * Re-uploading the same list updates the figures rather than doubling
+ * every article.
+ * ------------------------------------------------------------------- */
+
+let pricesShopId = null;
+let pricesPendingFile = null;
+
+/** "1,42 EUR" — the amount with the currency the list stated. */
+function formatMoney(value, currency) {
+  return (
+    Number(value).toFixed(2) + ' ' + escapeHtml(currency || 'EUR')
+  );
+}
+
+function showPricesStatus(message, tone) {
+  const element = $('#prices-status');
+  element.textContent = message;
+  element.className =
+    'mt-3 text-[11.5px] ' +
+    (tone === 'error' ? 'text-red-400' : tone === 'success' ? 'text-emerald-400' : 'text-slate-400');
+  element.classList.remove('hidden');
+}
+
+async function openPricesModal(shopId) {
+  const shop = shops.find((item) => item.id === shopId);
+  if (!shop) return;
+
+  pricesShopId = shopId;
+  pricesPendingFile = null;
+  $('#prices-modal-shop').textContent = formatMessage(
+    '{shop} · цените се сравняват с {percent}% отстъпка, като всеки друг доставчик.',
+    { shop: shop.name, percent: Number(shop.discountPercent) },
+  );
+  $('#prices-preview').classList.add('hidden');
+  $('#prices-preview').innerHTML = '';
+  $('#prices-status').classList.add('hidden');
+  $('#prices-file').value = '';
+  $('#prices-filter').value = '';
+
+  openModal('prices-modal');
+  await loadShopPrices();
+}
+
+async function loadShopPrices() {
+  const list = $('#prices-list');
+  list.innerHTML =
+    '<p class="px-4 py-6 text-center text-[12px] text-slate-500">' +
+    escapeHtml(translate('Зареждам…')) +
+    '</p>';
+
+  try {
+    const response = await fetch(ENDPOINTS.shops + '/' + pricesShopId + '/prices', {
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    renderShopPrices(await response.json());
+  } catch (error) {
+    list.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12px] text-red-400">' +
+      escapeHtml(failureText(error, 'Списъкът не се зареди')) + '</p>';
+  }
+}
+
+let shopPricesRows = [];
+
+function renderShopPrices(rows) {
+  shopPricesRows = rows;
+  const filter = ($('#prices-filter').value || '').trim().toLowerCase();
+  const shown = filter
+    ? rows.filter(
+        (row) =>
+          row.name.toLowerCase().includes(filter) ||
+          (row.shopCode || '').toLowerCase().includes(filter),
+      )
+    : rows;
+
+  $('#prices-count').textContent = !rows.length
+    ? ''
+    : shown.length === rows.length
+      ? String(rows.length)
+      : formatMessage('{shown} от {total}', { shown: shown.length, total: rows.length });
+
+  const list = $('#prices-list');
+
+  if (!rows.length) {
+    list.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12px] leading-relaxed text-slate-500">' +
+      escapeHtml(
+        translate(
+          'Още няма нито една цена. Качете ценоразписа отгоре — при търсене този доставчик ще участва с тези цени.',
+        ),
+      ) +
+      '</p>';
+    return;
+  }
+
+  if (!shown.length) {
+    list.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12px] text-slate-500">' +
+      escapeHtml(formatMessage('Нищо не съвпада с „{query}".', { query: filter })) +
+      '</p>';
+    return;
+  }
+
+  list.innerHTML =
+    '<table class="w-full text-left text-[12px]"><tbody>' +
+    shown
+      .slice(0, 400)
+      .map(
+        (row) =>
+          '<tr class="border-b border-white/5">' +
+          '<td class="px-3 py-2"><span class="block truncate text-slate-200" title="' +
+          escapeHtml(row.name) + '">' + escapeHtml(row.name) + '</span>' +
+          (row.shopCode
+            ? '<span class="font-mono text-[10.5px] text-slate-500">' + escapeHtml(row.shopCode) + '</span>'
+            : '') +
+          '</td>' +
+          '<td class="num whitespace-nowrap px-3 py-2 text-right text-slate-200">' +
+          formatMoney(Number(row.price), row.currency) +
+          (row.unit ? '<span class="ml-1 text-[10.5px] text-slate-500">/ ' + escapeHtml(row.unit) + '</span>' : '') +
+          '</td>' +
+          '<td class="w-10 px-1 py-1 text-right">' +
+          iconButton('delete-price', row.id, 'fa-trash', 'Изтрий тази цена', 'hover:text-red-400') +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table>' +
+    (shown.length > 400
+      ? '<p class="px-3 py-2 text-[11px] text-slate-500">' +
+        escapeHtml(translate('Показани са първите 400. Търсете, за да стигнете до останалите.')) +
+        '</p>'
+      : '');
+
+  $$('#prices-list [data-action="delete-price"]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      button.disabled = true;
+      try {
+        const response = await fetch(
+          ENDPOINTS.shops + '/' + pricesShopId + '/prices/' + button.dataset.id,
+          { method: 'DELETE', headers: authHeaders() },
+        );
+        if (!response.ok && response.status !== 204) throw new Error('HTTP ' + response.status);
+        await loadShopPrices();
+        await loadShops();
+      } catch (error) {
+        button.disabled = false;
+        toast(failureText(error, 'Не се изтри'), 'error');
+      }
+    });
+  });
+}
+
+/**
+ * Sends the file for reading only, and shows what came back.
+ *
+ * The preview is not a formality. A list read on the wrong column writes
+ * four hundred quantities as prices, and every comparison after that
+ * recommends this supplier for everything. Better ten seconds of looking
+ * than an afternoon of deleting.
+ */
+async function previewPriceList(file) {
+  pricesPendingFile = file;
+  const preview = $('#prices-preview');
+  preview.classList.remove('hidden');
+  preview.innerHTML =
+    '<p class="rounded-xl border border-white/8 bg-ink-900 px-4 py-5 text-center text-[12px] text-slate-500">' +
+    '<i class="fa-solid fa-spinner fa-spin mr-2 text-[11px]"></i>' +
+    escapeHtml(formatMessage('Чета „{file}"…', { file: file.name })) +
+    '</p>';
+  $('#prices-status').classList.add('hidden');
+
+  const body = new FormData();
+  body.append('file', file, file.name);
+
+  let answer;
+  try {
+    const response = await fetch(
+      ENDPOINTS.shops + '/' + pricesShopId + '/prices/upload?dryRun=true',
+      { method: 'POST', headers: authHeaders(), body },
+    );
+    answer = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        (answer && (Array.isArray(answer.message) ? answer.message.join('; ') : answer.message)) ||
+          'HTTP ' + response.status,
+      );
+    }
+  } catch (error) {
+    preview.innerHTML =
+      '<div class="rounded-xl border border-red-500/25 bg-red-500/[0.06] px-4 py-4 text-[12px] leading-relaxed text-red-300">' +
+      '<i class="fa-solid fa-triangle-exclamation mr-1.5"></i>' +
+      escapeHtml(failureText(error, 'Файлът не се прочете')) +
+      '<p class="mt-2 text-[11.5px] text-slate-400">' +
+      escapeHtml(
+        translate(
+          'Помага първи ред със заглавия — „Код", „Наименование", „Цена" — или поне колона, в която има само числа.',
+        ),
+      ) +
+      '</p>' +
+      '</div>';
+    pricesPendingFile = null;
+    return;
+  }
+
+  const read = answer.read;
+  const column = (guess, label) =>
+    '<span class="inline-flex items-center gap-1.5 rounded-md bg-white/[0.05] px-2 py-1 text-[11px]">' +
+    '<span class="text-slate-500">' + escapeHtml(translate(label)) + '</span>' +
+    (guess
+      ? '<span class="font-medium text-slate-200">' +
+        escapeHtml(
+          guess.header || formatMessage('колона {n}', { n: guess.index + 1 }),
+        ) +
+        '</span>' +
+        (guess.by === 'values'
+          ? '<i class="fa-solid fa-wand-magic-sparkles text-[9px] text-amber-300" title="' +
+            escapeHtml(translate('Разпозната по стойностите, не по заглавие')) +
+            '"></i>'
+          : '')
+      : '<span class="text-slate-600">—</span>') +
+    '</span>';
+
+  const shape =
+    (read.encoding === 'xlsx'
+      ? 'Excel'
+      : read.delimiter
+        ? formatMessage('CSV с „{delimiter}"', {
+            delimiter: read.delimiter === '\t' ? translate('таб') : read.delimiter,
+          })
+        : 'CSV') +
+    (read.encoding === 'windows-1251' ? ' · windows-1251' : '') +
+    ' · ' +
+    translate(read.headerRow ? 'първи ред заглавия' : 'без заглавия');
+
+  preview.innerHTML =
+    '<div class="rounded-xl border border-white/8 bg-ink-900 p-3.5">' +
+    '<div class="flex flex-wrap items-center justify-between gap-2">' +
+    '<p class="text-[12.5px] font-semibold text-slate-200">' +
+    escapeHtml(
+      pluralMessage(read.rows, { one: 'Прочетено: {n} ред', other: 'Прочетено: {n} реда' }),
+    ) +
+    (read.skipped
+      ? ' <span class="font-normal text-amber-300">· ' +
+        escapeHtml(
+          pluralMessage(read.skipped, { one: '{n} пропуснат', other: '{n} пропуснати' }),
+        ) +
+        '</span>'
+      : '') +
+    '</p><p class="text-[11px] text-slate-500">' + escapeHtml(shape) + ' · ' + escapeHtml(read.currency) + '</p></div>' +
+    '<div class="mt-2.5 flex flex-wrap gap-1.5">' +
+    column(read.columns.shopCode, 'код') +
+    column(read.columns.name, 'наименование') +
+    column(read.columns.price, 'цена') +
+    column(read.columns.unit, 'мярка') +
+    '</div>' +
+    '<table class="mt-3 w-full text-left text-[12px]"><tbody>' +
+    read.sample
+      .map(
+        (row) =>
+          '<tr class="border-t border-white/5">' +
+          '<td class="px-2 py-1.5 font-mono text-[10.5px] text-slate-500">' + escapeHtml(row.shopCode || '') + '</td>' +
+          '<td class="px-2 py-1.5 text-slate-300"><span class="block truncate" title="' + escapeHtml(row.name) + '">' + escapeHtml(row.name) + '</span></td>' +
+          '<td class="num whitespace-nowrap px-2 py-1.5 text-right text-slate-200">' +
+          formatMoney(Number(row.price), row.currency) +
+          (row.unit ? '<span class="ml-1 text-[10.5px] text-slate-500">/ ' + escapeHtml(row.unit) + '</span>' : '') +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table>' +
+    (read.rows > read.sample.length
+      ? '<p class="mt-1.5 text-[11px] text-slate-500">' +
+        escapeHtml(formatMessage('…и още {n}.', { n: read.rows - read.sample.length })) +
+        '</p>'
+      : '') +
+    (read.problems.length
+      ? '<div class="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">' +
+        read.problems.map((problem) => escapeHtml(problem)).join('<br>') +
+        '</div>'
+      : '') +
+    '<div class="mt-3.5 flex flex-col gap-2 sm:flex-row">' +
+    '<button type="button" id="prices-import" class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 py-2.5 text-[12.5px] font-semibold text-white transition hover:bg-accent-600">' +
+    '<i class="fa-solid fa-check text-[11px]"></i>' +
+    escapeHtml(pluralMessage(read.rows, { one: 'Запиши {n} цена', other: 'Запиши {n} цени' })) +
+    '</button>' +
+    '<button type="button" id="prices-cancel" class="rounded-xl border border-white/10 bg-ink-850 px-4 py-2.5 text-[12.5px] font-medium text-slate-300 transition hover:border-white/25">' +
+    escapeHtml(translate('Друг файл')) +
+    '</button>' +
+    '</div>' +
+    '<p class="mt-2 text-[11px] text-slate-500">' +
+    escapeHtml(
+      translate(
+        'Артикул, който вече е в списъка — по код или по име — получава новата цена, не се дублира.',
+      ),
+    ) +
+    '</p>' +
+    '</div>';
+
+  $('#prices-import').addEventListener('click', importPriceList);
+  $('#prices-cancel').addEventListener('click', function () {
+    pricesPendingFile = null;
+    $('#prices-file').value = '';
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+  });
+}
+
+async function importPriceList() {
+  if (!pricesPendingFile) return;
+  const button = $('#prices-import');
+  button.disabled = true;
+  button.innerHTML =
+    '<i class="fa-solid fa-spinner fa-spin text-[11px]"></i>' + escapeHtml(translate('Записвам…'));
+
+  const body = new FormData();
+  body.append('file', pricesPendingFile, pricesPendingFile.name);
+
+  try {
+    const response = await fetch(ENDPOINTS.shops + '/' + pricesShopId + '/prices/upload', {
+      method: 'POST',
+      headers: authHeaders(),
+      body,
+    });
+    const answer = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        (answer && (Array.isArray(answer.message) ? answer.message.join('; ') : answer.message)) ||
+          'HTTP ' + response.status,
+      );
+    }
+
+    const result = answer.result;
+    showPricesStatus(
+      formatMessage('Записани: {imported} нови, {updated} обновени', {
+        imported: result.imported,
+        updated: result.updated,
+      }) +
+        (result.failed
+          ? formatMessage(', {failed} неуспешни', { failed: result.failed })
+          : '') +
+        '.',
+      result.failed ? 'error' : 'success',
+    );
+    toast('Ценоразписът е записан. Търсенето вече го ползва.', 'success');
+
+    pricesPendingFile = null;
+    $('#prices-file').value = '';
+    $('#prices-preview').classList.add('hidden');
+    $('#prices-preview').innerHTML = '';
+    await loadShopPrices();
+    await loadShops();
+  } catch (error) {
+    button.disabled = false;
+    button.innerHTML =
+      '<i class="fa-solid fa-check text-[11px]"></i>' + escapeHtml(translate('Опитай пак'));
+    showPricesStatus(failureText(error, 'Не се записа'), 'error');
+  }
+}
+
+(function bindPricesModal() {
+  const input = $('#prices-file');
+  const drop = $('#prices-drop');
+  if (!input || !drop) return;
+
+  input.addEventListener('change', function () {
+    if (input.files && input.files[0]) void previewPriceList(input.files[0]);
+  });
+
+  ['dragenter', 'dragover'].forEach((name) =>
+    drop.addEventListener(name, function (event) {
+      event.preventDefault();
+      drop.classList.add('border-accent-500/60');
+    }),
+  );
+  ['dragleave', 'drop'].forEach((name) =>
+    drop.addEventListener(name, function (event) {
+      event.preventDefault();
+      drop.classList.remove('border-accent-500/60');
+    }),
+  );
+  drop.addEventListener('drop', function (event) {
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) void previewPriceList(file);
+  });
+
+  $('#prices-filter').addEventListener('input', () => renderShopPrices(shopPricesRows));
+})();
+
 function bindShopRows() {
+  $$('[data-prices]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (requireAccount()) return;
+      openPricesModal(button.dataset.prices);
+    });
+  });
+
   $$('[data-detect]').forEach(function (button) {
     button.addEventListener('click', function () {
       if (requireAccount()) return;

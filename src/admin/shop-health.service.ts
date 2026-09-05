@@ -144,8 +144,11 @@ export class ShopHealthService implements OnModuleInit {
 
   /** The last verdict per host, for the operator screen. No network. */
   async report(): Promise<ShopHealthReportDto> {
+    // The same set the check covers, `isActive` included. A shop nobody
+    // searches has no health to report, and listing one leaves a row that
+    // reads "unchecked" for ever — a fault to chase that is not there.
     const shops = await this.shops.find({
-      where: { hasWebsite: true, searchMethod: In(['live', 'sitemap']) },
+      where: { hasWebsite: true, searchMethod: In(['live', 'sitemap']), isActive: true },
       order: { host: 'ASC' },
     });
 

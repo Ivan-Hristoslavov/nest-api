@@ -84,6 +84,66 @@ export class ImportManualPricesDto {
   prices!: ManualPriceDto[];
 }
 
+export class ColumnGuessDto {
+  @ApiProperty({ description: 'Zero-based column in the file.', example: 1 }) index!: number;
+  @ApiPropertyOptional({ nullable: true, example: 'Наименование' }) header!: string | null;
+  @ApiProperty({
+    enum: ['header', 'values'],
+    description: 'Whether the column was named by its header or recognised from what it holds.',
+  })
+  by!: 'header' | 'values';
+}
+
+export class PriceListColumnsDto {
+  @ApiPropertyOptional({ type: ColumnGuessDto, nullable: true }) name!: ColumnGuessDto | null;
+  @ApiPropertyOptional({ type: ColumnGuessDto, nullable: true }) price!: ColumnGuessDto | null;
+  @ApiPropertyOptional({ type: ColumnGuessDto, nullable: true }) shopCode!: ColumnGuessDto | null;
+  @ApiPropertyOptional({ type: ColumnGuessDto, nullable: true }) unit!: ColumnGuessDto | null;
+}
+
+/** What was read from an uploaded file, before or after it was written. */
+export class PriceListReadDto {
+  @ApiProperty({ description: 'Rows that yielded an article and a price.', example: 412 })
+  rows!: number;
+
+  @ApiProperty({ description: 'Rows that did not.', example: 3 }) skipped!: number;
+
+  @ApiProperty({ type: String, isArray: true, description: 'The first few skipped rows, with why.' })
+  problems!: string[];
+
+  @ApiProperty({ type: PriceListColumnsDto }) columns!: PriceListColumnsDto;
+
+  @ApiProperty({ enum: ['utf-8', 'windows-1251', 'xlsx'] }) encoding!: string;
+
+  @ApiPropertyOptional({ nullable: true, example: ';' }) delimiter!: string | null;
+
+  @ApiProperty({ description: 'Whether the first row was read as headings.' }) headerRow!: boolean;
+
+  @ApiProperty({
+    description: 'Currency the rows will be written in: the one the price column declared, or the shop’s.',
+    example: 'EUR',
+  })
+  currency!: string;
+
+  @ApiProperty({
+    type: ManualPriceDto,
+    isArray: true,
+    description: 'The first rows as they will be written, so a wrong reading is caught before it is.',
+  })
+  sample!: ManualPriceDto[];
+}
+
+export class UploadPriceListResultDto {
+  @ApiProperty({ type: PriceListReadDto }) read!: PriceListReadDto;
+
+  @ApiPropertyOptional({
+    type: () => ImportResultDto,
+    nullable: true,
+    description: 'What was written. Null on a preview (`dryRun=true`).',
+  })
+  result!: ImportResultDto | null;
+}
+
 export class ImportResultDto {
   @ApiProperty({ description: 'Rows that were new.', example: 380 }) imported!: number;
   @ApiProperty({ description: 'Rows that replaced an existing figure.', example: 42 })

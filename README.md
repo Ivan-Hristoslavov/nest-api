@@ -159,6 +159,7 @@ Everything except `/health` and the billing webhook needs `X-API-KEY`.
 | GET/POST | `/api/v1/shops` | Suppliers to compare, including ones with no website |
 | POST | `…/shops/:id/probe` | Re-check whether a supplier is searchable |
 | GET/POST | `…/shops/:id/prices` | Prices you typed in yourself, for a supplier with no site |
+| POST | `…/shops/:id/prices/upload` | The supplier's own Excel or CSV, as sent; `?dryRun=true` shows what was read without writing |
 | GET | `/api/v1/discovery/search` | Live search across your suppliers |
 | **POST** | **`/api/v1/discovery/basket`** | **Price a whole order at every supplier** |
 | GET | `/api/v1/discovery/compare` | Offers for one article, grouped |
