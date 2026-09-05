@@ -38,6 +38,15 @@ interface Probe {
 export interface Verdict {
   status: ShopHealthStatus;
   detail: string;
+  /**
+   * The road the answer actually came down.
+   *
+   * Not a guess and not the stored label: the live path reports the search URL
+   * it used and the sitemap path reports none, so the probe's own answer says
+   * which ran. `null` when neither did — nothing was learned, and a shop that
+   * could not be asked must not have its recorded method rewritten.
+   */
+  method: 'live' | 'sitemap' | null;
 }
 
 /**
@@ -53,10 +62,22 @@ export interface Verdict {
 export function classify(first: Probe, second: Probe): Verdict {
   const failed = [first, second].filter((probe) => !probe.result.ok);
 
+  // A shipped configuration is consulted before the sitemap on every search,
+  // and a shop whose robots.txt refuses it falls through to the sitemap
+  // silently. So the label cannot be read off the configuration — only off
+  // what came back.
+  const answered = [first, second].find((probe) => probe.result.ok);
+  const method: Verdict['method'] = answered
+    ? answered.result.searchUrl
+      ? 'live'
+      : 'sitemap'
+    : null;
+
   if (failed.length === 2) {
     return {
       status: 'error',
       detail: `Нито една заявка не мина: ${first.result.error ?? 'непозната грешка'}`,
+      method: null,
     };
   }
 
@@ -71,6 +92,7 @@ export function classify(first: Probe, second: Probe): Verdict {
         failed.length === 1
           ? `„${first.query}" и „${second.query}" не върнаха резултат (едната заявка е с грешка: ${failed[0].result.error ?? '—'})`
           : `Нито „${first.query}", нито „${second.query}" върна резултат`,
+      method,
     };
   }
 
@@ -80,12 +102,14 @@ export function classify(first: Probe, second: Probe): Verdict {
     return {
       status: 'ignores_query',
       detail: `„${first.query}" и „${second.query}" върнаха едни и същи ${a.size} резултата — търсачката не чете заявката`,
+      method,
     };
   }
 
   return {
     status: 'ok',
     detail: `„${first.query}": ${a.size} резултата, „${second.query}": ${b.size}`,
+    method,
   };
 }
 
@@ -201,20 +225,23 @@ export class ShopHealthService implements OnModuleInit {
           (shop) => shop.healthStatus === 'ok' || shop.healthStatus === null,
         );
 
-        await this.shops.update(
-          { id: In(group.map((shop) => shop.id)) },
-          {
-            healthStatus: verdict.status,
-            healthDetail: verdict.detail,
-            healthCheckedAt: new Date(),
-          },
-        );
+        // The recorded method is corrected to what the probe observed. It was
+        // set once, when the shop was added, and goes stale in both
+        // directions: a host that gains a shipped search configuration starts
+        // being searched through it without the row noticing, and one whose
+        // robots.txt begins refusing that search falls back to its sitemap
+        // just as quietly. The daily check is the one thing that finds out
+        // either way, so it is what keeps the label honest.
+        const changes = {
+          healthStatus: verdict.status,
+          healthDetail: verdict.detail,
+          healthCheckedAt: new Date(),
+          ...(verdict.method ? { searchMethod: verdict.method } : {}),
+        };
 
-        for (const shop of group) {
-          shop.healthStatus = verdict.status;
-          shop.healthDetail = verdict.detail;
-          shop.healthCheckedAt = new Date();
-        }
+        await this.shops.update({ id: In(group.map((shop) => shop.id)) }, changes);
+
+        for (const shop of group) Object.assign(shop, changes);
 
         if (verdict.status !== 'ok') {
           const row = this.summarise(group)[0];
@@ -252,7 +279,7 @@ export class ShopHealthService implements OnModuleInit {
       // The search path reports its own failures as `ok: false`; anything that
       // escapes it is ours, and still a shop nobody can search right now.
       const reason = error instanceof Error ? error.message : String(error);
-      return { status: 'error', detail: `Проверката не завърши: ${reason}` };
+      return { status: 'error', detail: `Проверката не завърши: ${reason}`, method: null };
     }
   }
 

@@ -17,11 +17,20 @@ import { GENERIC_PROBES, ShopHealthService, classify } from './shop-health.servi
  * breaks — rather than every morning it stays broken.
  */
 
-function answer(urls: string[], ok = true, error: string | null = null): ShopSearchResultDto {
+/**
+ * A shop's reply. `searchUrl` is how the probe tells the two roads apart: the
+ * live path reports the address it asked, the sitemap path reports none.
+ */
+function answer(
+  urls: string[],
+  ok = true,
+  error: string | null = null,
+  searchUrl = 'https://shop.bg/search?q=x',
+): ShopSearchResultDto {
   return {
     host: 'shop.bg',
     name: 'Shop',
-    searchUrl: '',
+    searchUrl,
     ok,
     error,
     durationMs: 1,
@@ -66,6 +75,30 @@ describe('reading two probes', () => {
     );
 
     expect(verdict.status).toBe('empty');
+  });
+
+  it('records the road the answer came down, not the one configured', () => {
+    // tmt-elkom: a shipped search configuration exists and is tried first, and
+    // the shop's robots.txt refuses it, so every answer arrives via the
+    // sitemap. Reading the label off the configuration would call that shop
+    // live-searchable for ever.
+    const viaSitemap = classify(
+      { query: 'кабел', result: answer(['/a'], true, null, '') },
+      { query: 'лампа', result: answer(['/b'], true, null, '') },
+    );
+    expect(viaSitemap.method).toBe('sitemap');
+
+    const viaSearch = classify(
+      { query: 'кабел', result: answer(['/a']) },
+      { query: 'лампа', result: answer(['/b']) },
+    );
+    expect(viaSearch.method).toBe('live');
+
+    // Nothing was learned, so nothing is claimed.
+    const refused = answer([], false, 'HTTP 503');
+    expect(
+      classify({ query: 'кабел', result: refused }, { query: 'лампа', result: refused }).method,
+    ).toBeNull();
   });
 
   it('is an error only when the shop could not be asked at all', () => {
@@ -179,7 +212,7 @@ describe('the daily check', () => {
     expect(shops.update).toHaveBeenCalledTimes(1);
     expect(shops.update).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ healthStatus: 'ignores_query' }),
+      expect.objectContaining({ healthStatus: 'ignores_query', searchMethod: 'live' }),
     );
 
     expect(report.hosts).toHaveLength(1);

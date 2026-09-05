@@ -35,6 +35,11 @@ export interface ProbeResult {
 const CANDIDATE_TEMPLATES = [
   'https://{host}/search?q={q}',
   'https://{host}/catalogsearch/result/?q={q}',
+  // WooCommerce, narrowed to products. Before `post_type`, a WooCommerce shop
+  // answered with its categories and pages mixed into the results — tiles with
+  // no price, which the detector rightly scored too low to accept, so a shop
+  // whose search works was recorded as having none.
+  'https://{host}/?s={q}&post_type=product',
   'https://{host}/?s={q}',
   'https://{host}/search/{q}',
   'https://{host}/search?search={q}',

@@ -53,6 +53,25 @@ export const UNSEARCHABLE_SHOPS: Array<{ host: string; name: string; reason: str
     name: 'Технómarket',
     reason: 'търсенето се изгражда с JavaScript, няма сървърна страница',
   },
+  {
+    host: 'itt-shop.bg',
+    name: 'ITT Shop',
+    // Verified 2026-09: the search form is `method="post"` to
+    // /search/static/12, with an AJAX twin at /search/ajax/12. Every GET path
+    // tried returns the shop's 404 page with a 200, which is the shape that
+    // looks like "nothing stocked" rather than "wrong address". Its sitemap is
+    // published and its product pages are readable, so it searches that way.
+    reason: 'търсачката приема само POST — търсим през картата на сайта',
+  },
+  {
+    host: 'kris06.bg',
+    name: 'КРИС 06',
+    // Verified 2026-09: the header form points at /search.html?phrase=, but
+    // that address answers 200 with the shop's own 404 body — the form is
+    // driven by JavaScript and the GET is not the real one. Works through the
+    // sitemap, where it is one of the few sources for several articles.
+    reason: 'търсачката не отговаря на GET — търсим през картата на сайта',
+  },
 ];
 
 export const SEARCH_PROVIDERS: SearchProvider[] = [
@@ -78,6 +97,30 @@ export const SEARCH_PROVIDERS: SearchProvider[] = [
     productUrlPattern: /^https?:\/\/(www\.)?homefinishing\.bg\/[a-z0-9%-]{6,}$/i,
     tileSelector: '.product-item, li.item',
     priceSelector: '.price',
+  },
+  {
+    host: 'cablecommerce.bg',
+    name: 'Кабелкомерс',
+    // Verified 2026-09 against the live site. WooCommerce on the WoodMart
+    // theme, and the `post_type=product` half of the query is the point: plain
+    // `?s=` returns categories and pages mixed in with the products, and the
+    // category tiles carry no price, so a shop that searches perfectly well
+    // came back looking half-broken.
+    //
+    // Twelve products for "кабел" and twelve for "лампа" with no overlap, so
+    // the query is genuinely honoured. This shop was reaching customers
+    // through its sitemap instead — the slowest path there is, and the one
+    // SEARCH_SUPPLIER_TIMEOUT_MS was raised to forty seconds to accommodate.
+    //
+    // Prices render as "0.19 € с ДДС": euros, VAT included. The VAT basis is
+    // per-shop customer configuration (`Shop.vatState`), not something a
+    // shipped search entry can set, so it is noted rather than assumed.
+    searchUrl: (query) => `https://www.cablecommerce.bg/?s=${query}&post_type=product`,
+    resultLinkSelector: 'a.product-image-link',
+    productUrlPattern: /^https?:\/\/(www\.)?cablecommerce\.bg\/produkt\/[^/]+\/?$/i,
+    tileSelector: '.wd-product',
+    titleSelector: '.wd-entities-title',
+    priceSelector: '.price .woocommerce-Price-amount',
   },
   {
     host: 'emag.bg',

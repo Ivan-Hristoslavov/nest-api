@@ -382,6 +382,8 @@ A supplier's search page breaks without an error: it starts answering every quer
 
 A host that turns from fine to broken is emailed to `OPERATOR_EMAIL` (falling back to `SUPPORT_EMAIL`) once. One that stays broken is not emailed again — the point is to be woken when something changes, not every morning it has not.
 
+The check also corrects each shop's recorded search method, because that is the one thing that finds out. `searchMethod` is set when a shop is added and goes stale in both directions: a host that gains a shipped configuration starts being searched through it without the row noticing, and one whose `robots.txt` begins refusing that search falls back to its sitemap just as quietly. The probe reports the address it asked, or none, so the label follows what actually happened rather than what was configured.
+
 ## 6c. Ordering
 
 The comparison answers "where should I buy this today". Without the next
