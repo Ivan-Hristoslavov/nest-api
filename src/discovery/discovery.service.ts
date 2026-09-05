@@ -11,7 +11,7 @@ import { RobotsService } from '../scraper/http/robots.service';
 import { PRICE_SOURCE, PriceSource } from '../scraper/fetchers/price-source.interface';
 import { readAvailability } from '../scraper/parsers/availability';
 import { PriceParserService } from '../scraper/parsers/price-parser.service';
-import { DiscoveredProductDto, ShopSearchResultDto } from './dto/discovery.dto';
+import { DiscoveredProductDto, ShopSearchResultDto, UrlPreviewDto } from './dto/discovery.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -35,6 +35,7 @@ import { relationGroup } from '../matching/product-model';
 import { MatchResult, MatchRunSummary, MatchingService } from '../matching/matching.service';
 import { SearchMetricsService } from './search-metrics.service';
 import { rank, RankableOffer, RankedHit } from './ranking';
+import { SearchHistoryService } from './search-history.service';
 import { bestOffer, partitionByVerdict } from './verdict';
 import { WebDiscoveryService } from './web-discovery.service';
 import { ManualPricesService } from '../shops/manual-prices.service';
@@ -245,6 +246,7 @@ export class DiscoveryService {
     private readonly decisionDrafts: DecisionDraftService,
     private readonly metrics: SearchMetricsService,
     private readonly web: WebDiscoveryService,
+    private readonly history: SearchHistoryService,
     configService: ConfigService<Configuration, true>,
   ) {
     this.config = configService.get('scraper', { infer: true });
@@ -1204,6 +1206,14 @@ export class DiscoveryService {
       /** Called as each stage completes, for a streaming caller. */
       onProgress?: (event: SearchProgress) => void;
       /**
+       * Whether this run is written down as the buyer's own search.
+       *
+       * On for anything a customer asked for, off for the operator's trace:
+       * support reproducing a complaint is not a question that account asked,
+       * and filing it in their history would put words in their mouth.
+       */
+      remember?: boolean;
+      /**
        * Records every stage for the operator's search debugger.
        *
        * Off by default and costs nothing when off: the trace is assembled from
@@ -1249,6 +1259,15 @@ export class DiscoveryService {
     rejectedCandidates: number;
     /** Validated rows only — the same list as `offers`. */
     hits: Array<RankedHit & { match?: MatchResult }>;
+    /**
+     * Where this comparison was written down.
+     *
+     * The browser puts it in the address bar, so a reload restores this exact
+     * answer instead of asking every supplier the same question again.
+     */
+    searchId?: string;
+    /** When the suppliers were asked, for the "results are from…" line. */
+    fetchedAt?: string;
     matching?: Omit<MatchRunSummary, 'results'>;
     /** The spellings the suppliers were, or could have been, asked. */
     variants?: QueryVariant[];
@@ -1767,7 +1786,7 @@ export class DiscoveryService {
         ),
     ).catch(() => undefined);
 
-    return {
+    const answer = {
       query: trimmed,
       status,
       durationMs: Date.now() - startedAt,
@@ -1843,6 +1862,99 @@ export class DiscoveryService {
           }
         : undefined,
     };
+
+    /*
+     * Written down before it is handed over.
+     *
+     * This is what makes a browser refresh free. The comparison just cost a
+     * dozen requests to other people's servers; keeping it means the reload
+     * that follows costs one indexed read instead of repeating all of them —
+     * and, more importantly, shows the buyer the prices they were actually
+     * reading rather than whatever the shops say a minute later.
+     *
+     * Failure here is logged and swallowed. A search that worked must not be
+     * turned into an error because the record of it could not be filed; the
+     * buyer would lose an answer we are holding in our hand.
+     */
+    if (options.remember !== false) {
+      try {
+        const written = await this.history.record(ownerId, trimmed, scope, answer);
+        return { ...answer, searchId: written.searchId, fetchedAt: written.fetchedAt.toISOString() };
+      } catch (error) {
+        this.logger.warn(
+          `Search for "${trimmed}" ran but could not be saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    return answer;
+  }
+
+  /**
+   * What is at this address, read once and saved nowhere.
+   *
+   * The fallback the discovery flow needs and the reason the manual path
+   * survives at all: a shop that forbids crawling, publishes no catalogue, or
+   * that the matcher simply missed is still a shop the buyer knows the URL of.
+   * Rather than making them transcribe the name and the price, the page is read
+   * with the same extractor that will later be checking it — JSON-LD first,
+   * then microdata, then the site profile, then the selectors — so what they
+   * confirm is what the monitor will see.
+   *
+   * A page that cannot be read is reported, not refused. The address may still
+   * be worth adding: today's parse failure is often tomorrow's site profile,
+   * and the reader is the one who knows whether that link is the right product.
+   */
+  async previewUrl(url: string): Promise<UrlPreviewDto> {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+
+    const blank: UrlPreviewDto = {
+      url,
+      host,
+      title: null,
+      price: null,
+      currency: null,
+      inStock: null,
+      imageUrl: null,
+      strategy: null,
+      ok: false,
+      error: null,
+    };
+
+    try {
+      if (this.config.respectRobots) {
+        const allowed = await this.robots.isAllowed(url, this.config.userAgent);
+        if (!allowed) {
+          return { ...blank, error: 'robots.txt на магазина не позволява четене на тази страница' };
+        }
+      }
+
+      const seen = await this.priceSource.fetch({
+        url,
+        host,
+        selector: null,
+        attribute: null,
+        lastPrice: null,
+        currency: 'EUR',
+      });
+
+      return {
+        url,
+        host,
+        title: seen.title ?? null,
+        price: seen.price,
+        currency: seen.currency,
+        inStock: seen.inStock,
+        imageUrl: seen.imageUrl ?? null,
+        strategy: seen.strategy,
+        ok: true,
+        error: null,
+      };
+    } catch (error) {
+      return { ...blank, error: error instanceof Error ? error.message : 'страницата не се прочете' };
+    }
   }
 
   /**

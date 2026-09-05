@@ -115,6 +115,11 @@ export class AdminController {
       useCache: query.useCache === true,
       scope: query.scope,
       trace: true,
+      // Not filed in the customer's history. Support reproducing a complaint
+      // is not a question that account asked, and writing it down would put
+      // words in their mouth — and move somebody else's search to the top of
+      // their list while they were looking at it.
+      remember: false,
     });
 
     return result.trace as unknown as SearchDebugDto;

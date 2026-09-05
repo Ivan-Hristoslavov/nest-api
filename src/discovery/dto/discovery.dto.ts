@@ -804,3 +804,82 @@ export class ComparisonDto {
   })
   matching?: MatchingSummaryDto;
 }
+
+/** How much of the history to return. */
+export class SearchHistoryQueryDto {
+  @ApiPropertyOptional({
+    description: 'How many searches to return, newest first.',
+    minimum: 1,
+    maximum: 100,
+    default: 25,
+  })
+  @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @IsOptional()
+  limit?: number;
+}
+
+/** A product page somebody pasted, before we have looked at it. */
+export class PreviewUrlDto {
+  @ApiProperty({
+    description: 'Address of the product page to read.',
+    example: 'https://kris06.bg/product/42226/polirmashina-status-hd-xpa12-75.html',
+  })
+  @IsPublicHttpUrl()
+  url!: string;
+}
+
+/**
+ * What we recognised at an address, for the reader to confirm.
+ *
+ * The fallback for a shop the search cannot reach — one that forbids crawling,
+ * publishes no catalogue, or that the matcher simply missed. Nothing is saved
+ * from this call: it reads the page, says what it found, and waits.
+ */
+export class UrlPreviewDto {
+  @ApiProperty({ example: 'https://kris06.bg/product/42226/...' })
+  url!: string;
+
+  @ApiProperty({ example: 'kris06.bg' })
+  host!: string;
+
+  @ApiPropertyOptional({
+    description: 'The product name as the page titles it, or null where the page has no title we could read.',
+    nullable: true,
+  })
+  title!: string | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  price!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  currency!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Whether the page says it has this. Null where it says nothing.',
+    type: Boolean,
+    nullable: true,
+  })
+  inStock!: boolean | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  imageUrl!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'How the price was found: `json-ld`, `microdata`, `meta`, `site-profile`, `selector` or `heuristic`. Shown so a reader can judge how much to trust a figure nobody has confirmed.',
+    nullable: true,
+  })
+  strategy!: string | null;
+
+  @ApiProperty({
+    description:
+      'False when the page could not be read at all. The reader may still add the address — a page we cannot parse today is one the scraper may manage tomorrow — but they are told first.',
+  })
+  ok!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  error!: string | null;
+}

@@ -97,6 +97,7 @@ const ENDPOINTS = {
   purchaseDecisionsSummary: API_BASE + '/purchase-decisions/summary',
   discoveryCompare: API_BASE + '/discovery/compare',
   discoveryCompareStream: API_BASE + '/discovery/compare/stream',
+  discoverySearches: API_BASE + '/discovery/searches',
   shops: API_BASE + '/shops',
   billingUsers: API_BASE + '/billing/users',
   billingCheckout: API_BASE + '/billing/checkout',
@@ -507,6 +508,27 @@ document.addEventListener('click', function (event) {
 
 window.addEventListener('hashchange', function () {
   switchView(window.location.hash.replace('#', ''));
+});
+
+/*
+ * A reload lands here, and must not become a second search.
+ *
+ * The id in the address bar names a comparison the server already has. Asking
+ * for it costs one indexed read; running the search again would cost a dozen
+ * requests to other people's servers and would return different prices — so
+ * the reader would lose the answer they were reading by the act of looking at
+ * it again.
+ */
+window.addEventListener('DOMContentLoaded', function () {
+  const saved = new URLSearchParams(window.location.search).get('s');
+  if (!saved || !isIdentified()) return;
+
+  switchView('catalogue');
+  void openSavedSearch(saved);
+});
+
+window.addEventListener('DOMContentLoaded', function () {
+  void renderSearchHistory();
 });
 
 /* ------------------------------------------------------------------ *
@@ -3926,6 +3948,300 @@ function instalmentChipHtml(hit) {
   );
 }
 
+
+
+/**
+ * Questions asked before, so one can be reopened rather than re-run.
+ *
+ * Drawn from the search rows alone — the server projects the status and the
+ * counts onto them precisely so this list costs one query and reads no saved
+ * document. Opening a row reads exactly one.
+ */
+async function renderSearchHistory() {
+  const box = $('#search-history');
+  if (!box || !isIdentified()) return;
+
+  try {
+    const searches = await fetch(ENDPOINTS.discoverySearches + '?limit=8', {
+      headers: authHeaders(),
+    }).then(okJson);
+
+    if (!searches.length) {
+      box.innerHTML = '';
+      return;
+    }
+
+    box.innerHTML =
+      '<div class="rounded-xl border border-white/8 bg-ink-900 px-3.5 py-2.5 shadow-panel">' +
+      '<p class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">' +
+      escapeHtml(translate('Предишни търсения')) +
+      '</p><div class="flex flex-wrap gap-1.5">' +
+      searches.map(historyChipHtml).join('') +
+      '</div></div>';
+
+    box.querySelectorAll('[data-open-search]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        void openSavedSearch(button.getAttribute('data-open-search'));
+      });
+    });
+
+    box.querySelectorAll('[data-forget-search]').forEach(function (button) {
+      button.addEventListener('click', async function (event) {
+        // The row is a button too. Without this the click opens the search on
+        // its way to deleting it, and the reader watches results load into a
+        // screen they were clearing.
+        event.stopPropagation();
+        await forgetSavedSearch(button.getAttribute('data-forget-search'), button);
+      });
+    });
+  } catch (error) {
+    // History is a convenience. Failing to draw it must not disturb the search
+    // box above it, which is what the reader actually came for.
+    box.innerHTML = '';
+  }
+}
+
+/**
+ * One article, once, with what it last cost.
+ *
+ * The list is a reminder, so it carries the two things a reminder is for: what
+ * was asked, and what came back. A price is shown only where the last run
+ * actually found one — a search that matched nothing shows that it matched
+ * nothing, because a figure invented for the sake of a filled column is the
+ * mistake the whole matcher exists to prevent.
+ */
+function historyChipHtml(entry) {
+  const when = entry.lastRunAt ? formatRelative(entry.lastRunAt) : '';
+  const found = typeof entry.bestPrice === 'number';
+
+  const title =
+    when +
+    (entry.runCount > 1 ? ' · ' + entry.runCount + ' ' + translate('търсения') : '') +
+    (found ? ' · ' + entry.offerCount + ' ' + plural(entry.offerCount, 'оферта', 'оферти') : '');
+
+  return (
+    '<span class="group/hist inline-flex items-center overflow-hidden rounded-lg border border-white/8 bg-ink-850 transition hover:border-white/20">' +
+    '<button type="button" data-open-search="' + escapeHtml(entry.id) + '" ' +
+    'title="' + escapeHtml(title) + '" ' +
+    'class="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] text-slate-300 transition hover:text-slate-200">' +
+    (entry.scope === 'global'
+      ? '<i class="fa-solid fa-globe text-[9px] text-slate-500"></i>'
+      : '<i class="fa-solid fa-store text-[9px] text-slate-500"></i>') +
+    escapeHtml(entry.query) +
+    (found
+      ? '<span class="num font-semibold ' +
+        (entry.fresh ? 'text-emerald-400' : 'text-slate-400') +
+        '">' +
+        escapeHtml(entry.bestPrice.toFixed(2) + ' ' + (entry.bestCurrency || '')) +
+        '</span>'
+      : '<span class="text-[10.5px] text-slate-600">' +
+        escapeHtml(translate('няма намерено')) +
+        '</span>') +
+    '</button>' +
+    '<button type="button" data-forget-search="' + escapeHtml(entry.id) + '" ' +
+    'title="' + escapeHtml(translate('Премахни от историята')) + '" ' +
+    'aria-label="' + escapeHtml(translate('Премахни от историята')) + '" ' +
+    'class="px-1.5 py-1 text-[10px] text-slate-600 transition hover:bg-red-500/10 hover:text-red-400">' +
+    '<i class="fa-solid fa-xmark"></i></button>' +
+    '</span>'
+  );
+}
+
+/**
+ * Removes an article from the history.
+ *
+ * The row goes at once rather than after a round trip: the reader asked for it
+ * to be gone, and a chip that lingers for half a second reads as a click that
+ * missed. If the request fails the list is redrawn, which puts it back.
+ */
+async function forgetSavedSearch(searchId, button) {
+  if (!searchId) return;
+
+  const chip = button.closest('.group\\/hist') || button.parentElement;
+  if (chip) chip.remove();
+
+  try {
+    const response = await fetch(
+      ENDPOINTS.discoverySearches + '/' + encodeURIComponent(searchId),
+      { method: 'DELETE', headers: authHeaders() },
+    );
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    // The open results may belong to the search just deleted, in which case
+    // the id in the address bar now names nothing and a reload would land on
+    // an error.
+    const showing = new URLSearchParams(window.location.search).get('s');
+    if (showing === searchId) forgetSearch();
+  } catch (error) {
+    toast(translate('Не успяхме да премахнем търсенето.'), 'error');
+    void renderSearchHistory();
+  }
+}
+
+/* --- Searches that survive a reload -------------------------------- *
+ *
+ * A comparison costs a dozen requests to other people's servers, and it used
+ * to live only in this file's memory. Pressing F5 threw it away, and the only
+ * route back to the prices somebody had just been reading was to run all of it
+ * again — expensive, rude to the shops, and frequently a *different* answer,
+ * because shops move.
+ *
+ * So the server writes each search down and hands back an id, and that id goes
+ * in the address bar. A reload reads it, asks for the saved answer, and shows
+ * the same prices with the date they were obtained. No supplier is contacted.
+ */
+
+/** The search this page is showing, so a reload can find its way back. */
+function rememberSearch(searchId) {
+  if (!searchId) return;
+
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('s') === searchId) return;
+
+  url.searchParams.set('s', searchId);
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+/** Drops the id when the reader starts something new. */
+function forgetSearch() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('s')) return;
+
+  url.searchParams.delete('s');
+  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+
+/**
+ * Shows a saved answer, without asking a single shop.
+ *
+ * This is what a browser refresh and a click in the history both do. The
+ * payload is the comparison exactly as it was returned, so the same renderer
+ * draws the same screen — the same offers, prices, availability and per-shop
+ * outcomes, including the shops that failed. Those are not retried: a shop
+ * that was down when the search ran is part of what the snapshot records.
+ */
+async function openSavedSearch(searchId) {
+  const results = $('#catalogue-results');
+  const live = $('#live-results');
+  if (!results) return false;
+
+  live.innerHTML = '';
+  results.innerHTML =
+    '<p class="text-[12.5px] text-slate-500">' + translate('Зареждам запазените резултати…') + '</p>';
+
+  try {
+    const saved = await fetch(ENDPOINTS.discoverySearches + '/' + encodeURIComponent(searchId), {
+      headers: authHeaders(),
+    }).then(okJson);
+
+    const payload = saved.payload || {};
+    const box = $('#catalogue-query');
+    if (box && !box.value) box.value = saved.query;
+    setSearchScope(saved.scope);
+
+    renderShopOutcomes(payload);
+    renderCatalogueResults(payload.hits || [], saved.query, payload.matching, {
+      ...payload,
+      searchId: saved.id,
+      fetchedAt: saved.fetchedAt,
+      fresh: saved.fresh,
+      restored: true,
+    });
+
+    rememberSearch(saved.id);
+    return true;
+  } catch (error) {
+    // A saved search that will not open is not a reason to show nothing: the
+    // reader can still type the question again.
+    results.innerHTML = failureHtml(error, translate('Запазеното търсене не се зареди'));
+    forgetSearch();
+    return false;
+  }
+}
+
+/**
+ * When the answer was obtained, and whether to trust it yet.
+ *
+ * Shown on every restored search and on none of the live ones — a comparison
+ * that finished two seconds ago does not need a date on it. Past the freshness
+ * window the same line turns into a warning, because the prices below it are
+ * the ones that were true then, which is exactly what they are for and exactly
+ * what makes them dangerous to read as current.
+ */
+function provenanceHtml(verdict) {
+  if (!verdict || !verdict.restored || !verdict.fetchedAt) return '';
+
+  const when = new Date(verdict.fetchedAt);
+  const stale = verdict.fresh === false;
+  const absolute = when.toLocaleString(currentLocale(), {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+
+  return (
+    '<div class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border px-3 py-2 text-[11.5px] ' +
+    (stale
+      ? 'border-amber-500/25 bg-amber-500/[0.06] text-amber-400'
+      : 'border-white/8 bg-ink-900 text-slate-400') +
+    '">' +
+    '<i class="fa-solid ' + (stale ? 'fa-clock-rotate-left' : 'fa-bookmark') + ' text-[10px]"></i>' +
+    '<span>' +
+    escapeHtml(formatMessage('Резултатите са от {when}.', { when: absolute })) +
+    (stale
+      ? ' <span class="opacity-80">' +
+        escapeHtml(translate('Цените и наличностите може вече да не са актуални.')) +
+        '</span>'
+      : '') +
+    '</span>' +
+    '<button type="button" data-refresh-search="' + escapeHtml(verdict.searchId || '') + '" ' +
+    'class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-ink-850 px-2.5 py-1 text-[11.5px] font-medium text-slate-300 transition hover:border-white/20 hover:text-slate-200">' +
+    '<i class="fa-solid fa-rotate text-[10px]"></i>' + escapeHtml(translate('Обнови резултатите')) +
+    '</button>' +
+    '</div>'
+  );
+}
+
+/**
+ * Asks the suppliers again, and keeps what we already have if that fails.
+ *
+ * The old snapshot is never removed — the server writes a new one beside it —
+ * so a refresh that cannot reach the shops leaves the reader exactly where
+ * they were, with a line saying why. Two clicks are one search: the server
+ * joins the second request to the run already in progress.
+ */
+function bindRefreshSearch() {
+  const button = document.querySelector('[data-refresh-search]');
+  if (!button) return;
+
+  button.addEventListener('click', async function () {
+    const searchId = button.getAttribute('data-refresh-search');
+    if (!searchId || button.disabled) return;
+
+    button.disabled = true;
+    button.classList.add('opacity-60');
+
+    try {
+      const fresh = await fetch(
+        ENDPOINTS.discoverySearches + '/' + encodeURIComponent(searchId) + '/refresh',
+        { method: 'POST', headers: authHeaders() },
+      ).then(okJson);
+
+      renderShopOutcomes(fresh);
+      renderCatalogueResults(fresh.hits || [], fresh.query, fresh.matching, fresh);
+      rememberSearch(fresh.searchId || searchId);
+      toast(translate('Резултатите са обновени.'), 'success');
+    } catch (error) {
+      // Deliberately not destructive. What is on screen is the last answer the
+      // shops actually gave, and it stays there.
+      toast(
+        translate('Не успяхме да обновим резултатите. Показваме последно запазените.'),
+        'error',
+      );
+      button.disabled = false;
+      button.classList.remove('opacity-60');
+    }
+  });
+}
+
 function renderCatalogueResults(allHits, query, matching, verdict) {
   const results = $('#catalogue-results');
   catalogueHits = allHits;
@@ -3997,6 +4313,7 @@ function renderCatalogueResults(allHits, query, matching, verdict) {
       '</div>';
 
     bindWiden();
+    bindRefreshSearch();
     return;
   }
 
@@ -4475,6 +4792,7 @@ function renderCatalogueResults(allHits, query, matching, verdict) {
         '". Показаното е това, което техните търсачки върнаха по подобие.</div>');
 
   results.innerHTML =
+    provenanceHtml(verdict) +
     renderFacets(matching) +
     '<div class="overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
     guessNote +
@@ -4518,6 +4836,7 @@ function renderCatalogueResults(allHits, query, matching, verdict) {
 
   bindFacets(allHits, query, matching, verdict);
   bindWiden();
+  bindRefreshSearch();
 }
 
 /**
@@ -5189,6 +5508,10 @@ async function searchCatalogue(signal) {
   live.innerHTML = '';
   $('#basket-results').innerHTML = '';
   aiShownUntil = 0;
+  // The address bar points at the previous answer until this one has been
+  // written down. Leaving it there would make a reload mid-search restore the
+  // search before this one, which is a confusing way to lose your place.
+  forgetSearch();
 
   // One article or a whole order — the same box, the same button, and the
   // difference worked out here rather than asked of the buyer. It used to be
@@ -5407,6 +5730,8 @@ function handleSearchEvent(event, query) {
       window.setTimeout(function () {
         renderShopOutcomes(payload);
         renderCatalogueResults(payload.hits, query, payload.matching, payload);
+        rememberSearch(payload.searchId);
+        void renderSearchHistory();
         void refreshPlanBar();
       }, wait);
       return false;
@@ -5414,6 +5739,8 @@ function handleSearchEvent(event, query) {
 
     renderShopOutcomes(event);
     renderCatalogueResults(event.hits, query, event.matching, event);
+    rememberSearch(event.searchId);
+    void renderSearchHistory();
     // The search may have just spent from the allowance.
     void refreshPlanBar();
     return false;
@@ -10063,554 +10390,612 @@ function hostOf(url) {
   }
 }
 
-function knownRetailer(host) {
-  if (!host) return null;
-  const match = Object.keys(KNOWN_HOSTS).find(
-    (known) => host === known || host.endsWith('.' + known),
-  );
-  return match ? KNOWN_HOSTS[match] : null;
-}
-
-/**
- * A link with no path — or only a language segment — points at a listing,
- * not at one product.
- */
-function isListingUrl(url) {
-  try {
-    const path = new URL(url.trim()).pathname.replace(/\/+$/, '');
-    return path === '' || /^\/(bg|en|ru|de)$/i.test(path);
-  } catch (error) {
-    return false;
-  }
-}
-
-function parseUrls(raw) {
-  return raw
-    .split(/[\n\r]+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 10);
-}
-
-/** Live feedback on which pasted links the scraper already understands. */
-function renderUrlPreview() {
-  const container = $('#url-preview');
-  const urls = parseUrls($('#product-urls').value);
-
-  container.innerHTML = urls
-    .map(function (url) {
-      const host = hostOf(url);
-      const retailer = knownRetailer(host);
-
-      if (!host) {
-        return (
-          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-red-500/12 px-2.5 py-1 text-[11px] font-medium text-red-300">' +
-          '<i class="fa-solid fa-xmark text-[10px]"></i>невалиден линк</span>'
-        );
-      }
-
-      // A home or category page carries a price per tile. Scraping one
-      // returns an arbitrary product's price with total confidence, so
-      // it is caught here rather than after it lands in a report.
-      if (isListingUrl(url)) {
-        return (
-          '<span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/12 px-2.5 py-1 text-[11px] font-medium text-amber-300" title="Отворете конкретния продукт и копирайте неговия адрес">' +
-          '<i class="fa-solid fa-triangle-exclamation text-[10px]"></i>' +
-          escapeHtml(host) +
-          ' — начална страница</span>'
-        );
-      }
-
-      return (
-        '<span class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium ' +
-        (retailer
-          ? 'bg-emerald-500/12 text-emerald-300'
-          : 'bg-white/5 text-slate-400') +
-        '"><i class="fa-solid ' +
-        (retailer ? 'fa-circle-check' : 'fa-circle-question') +
-        ' text-[10px]"></i>' +
-        escapeHtml(retailer || host) +
-        '</span>'
-      );
-    })
-    .join('');
-}
-
-$('#product-urls').addEventListener('input', renderUrlPreview);
-
-/* --- Find the product in the shops --------------------------------- *
- * Only shops with a server-rendered search page can be queried, so the
- * list comes from the API rather than being hard-coded — a shop that
- * moved its search behind JavaScript should disappear from the picker,
- * not sit there returning nothing.
- * ------------------------------------------------------------------- */
-
-let discoveryShops = null;
-
-async function loadDiscoveryShops() {
-  if (discoveryShops) return discoveryShops;
-
-  try {
-    const response = await fetch(ENDPOINTS.discoveryShops, { headers: authHeaders() });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    discoveryShops = await response.json();
-  } catch (error) {
-    discoveryShops = [];
-  }
-
-  return discoveryShops;
-}
-
-/**
- * The shops this dialog can reach, from both sources.
+/* --- Adding a product: find it, then choose where to watch it ------- *
  *
- * Live search only ever covers the handful of shops that permit it —
- * two, at the time of writing — and showing only those made the feature
- * look broken. The indexed catalogues are the ones that scale, so they
- * are listed first and counted in.
+ * The old flow asked for a name, an SKU, a brand, a model, a category, a
+ * manufacturer, an EAN, a price and a threshold — and then for a product URL
+ * per shop, pasted by hand. Everything above the URLs is knowable from the
+ * URLs, and the URLs are knowable from the name, so the reader was being asked
+ * to do the system's work, and to do it before anything could check it.
+ *
+ * What replaces it inverts that: they give the name, the search engine that
+ * already exists finds and matches the article, and they confirm. Nothing new
+ * is searched and nothing new is monitored — this drives the same streamed
+ * comparison the search screen runs, and lands on the same product and
+ * competitor rows the form always wrote.
  */
-async function renderDiscoveryShops() {
-  const container = $('#discovery-shops');
-  const live = await loadDiscoveryShops();
 
-  // The catalogue list is loaded by the catalogue screen; fetch it here
-  // too so the dialog works whichever screen you came from.
-  if (!shops.length) await loadShops().catch(() => undefined);
+/** Everything the flow has learned so far. Cleared each time it opens. */
+let trackState = {
+  step: 1,
+  query: '',
+  scope: 'my_suppliers',
+  understood: null,
+  offers: [],
+  chosen: new Set(),
+};
 
-  const indexed = shops.filter((shop) => shop.offerCount > 0);
+/** Moves between the steps and keeps the header and the buttons in step. */
+function trackStep(step) {
+  trackState.step = step;
 
-  if ((!Array.isArray(live) || live.length === 0) && indexed.length === 0) {
-    // Without a key the endpoints are unreachable; hide the box rather
-    // than show an empty one that looks broken.
-    $('#discovery-block').classList.add('hidden');
-    return;
-  }
-
-  $('#discovery-block').classList.remove('hidden');
-
-  const indexedChips = indexed
-    .map(function (shop) {
-      return (
-        '<span class="inline-flex items-center gap-2 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-1.5 text-[11.5px] text-accent-300" title="Индексиран каталог — търси се локално">' +
-        '<i class="fa-solid fa-database text-[10px]"></i>' +
-        escapeHtml(shop.name) +
-        '<span class="num text-[11px] text-accent-300/70">' +
-        shop.offerCount +
-        '</span></span>'
-      );
-    })
-    .join('');
-
-  container.innerHTML = indexedChips;
-  // Live-searchable shops, appended after the indexed ones. A shop whose
-  // robots.txt forbids its search page is offered disabled, with the
-  // reason on it: letting it be ticked and then refusing after the
-  // request reads as a bug in us rather than a rule of theirs.
-  const liveChips = (Array.isArray(live) ? live : [])
-    .map(function (shop) {
-      const blocked = shop.searchable === false;
-
-      return (
-        '<label class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11.5px] transition ' +
-        (blocked
-          ? 'cursor-not-allowed border-white/8 bg-ink-850/60 text-slate-600'
-          : 'cursor-pointer border-white/10 bg-ink-850 text-slate-300 hover:border-accent-500/40') +
-        '" title="' +
-        escapeHtml(
-          blocked
-            ? (shop.reason || 'търсенето не е позволено') +
-                ' — може да следите артикул оттам, като поставите линка му'
-            : 'Търси се на живо при заявка',
-        ) +
-        '">' +
-        '<input type="checkbox" ' +
-        (blocked ? 'disabled' : 'checked') +
-        ' value="' +
-        escapeHtml(shop.host) +
-        '" class="h-3.5 w-3.5 rounded border-white/20 bg-ink-800 accent-accent-500 disabled:opacity-40" />' +
-        escapeHtml(shop.name) +
-        (blocked
-          ? '<i class="fa-solid fa-ban text-[10px] text-amber-500/70"></i>'
-          : '<span class="font-mono text-[11px] text-slate-500">' +
-            escapeHtml(shop.host) +
-            '</span>') +
-        '</label>'
-      );
-    })
-    .join('');
-
-  container.insertAdjacentHTML('beforeend', liveChips);
-
-  const notes = [];
-
-  const blocked = (Array.isArray(live) ? live : []).filter(
-    (shop) => shop.searchable === false,
-  );
-  if (blocked.length) {
-    notes.push(
-      '<i class="fa-solid fa-ban mr-1.5 text-[10px] text-amber-500/70"></i>' +
-        escapeHtml(blocked.map((shop) => shop.name).join(', ')) +
-        ' не позволява търсене в своя robots.txt. Артикул оттам се следи нормално — ' +
-        'намерете го в сайта им и поставете линка му по-долу.',
-    );
-  }
-
-  // The honest explanation for a short list, and the one action that
-  // lengthens it. A shop joins the search by being taught how to search
-  // it — one paste of a search URL — not by being crawled.
-  notes.push(
-    '<i class="fa-solid fa-circle-info mr-1.5 text-[10px]"></i>' +
-      'Търсим при магазините на живо, така че списъкът са тези, чиято търсачка сме научили. ' +
-      'Добавете още в <button type="button" data-goto-catalogue class="font-semibold text-accent-400 underline">Търсене</button> — ' +
-      'отнема едно поставяне на адрес.',
-  );
-
-  container.insertAdjacentHTML(
-    'beforeend',
-    notes
-      .map(
-        (note) =>
-          '<p class="w-full text-[11px] leading-relaxed text-slate-500">' + note + '</p>',
-      )
-      .join(''),
-  );
-
-  container.querySelectorAll('[data-goto-catalogue]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      closeModal('product-modal');
-      switchView('catalogue');
-    });
+  document.querySelectorAll('#product-modal [data-step]').forEach(function (section) {
+    section.classList.toggle('hidden', Number(section.dataset.step) !== step);
   });
-}
 
-/** Adds or removes one URL line, keeping whatever was typed by hand. */
-function toggleUrlLine(url, include) {
-  const field = $('#product-urls');
-  const lines = field.value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => line !== url);
-
-  if (include) lines.push(url);
-
-  field.value = lines.join('\n');
-  renderUrlPreview();
-}
-
-function renderDiscoveryResults(results) {
-  const container = $('#discovery-results');
-
-  if (!results.length) {
-    container.innerHTML =
-      '<p class="text-[11.5px] text-slate-500">Нищо не се намери. Пробвайте с модел вместо с описание.</p>';
-    return;
-  }
-
-  // The question being asked is "кой го предлага", so that is the first
-  // thing on screen: a shop per chip with its cheapest hit. The offers
-  // themselves follow, for picking the right variant.
-  const carrying = results.filter((shop) => shop.ok && shop.products.length > 0);
-  const empty = results.filter((shop) => shop.ok && shop.products.length === 0);
-  const refused = results.filter((shop) => !shop.ok);
-
-  const cheapestOf = function (shop) {
-    const prices = shop.products
-      .map((item) => item.price)
-      .filter((price) => typeof price === 'number');
-    return prices.length ? Math.min.apply(null, prices) : null;
-  };
-
-  const summary =
-    '<div class="rounded-lg border border-white/8 bg-ink-850 px-3 py-2.5">' +
-    '<p class="text-[11.5px] font-medium ' +
-    (carrying.length ? 'text-slate-200' : 'text-slate-400') +
-    '">' +
-    (carrying.length
-      ? 'Предлага се в ' + carrying.length + ' от ' + results.length + ' търсени магазина'
-      : 'Не се намери в нито един от търсените магазини') +
-    '</p>' +
-    (carrying.length
-      ? '<div class="mt-2 flex flex-wrap gap-1.5">' +
-        carrying
-          .map(function (shop) {
-            const cheapest = cheapestOf(shop);
-            return (
-              '<span class="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/12 px-2 py-1 text-[11px] font-medium text-emerald-400">' +
-              '<i class="fa-solid fa-store text-[9px]"></i>' +
-              escapeHtml(shop.name) +
-              '<span class="text-emerald-400/70">' +
-              shop.products.length +
-              (shop.products.length === 1 ? ' оферта' : ' оферти') +
-              '</span>' +
-              (cheapest !== null
-                ? '<span class="num text-slate-300">от ' + cheapest.toFixed(2) + '</span>'
-                : '') +
-              '</span>'
-            );
-          })
-          .join('') +
-        '</div>'
-      : '') +
-    (empty.length
-      ? '<p class="mt-2 text-[11px] text-slate-500">Няма го в: ' +
-        escapeHtml(empty.map((shop) => shop.name).join(', ')) +
-        '</p>'
-      : '') +
-    (refused.length
-      ? '<p class="mt-1 text-[11px] text-amber-400">Не можа да се провери: ' +
-        escapeHtml(
-          refused.map((shop) => shop.name + ' (' + (shop.error || 'неуспешно') + ')').join(', '),
-        ) +
-        '</p>'
-      : '') +
-    '</div>';
-
-  container.innerHTML =
-    summary +
-    carrying
-    .map(function (shop) {
-      const header =
-        '<div class="flex items-baseline justify-between gap-2">' +
-        '<span class="text-[11.5px] font-medium text-slate-300">' +
-        escapeHtml(shop.name) +
-        '</span><span class="text-[11px] text-slate-500">' +
-        shop.products.length +
-        ' намерени · ' +
-        shop.durationMs +
-        ' ms</span></div>';
-
-      const items = shop.products
-        .slice(0, 6)
-        .map(function (item) {
-          return (
-            '<label class="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 transition hover:bg-white/5">' +
-            '<input type="checkbox" data-discovered="' +
-            escapeHtml(item.url) +
-            '" class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-ink-800 accent-accent-500" />' +
-            '<span class="min-w-0 flex-1"><span class="block truncate text-[11.5px] text-slate-200" title="' +
-            escapeHtml(item.title) +
-            '">' +
-            escapeHtml(item.title) +
-            '</span><span class="block truncate font-mono text-[10px] text-slate-500">' +
-            escapeHtml(item.url) +
-            '</span></span>' +
-            (typeof item.price === 'number'
-              ? '<span class="num shrink-0 text-[11.5px] font-semibold text-slate-300">' +
-                item.price.toFixed(2) +
-                ' ' +
-                escapeHtml(item.currency || '') +
-                '</span>'
-              : '') +
-            '</label>'
-          );
-        })
-        .join('');
-
-      return (
-        '<div class="rounded-lg border border-white/8 bg-ink-850 px-3 py-2">' +
-        header +
-        (items ? '<div class="mt-1.5 space-y-0.5">' + items + '</div>' : '') +
-        '</div>'
-      );
-    })
-    .join('');
-
-  container.querySelectorAll('[data-discovered]').forEach(function (box) {
-    box.addEventListener('change', function () {
-      toggleUrlLine(box.dataset.discovered, box.checked);
-    });
+  document.querySelectorAll('#track-steps [data-step-label]').forEach(function (label) {
+    const at = Number(label.dataset.stepLabel);
+    label.className =
+      at === step ? 'text-slate-300' : at < step ? 'text-emerald-400' : 'text-slate-600';
+    if (at === step) label.setAttribute('aria-current', 'step');
+    else label.removeAttribute('aria-current');
   });
+
+  $('#track-back').classList.toggle('hidden', step === 1);
+  $('#track-next-label').textContent =
+    step === 1
+      ? translate('Намери продукта')
+      : step === 2
+        ? translate('Продължи')
+        : translate('Започни следенето');
+
+  $('#track-next').disabled = step === 2 && trackState.chosen.size === 0;
 }
 
-$('#discovery-search').addEventListener('click', async function () {
-  const query = $('#discovery-query').value.trim() || $('#product-name').value.trim();
+function trackBusy(busy) {
+  $('#track-spinner').classList.toggle('hidden', !busy);
+  $('#track-next').disabled = busy;
+}
+
+/**
+ * One real stage of the search.
+ *
+ * Every line here corresponds to something that actually happened — the query
+ * was read, a named shop answered with a count. Nothing is invented to fill a
+ * bar, because a progress indicator that runs ahead of the work is a way of
+ * lying at exactly the moment somebody is deciding whether to trust the answer.
+ */
+function trackProgress(text, done) {
+  const box = $('#track-progress');
+  box.classList.remove('hidden');
+
+  const row = document.createElement('div');
+  row.className =
+    'flex items-center gap-2 text-[11.5px] ' + (done ? 'text-slate-400' : 'text-slate-500');
+  row.innerHTML =
+    (done
+      ? '<i class="fa-solid fa-check text-[9px] text-emerald-400"></i>'
+      : '<i class="fa-solid fa-circle-notch fa-spin text-[9px] text-accent-400"></i>') +
+    '<span>' +
+    escapeHtml(text) +
+    '</span>';
+  box.appendChild(row);
+}
+
+/**
+ * Runs the search, reporting as each shop answers.
+ *
+ * The same streamed comparison the search screen uses — one engine, not two —
+ * so query understanding, expansion, matching, the confidence thresholds and
+ * the shop pool are all whatever that engine already does.
+ */
+async function trackFind() {
+  const query = $('#track-query').value.trim();
+  const scope =
+    (document.querySelector('input[name="track-scope"]:checked') || {}).value || 'my_suppliers';
 
   if (query.length < 2) {
-    $('#discovery-results').innerHTML =
-      '<p class="text-[11.5px] text-amber-400">Въведете поне 2 знака за търсене.</p>';
+    $('#track-error').textContent = translate('Въведете поне 2 знака.');
+    $('#track-error').classList.remove('hidden');
     return;
   }
 
-  const hosts = Array.prototype.slice
-    .call($('#discovery-shops').querySelectorAll('input:checked'))
-    .map((box) => box.value);
-
-  $('#discovery-spinner').classList.remove('hidden');
-  $('#discovery-results').innerHTML =
-    '<p class="text-[11.5px] text-slate-500">Търсене…</p>';
-
-  // One source now: the shops themselves, asked at this moment. There
-  // used to be a second — our own indexed copy of their catalogues — and
-  // merging the two meant the dialog showed prices of two different ages
-  // side by side without saying which was which.
-  const live = await fetch(
-    ENDPOINTS.discoverySearch +
-      '?q=' +
-      encodeURIComponent(query) +
-      (hosts.length ? '&hosts=' + encodeURIComponent(hosts.join(',')) : ''),
-    { headers: authHeaders() },
-  )
-    .then((response) => (response.ok ? response.json() : []))
-    .catch(() => []);
-
-  renderDiscoveryResults(Array.isArray(live) ? live : []);
-  $('#discovery-spinner').classList.add('hidden');
-});
-
-$('#discovery-query').addEventListener('keydown', function (event) {
-  // Enter inside the dialog would otherwise submit the whole form.
-  if (event.key !== 'Enter') return;
-  event.preventDefault();
-  $('#discovery-search').click();
-});
-
-$('#add-product').addEventListener('click', function () {
-  if (requireAccount()) return;
-  $('#product-form').reset();
-  $('#product-status').classList.add('hidden');
-  $('#url-preview').innerHTML = '';
-  $('#discovery-results').innerHTML = '';
-  $('#discovery-query').value = '';
-  openModal('product-modal');
-  void renderDiscoveryShops();
-});
-
-function showProductStatus(message, tone) {
-  const element = $('#product-status');
-  const palette = { success: 'text-emerald-400', error: 'text-red-400', info: 'text-slate-400' };
-  element.className = 'text-[11.5px] ' + (palette[tone] || palette.info);
-  element.innerHTML = message;
-  element.classList.remove('hidden');
-}
-
-$('#product-form').addEventListener('submit', async function (event) {
-  event.preventDefault();
-
-  const name = $('#product-name').value.trim();
-  const urls = parseUrls($('#product-urls').value);
-
-  if (!name) {
-    showProductStatus('Въведете име на продукта.', 'error');
-    return;
-  }
-  if (urls.length === 0 || urls.some((url) => !hostOf(url))) {
-    showProductStatus('Поставете поне един валиден линк (http/https).', 'error');
-    return;
-  }
-
-  const listings = urls.filter(isListingUrl);
-  if (listings.length > 0) {
-    showProductStatus(
-      'Тези линкове сочат към начална страница, не към продукт: ' +
-        escapeHtml(listings.map(hostOf).join(', ')) +
-        '.<br>Отворете конкретния артикул в магазина и копирайте неговия адрес.',
-      'error',
-    );
-    return;
-  }
-
-  $('#product-spinner').classList.remove('hidden');
-  $('#product-icon').classList.add('hidden');
-  showProductStatus('Създаване…', 'info');
+  trackState.query = query;
+  trackState.scope = scope;
+  trackState.offers = [];
+  trackState.chosen = new Set();
+  $('#track-error').classList.add('hidden');
+  $('#track-progress').innerHTML = '';
+  trackBusy(true);
 
   try {
-    // The first link becomes the primary listing, because the API creates
-    // a product and its primary competitor in one transaction.
-    const created = await fetch(ENDPOINTS.products, {
+    const url =
+      ENDPOINTS.discoveryCompareStream +
+      '?q=' +
+      encodeURIComponent(query) +
+      '&scope=' +
+      encodeURIComponent(scope);
+
+    const response = await fetch(url, { headers: authHeaders({ Accept: 'text/event-stream' }) });
+    if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+
+    while (!result) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        const line = part.split('\n').find((l) => l.startsWith('data:'));
+        if (!line) continue;
+
+        let event;
+        try {
+          event = JSON.parse(line.slice(5).trim());
+        } catch (error) {
+          continue;
+        }
+
+        if (event.type === 'understood') {
+          trackState.understood = event.understood;
+          trackProgress(formatMessage('Разпознаваме „{q}“', { q: query }), true);
+        }
+        if (event.type === 'shop') {
+          trackProgress(
+            event.name + ' · ' + event.count + ' ' + plural(event.count, 'резултат', 'резултата'),
+            true,
+          );
+        }
+        if (event.type === 'result') result = event;
+        if (event.type === 'error') throw new Error(event.message);
+      }
+    }
+
+    if (!result) throw new Error(translate('Търсенето не върна отговор.'));
+
+    /*
+     * Two piles, exactly as the server drew them.
+     *
+     * `matches` are the same article at 0.85 or better; `alternatives` are the
+     * neighbouring ones — a different pack, a different battery, a different
+     * capacity. Only the first pile is pre-ticked. Watching the wrong variant
+     * is worse than watching nothing, and it is the kind of mistake nobody
+     * notices until they order from the price it reported.
+     */
+    trackState.offers = [
+      ...(result.matches || []).map((hit) => ({ ...hit, tier: 'match' })),
+      ...(result.alternatives || []).map((hit) => ({ ...hit, tier: 'alternative' })),
+    ];
+    trackState.offers.forEach(function (offer) {
+      if (offer.tier === 'match') trackState.chosen.add(offer.url);
+    });
+
+    renderTrackUnderstood(result);
+    renderTrackOffers();
+    trackStep(2);
+  } catch (error) {
+    $('#track-error').textContent = translate('Търсенето не успя: ') + (error.message || '');
+    $('#track-error').classList.remove('hidden');
+  } finally {
+    trackBusy(false);
+  }
+}
+
+/** What the query was read as, in the reader's own terms. */
+function renderTrackUnderstood(result) {
+  const understood = (result.matching && result.matching.understood) || trackState.understood || {};
+  trackState.understood = understood;
+
+  const ids = understood.identifiers || {};
+  const facts = [
+    understood.brand && ['Марка', understood.brand],
+    understood.productType && ['Вид', understood.productType],
+    (ids.modelCodes || [])[0] && ['Модел', (ids.modelCodes || [])[0]],
+    (ids.gtins || [])[0] && ['EAN', (ids.gtins || [])[0]],
+  ].filter(Boolean);
+
+  $('#track-understood').innerHTML =
+    '<div class="rounded-lg border border-white/8 bg-ink-850 px-3 py-2.5">' +
+    '<p class="text-[12.5px] font-medium text-slate-200">' +
+    escapeHtml(trackState.query) +
+    '</p>' +
+    (facts.length
+      ? '<div class="mt-1.5 flex flex-wrap gap-1.5">' +
+        facts
+          .map(
+            (fact) =>
+              '<span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10.5px] text-slate-400">' +
+              escapeHtml(fact[0]) +
+              ': <span class="text-slate-300">' +
+              escapeHtml(fact[1]) +
+              '</span></span>',
+          )
+          .join('') +
+        '</div>'
+      : // Said plainly rather than left blank. A reader who typed something we
+        // could not read should know that before they judge the matches.
+        '<p class="mt-1 text-[11.5px] text-slate-500">' +
+        escapeHtml(translate('Не разпознахме марка или модел — ще следим по име.')) +
+        '</p>') +
+    '</div>';
+}
+
+function renderTrackOffers() {
+  const box = $('#track-matches');
+  const exact = trackState.offers.filter((offer) => offer.tier === 'match');
+  const maybe = trackState.offers.filter((offer) => offer.tier === 'alternative');
+
+  if (!trackState.offers.length) {
+    box.innerHTML =
+      '<div class="rounded-lg border border-white/8 bg-ink-850 px-3 py-6 text-center">' +
+      '<p class="text-[12.5px] text-slate-300">' +
+      escapeHtml(
+        formatMessage('Не намерихме „{q}“ в наличните магазини.', { q: trackState.query }),
+      ) +
+      '</p><p class="mt-1 text-[11.5px] text-slate-500">' +
+      escapeHtml(
+        translate('Добавете магазин по линк отдолу, или се върнете и опитайте с модел или артикулен номер.'),
+      ) +
+      '</p></div>';
+    return;
+  }
+
+  box.innerHTML =
+    (exact.length
+      ? '<div class="flex items-center justify-between gap-2">' +
+        '<p class="text-[12px] text-slate-400">' +
+        escapeHtml(
+          pluralMessage(exact.length, {
+            one: 'Намерихме {n} точно съвпадение',
+            other: 'Намерихме {n} точни съвпадения',
+          }),
+        ) +
+        '</p><button type="button" id="track-select-all" ' +
+        'class="rounded-md px-2 py-0.5 text-[11.5px] text-accent-400 transition hover:underline">' +
+        escapeHtml(translate('Избери всички')) +
+        '</button></div>' +
+        exact.map(trackOfferHtml).join('')
+      : '') +
+    (maybe.length
+      ? '<p class="mt-3 text-[12px] text-amber-400">' +
+        '<i class="fa-solid fa-triangle-exclamation mr-1.5 text-[10px]"></i>' +
+        escapeHtml(
+          pluralMessage(maybe.length, {
+            one: '{n} възможно съвпадение',
+            other: '{n} възможни съвпадения',
+          }),
+        ) +
+        '</p><p class="mb-1.5 text-[11px] text-slate-500">' +
+        escapeHtml(
+          translate('Различна комплектация или вариант. Проверете, преди да ги следите.'),
+        ) +
+        '</p>' +
+        maybe.map(trackOfferHtml).join('')
+      : '');
+
+  box.querySelectorAll('[data-track-url]').forEach(function (input) {
+    input.addEventListener('change', function () {
+      if (input.checked) trackState.chosen.add(input.dataset.trackUrl);
+      else trackState.chosen.delete(input.dataset.trackUrl);
+      $('#track-next').disabled = trackState.chosen.size === 0;
+    });
+  });
+
+  const all = document.getElementById('track-select-all');
+  if (all) {
+    all.addEventListener('click', function () {
+      trackState.offers
+        .filter((offer) => offer.tier === 'match')
+        .forEach((offer) => trackState.chosen.add(offer.url));
+      renderTrackOffers();
+      $('#track-next').disabled = trackState.chosen.size === 0;
+    });
+  }
+}
+
+/**
+ * One shop's offer, and why it is thought to be the same article.
+ *
+ * The reasons are the matcher's own agreements — a brand that agreed, a model
+ * code that agreed — rather than a sentence composed here, so the card cannot
+ * claim agreement the verdict did not find.
+ */
+function trackOfferHtml(offer) {
+  const confidence = offer.match ? Math.round(offer.match.confidence * 100) : null;
+  const chosen = trackState.chosen.has(offer.url);
+  const agreed = ((offer.match && offer.match.matchedAttributes) || [])
+    .filter((entry) => entry.status === 'match')
+    .slice(0, 4);
+
+  return (
+    '<label class="mt-1.5 flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 transition ' +
+    (chosen
+      ? 'border-accent-500/40 bg-accent-500/[0.06]'
+      : 'border-white/8 bg-ink-850 hover:border-white/20') +
+    '">' +
+    '<input type="checkbox" data-track-url="' +
+    escapeHtml(offer.url) +
+    '"' +
+    (chosen ? ' checked' : '') +
+    ' class="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-ink-800 accent-accent-500" />' +
+    '<span class="min-w-0 flex-1">' +
+    '<span class="flex flex-wrap items-baseline gap-x-2">' +
+    '<span class="text-[12.5px] font-medium text-slate-200">' +
+    escapeHtml(offer.shopName) +
+    '</span>' +
+    (confidence !== null
+      ? '<span class="text-[11px] ' +
+        (confidence >= 85 ? 'text-emerald-400' : 'text-amber-400') +
+        '">' +
+        confidence +
+        '% ' +
+        escapeHtml(translate('съвпадение')) +
+        '</span>'
+      : '') +
+    (offer.isMine === false
+      ? '<span class="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-500">' +
+        escapeHtml(translate('нов магазин')) +
+        '</span>'
+      : '') +
+    '<span class="num ml-auto text-[13px] font-semibold text-slate-200">' +
+    (typeof offer.effectivePrice === 'number'
+      ? escapeHtml(offer.effectivePrice.toFixed(2) + ' ' + (offer.effectiveCurrency || ''))
+      : '<span class="text-[11.5px] font-normal text-slate-600">' +
+        escapeHtml(translate('без цена')) +
+        '</span>') +
+    '</span></span>' +
+    '<span class="mt-0.5 block truncate text-[11.5px] text-slate-400" title="' +
+    escapeHtml(offer.name) +
+    '">' +
+    escapeHtml(offer.name) +
+    '</span>' +
+    (offer.inStock === false
+      ? '<span class="mt-1 inline-flex items-center gap-1 text-[10.5px] text-amber-400">' +
+        '<i class="fa-solid fa-circle-minus text-[8px]"></i>' +
+        escapeHtml(translate('изчерпан')) +
+        '</span>'
+      : '') +
+    (agreed.length
+      ? '<span class="mt-1 flex flex-wrap gap-1">' +
+        agreed
+          .map(
+            (entry) =>
+              '<span class="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-400/90">✓ ' +
+              escapeHtml(entry.label || entry.key) +
+              '</span>',
+          )
+          .join('') +
+        '</span>'
+      : '') +
+    '</span></label>'
+  );
+}
+
+/**
+ * A shop the search could not reach, added by its address.
+ *
+ * The fallback that keeps the manual path alive without making it the road
+ * everybody walks — for a shop that forbids crawling, publishes no catalogue,
+ * or that the matcher simply missed. The page is read by the same extractor
+ * that will be checking it afterwards, so what is confirmed here is what the
+ * monitor will see.
+ */
+async function trackManualAdd() {
+  const input = $('#track-manual-url');
+  const url = input.value.trim();
+  const note = $('#track-manual-result');
+
+  const say = function (tone, text) {
+    note.className = 'mt-1.5 text-[11.5px] ' + tone;
+    note.textContent = text;
+    note.classList.remove('hidden');
+  };
+
+  if (!/^https?:\/\//i.test(url)) {
+    say('text-amber-400', translate('Поставете пълен адрес, започващ с https://'));
+    return;
+  }
+
+  $('#track-manual-spinner').classList.remove('hidden');
+  $('#track-manual-icon').classList.add('hidden');
+
+  try {
+    const seen = await fetch(ENDPOINTS.discoveryPreview, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ url: url }),
+    }).then(okJson);
+
+    trackState.offers.push({
+      tier: 'match',
+      url: seen.url,
+      shopName: seen.host,
+      host: seen.host,
+      name: seen.title || seen.url,
+      effectivePrice: seen.price,
+      effectiveCurrency: seen.currency || 'EUR',
+      inStock: seen.inStock,
+      isMine: false,
+      // No verdict, because nobody matched anything: the reader supplied the
+      // address. Showing a confidence for it would be inventing one.
+      match: null,
+    });
+    trackState.chosen.add(seen.url);
+
+    input.value = '';
+    say(
+      seen.ok ? 'text-emerald-400' : 'text-amber-400',
+      seen.ok
+        ? formatMessage('Намерихме: {title}', { title: seen.title || seen.host })
+        : formatMessage('Добавен, но страницата не се прочете: {error}', {
+            error: seen.error || '',
+          }),
+    );
+
+    renderTrackOffers();
+    $('#track-next').disabled = trackState.chosen.size === 0;
+  } catch (error) {
+    say('text-red-400', translate('Адресът не се прочете.'));
+  } finally {
+    $('#track-manual-spinner').classList.add('hidden');
+    $('#track-manual-icon').classList.remove('hidden');
+  }
+}
+
+/** The last step, prefilled from what was read rather than asked for. */
+function renderTrackSettings() {
+  const chosen = trackState.offers.filter((offer) => trackState.chosen.has(offer.url));
+  const priced = chosen.filter((offer) => typeof offer.effectivePrice === 'number');
+  const lowest = priced.length
+    ? Math.min.apply(null, priced.map((offer) => offer.effectivePrice))
+    : null;
+
+  const understood = trackState.understood || {};
+  const ids = understood.identifiers || {};
+
+  $('#track-chosen').innerHTML =
+    '<p class="text-[12.5px] text-slate-300">' +
+    escapeHtml(
+      pluralMessage(chosen.length, { one: 'Избран {n} магазин', other: 'Избрани {n} магазина' }),
+    ) +
+    '</p>' +
+    (lowest !== null
+      ? '<p class="mt-0.5 text-[11.5px] text-slate-500">' +
+        escapeHtml(translate('Най-ниска намерена цена')) +
+        ': <span class="num font-semibold text-emerald-400">' +
+        escapeHtml(lowest.toFixed(2) + ' ' + (priced[0].effectiveCurrency || '')) +
+        '</span></p>'
+      : '');
+
+  /*
+   * Prefilled, never invented.
+   *
+   * Blank wherever nothing was recognised. A brand guessed to fill a field is
+   * a brand the matcher will later compare on, and a wrong one there is worse
+   * than an empty one — it would quietly rule out the right article.
+   */
+  if (!$('#track-name').value) $('#track-name').value = trackState.query;
+  if (!$('#track-brand').value) $('#track-brand').value = understood.brand || '';
+  if (!$('#track-model').value) $('#track-model').value = (ids.modelCodes || [])[0] || '';
+  if (!$('#track-category').value) $('#track-category').value = understood.productType || '';
+  if (!$('#track-gtin').value) $('#track-gtin').value = (ids.gtins || [])[0] || '';
+
+  if (!$('#track-target').value && lowest !== null) {
+    $('#track-target').value = (Math.round(lowest * 0.97 * 100) / 100).toFixed(2);
+  }
+}
+
+/** Hands the confirmed shops to the monitoring that already exists. */
+async function trackStart() {
+  const chosen = trackState.offers.filter((offer) => trackState.chosen.has(offer.url));
+  if (!chosen.length) return;
+
+  const status = $('#track-status');
+  status.className = 'mt-2.5 text-[11.5px] text-slate-400';
+  status.textContent = translate('Създаваме…');
+  status.classList.remove('hidden');
+  trackBusy(true);
+
+  try {
+    const product = await fetch(ENDPOINTS.products + '/track', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
-        name: name,
-        sku: $('#product-sku').value.trim() || undefined,
-        brand: $('#product-brand').value.trim() || undefined,
-        manufacturer: $('#product-manufacturer').value.trim() || undefined,
-        model: $('#product-model').value.trim() || undefined,
-        category: $('#product-category').value.trim() || undefined,
-        gtin: $('#product-gtin').value.trim() || undefined,
-        targetUrl: urls[0],
-        competitorUrl: urls[0],
-        competitorName: knownRetailer(hostOf(urls[0])) || hostOf(urls[0]),
+        name: $('#track-name').value.trim() || trackState.query,
+        sku: $('#track-sku').value.trim() || undefined,
+        brand: $('#track-brand').value.trim() || undefined,
+        model: $('#track-model').value.trim() || undefined,
+        category: $('#track-category').value.trim() || undefined,
+        gtin: $('#track-gtin').value.trim() || undefined,
+        ourPrice: Number($('#track-our-price').value) || undefined,
+        targetPrice: Number($('#track-target').value) || undefined,
         currency: 'EUR',
-        ourPrice: Number($('#product-our-price').value) || undefined,
-        targetPrice: Number($('#product-target').value) || undefined,
+        stores: chosen.map((offer) => ({
+          url: offer.url,
+          name: offer.shopName,
+          price: typeof offer.effectivePrice === 'number' ? offer.effectivePrice : undefined,
+          currency: offer.effectiveCurrency || 'EUR',
+          inStock: typeof offer.inStock === 'boolean' ? offer.inStock : undefined,
+        })),
       }),
-    });
+    }).then(okJson);
 
-    if (!created.ok) {
-      const detail = await created.text();
-      throw new Error('HTTP ' + created.status + ' ' + detail.slice(0, 160));
-    }
-
-    const product = await created.json();
-
-    // The remaining links are attached as extra warehouses. One failure
-    // must not lose the others, so each is reported on its own.
-    const extras = await Promise.all(
-      urls.slice(1).map(async function (url) {
-        try {
-          const response = await fetch(ENDPOINTS.products + '/' + product.id + '/competitors', {
-            method: 'POST',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-              name: knownRetailer(hostOf(url)) || hostOf(url),
-              url: url,
-              currency: 'EUR',
-            }),
-          });
-          return response.ok ? null : hostOf(url) + ' (HTTP ' + response.status + ')';
-        } catch (error) {
-          return hostOf(url) + ' (' + error.message + ')';
-        }
-      }),
-    );
-
-    const failed = extras.filter(Boolean);
-
-    showProductStatus('Създаден. Стартиране на първата проверка…', 'info');
-
-    // Scrape immediately, so the comparison is populated before the user
-    // has to wonder whether anything happened.
-    const triggered = await fetch(ENDPOINTS.scraperTrigger + '/' + product.id, {
+    // The first check runs at once, so the comparison holds real numbers
+    // before the reader has to wonder whether anything happened.
+    status.textContent = translate('Създаден. Стартираме първата проверка…');
+    await fetch(ENDPOINTS.scraperTrigger + '/' + product.id, {
       method: 'POST',
       headers: authHeaders(),
-    });
+    }).catch(() => null);
 
-    let summary = '';
-    if (triggered.ok) {
-      const results = await triggered.json();
-      const ok = results.filter((result) => result.error === null);
-      summary =
-        ok.length +
-        '/' +
-        results.length +
-        ' магазина прочетени успешно.' +
-        (ok.length
-          ? ' Най-ниска цена: ' +
-            euro.format(Math.min.apply(null, ok.map((r) => r.currentPrice || Infinity))) +
-            '.'
-          : '');
-    }
-
-    showProductStatus(
-      'Готово. ' +
-        summary +
-        (failed.length ? '<br>Не бяха добавени: ' + escapeHtml(failed.join(', ')) : ''),
-      failed.length ? 'info' : 'success',
-    );
-
-    toast('Продуктът е добавен и проверен.', 'success');
-    window.setTimeout(function () {
-      closeModal('product-modal');
-      loadProducts();
-    }, 1600);
+    toast(translate('Продуктът се следи.'), 'success');
+    closeModal('product-modal');
+    loadProducts();
   } catch (error) {
-    showProductStatus('Неуспешно: ' + escapeHtml(error.message), 'error');
+    status.className = 'mt-2.5 text-[11.5px] text-red-400';
+    status.textContent = translate('Неуспешно: ') + (error.message || '');
   } finally {
-    $('#product-spinner').classList.add('hidden');
-    $('#product-icon').classList.remove('hidden');
+    trackBusy(false);
   }
+}
+
+$('#add-product').addEventListener('click', function () {
+  if (requireAccount()) return;
+
+  trackState = {
+    step: 1,
+    query: '',
+    scope: 'my_suppliers',
+    understood: null,
+    offers: [],
+    chosen: new Set(),
+  };
+
+  [
+    'track-query', 'track-manual-url', 'track-our-price', 'track-target', 'track-name',
+    'track-sku', 'track-brand', 'track-model', 'track-category', 'track-gtin',
+  ].forEach(function (id) {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+
+  ['track-error', 'track-status', 'track-manual-result'].forEach(function (id) {
+    const box = document.getElementById(id);
+    if (box) box.classList.add('hidden');
+  });
+
+  $('#track-progress').innerHTML = '';
+  $('#track-progress').classList.add('hidden');
+  $('#track-matches').innerHTML = '';
+  $('#track-understood').innerHTML = '';
+
+  trackStep(1);
+  openModal('product-modal');
+  window.setTimeout(function () {
+    $('#track-query').focus();
+  }, 50);
 });
+
+$('#track-next').addEventListener('click', function () {
+  if (trackState.step === 1) return void trackFind();
+  if (trackState.step === 2) {
+    renderTrackSettings();
+    return trackStep(3);
+  }
+  void trackStart();
+});
+
+$('#track-back').addEventListener('click', function () {
+  trackStep(Math.max(1, trackState.step - 1));
+});
+
+$('#track-query').addEventListener('keydown', function (event) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  $('#track-next').click();
+});
+
+$('#track-manual-add').addEventListener('click', function () {
+  void trackManualAdd();
+});
+
 
 /* --- Row and warehouse actions -------------------------------------- */
 

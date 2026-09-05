@@ -2,14 +2,23 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Sse,
 } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Observable, Subject } from 'rxjs';
 
 import { ApiKeyAuth } from '../common/decorators/api-key-auth.decorator';
@@ -21,12 +30,16 @@ import {
   ComparisonDto,
   DetectSearchDto,
   DetectedShopDto,
+  PreviewUrlDto,
+  SearchHistoryQueryDto,
   SearchQueryDto,
   ShopSearchResultDto,
+  UrlPreviewDto,
 } from './dto/discovery.dto';
 import { BasketResultDto, PriceBasketDto } from './dto/basket.dto';
 import { parseRequest } from './request-parser';
 import { SearchDetectorService } from './search-detector.service';
+import { SearchHistoryService } from './search-history.service';
 
 @ApiTags('Discovery')
 @ApiKeyAuth()
@@ -35,6 +48,7 @@ export class DiscoveryController {
   constructor(
     private readonly discoveryService: DiscoveryService,
     private readonly detector: SearchDetectorService,
+    private readonly history: SearchHistoryService,
   ) {}
 
   @Get('shops')
@@ -233,6 +247,83 @@ export class DiscoveryController {
       maxSuppliers: dto.maxSuppliers,
       excludeShopIds: dto.excludeShopIds,
     });
+  }
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'What is at this address',
+    description:
+      'Reads one product page and says what it found — name, price, currency, availability, image — using the same extractor that will later be checking it, so what you confirm is what the monitor will see. Nothing is saved.\n\nThe fallback for a shop the search cannot reach: one that forbids crawling, publishes no catalogue, or that the matcher missed. A page that cannot be read is reported rather than refused — the address may still be the right product.',
+  })
+  @ApiOkResponse({ description: 'What the page turned out to say.', type: UrlPreviewDto })
+  @ApiBadRequestResponse({ description: 'Not a public http(s) address.', type: ErrorResponseDto })
+  preview(
+    // Scoped to an account though nothing is stored: this makes the server
+    // fetch an address the caller chose, and an unattributable outbound
+    // request is one nobody can rate-limit or trace back.
+    @Owner() _ownerId: string,
+    @Body() dto: PreviewUrlDto,
+  ): Promise<UrlPreviewDto> {
+    return this.discoveryService.previewUrl(dto.url);
+  }
+
+  @Get('searches')
+  @ApiOperation({
+    summary: 'Questions you have asked before',
+    description:
+      'Your own searches, most recently asked first. **No supplier is contacted.** Each row carries what the last run concluded and when it ran, so the list can be drawn without opening anything.\n\nAsking the same question again does not add a row — it adds a snapshot to the row that exists and moves it to the top.',
+  })
+  @ApiOkResponse({ description: 'One row per question.', type: Object, isArray: true })
+  listSearches(@Owner() ownerId: string, @Query() query: SearchHistoryQueryDto) {
+    return this.history.list(ownerId, query.limit ?? 25);
+  }
+
+  @Get('searches/:id')
+  @ApiOperation({
+    summary: 'Reopen a search, exactly as it answered',
+    description:
+      'The comparison as it was, down to the prices, the availability and which shops failed. **No supplier is contacted** — this is what a browser refresh and a click in the history both use, and it costs one indexed read instead of a dozen requests to other people\u2019s servers.\n\n`fresh` is false once the answer is over an hour old; `fetchedAt` says when the shops were actually asked. Neither ever deletes anything: an old search opening onto old prices with the date on them is the point.',
+  })
+  @ApiOkResponse({ description: 'The question, the saved answer, and its age.', type: Object })
+  @ApiNotFoundResponse({ description: 'No such search on this account.', type: ErrorResponseDto })
+  restoreSearch(@Owner() ownerId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.history.restore(ownerId, id);
+  }
+
+  @Post('searches/:id/refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Ask the suppliers again',
+    description:
+      'Runs the same question afresh and writes a **new** snapshot. The previous one is untouched and stays reachable — that is what lets a buyer see that an article was 149.99 € on Sunday and 159.99 € on Monday.\n\nClicking twice does not search twice: a second request joins the run already in progress and receives the same answer. If the run fails, nothing is written and the last saved answer remains what the search shows.',
+  })
+  @ApiOkResponse({ description: 'The new comparison, and the id it was filed under.', type: ComparisonDto })
+  @ApiNotFoundResponse({ description: 'No such search on this account.', type: ErrorResponseDto })
+  async refreshSearch(@Owner() ownerId: string, @Param('id', ParseUUIDPipe) id: string) {
+    const search = await this.history.find(ownerId, id);
+
+    return this.history.once(ownerId, search.query, search.scope, () =>
+      this.discoveryService.compare(ownerId, search.query, {
+        scope: search.scope,
+        // The button says the results are being obtained again. Serving one
+        // shop's reply from a cache written minutes ago would make that untrue
+        // for that shop, and the buyer pressed this because they did not trust
+        // what was on screen.
+        useCache: false,
+      }),
+    );
+  }
+
+  @Delete('searches/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Forget a search and everything it remembered',
+    description: 'Removes the question and its snapshots. Nothing else is affected.',
+  })
+  @ApiNotFoundResponse({ description: 'No such search on this account.', type: ErrorResponseDto })
+  async removeSearch(@Owner() ownerId: string, @Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    await this.history.remove(ownerId, id);
   }
 
   @Get('search')

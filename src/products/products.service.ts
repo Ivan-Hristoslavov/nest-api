@@ -18,6 +18,7 @@ import {
   BulkRowResultDto,
 } from './dto/bulk-import.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { TrackProductDto } from './dto/track-product.dto';
 import { ProductSortField, QueryProductsDto } from './dto/query-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Competitor } from './entities/competitor.entity';
@@ -108,6 +109,116 @@ export class ProductsService {
           'Спрете някой продукт или преминете на по-голям план.',
       );
     }
+  }
+
+  /**
+   * A product and every shop chosen for it, in one transaction.
+   *
+   * The discovery flow's landing point. The browser used to create the product
+   * and then add each shop with its own request, which meant a failure halfway
+   * left a product watching three of the five shops the buyer picked — with
+   * nothing on screen saying which two were missing. Here it either all exists
+   * or none of it does.
+   *
+   * Nothing new is monitored: this writes the same `Product` and `Competitor`
+   * rows the manual form always wrote, so the scraper, the alerts and the
+   * comparison pick it up without knowing it arrived by a different road. That
+   * is the point — one monitoring engine, two ways of filling it.
+   */
+  async track(ownerId: string, dto: TrackProductDto): Promise<Product> {
+    const currency = dto.currency ?? 'EUR';
+
+    // The first shop is the primary listing, matching what the form did. It is
+    // the one the product row quotes when it has nothing better, and the
+    // discovery screen puts the best match first.
+    const [primary, ...rest] = dto.stores;
+
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const products = manager.getRepository(Product);
+      const competitors = manager.getRepository(Competitor);
+
+      const product = await products.save(
+        products.create({
+          ownerId,
+          name: dto.name,
+          sku: dto.sku ?? null,
+          brand: dto.brand ?? null,
+          model: dto.model ?? null,
+          manufacturer: dto.manufacturer ?? null,
+          category: dto.category ?? null,
+          gtin: dto.gtin ?? null,
+          currency,
+          ourPrice: dto.ourPrice ?? null,
+          targetPrice: dto.targetPrice ?? null,
+          targetUrl: primary.url,
+          competitorUrl: primary.url,
+          // Seeded from what the search already read, so the list shows real
+          // numbers before the first scrape rather than a row of dashes. The
+          // scraper overwrites them on its first pass.
+          currentPrice: primary.price ?? null,
+          lowestPrice: primary.price ?? null,
+          highestPrice: primary.price ?? null,
+          lastUpdated: primary.price !== undefined ? new Date() : null,
+          scrapeStatus: ScrapeStatus.Pending,
+          competitorCount: dto.stores.length,
+        }),
+      );
+
+      let primaryRow: Competitor | null = null;
+
+      for (const [index, store] of dto.stores.entries()) {
+        const row = await competitors.save(
+          competitors.create({
+            productId: product.id,
+            name: store.name,
+            url: store.url,
+            host: hostOf(store.url),
+            currency: store.currency ?? currency,
+            currentPrice: store.price ?? null,
+            inStock: store.inStock ?? null,
+            isPrimary: index === 0,
+            isActive: true,
+            scrapeStatus: ScrapeStatus.Pending,
+          }),
+        );
+
+        if (index === 0) primaryRow = row;
+      }
+
+      /*
+       * The opening reading, written exactly as the manual path writes it.
+       *
+       * Every column here matters and the first version of this omitted two of
+       * them. `source` is NOT NULL, so leaving it out failed the insert and
+       * took the whole transaction with it — the product never appeared and
+       * the reader saw "A required field was missing" about a field they had
+       * never been shown. And `competitorId` is what attributes the reading to
+       * the shop it came from: without it the price chart has a point belonging
+       * to no supplier, which is not a smaller version of the truth but a
+       * different one.
+       */
+      if (primary.price !== undefined && primaryRow) {
+        await manager.getRepository(PriceHistory).insert({
+          productId: product.id,
+          competitorId: primaryRow.id,
+          price: primary.price,
+          previousPrice: null,
+          changePercent: null,
+          currency,
+          source: 'initial',
+        });
+      }
+
+      return product;
+    });
+
+    this.logger.log(
+      `Tracking ${saved.id} ("${saved.name}") at ${dto.stores.length} ` +
+        `${dto.stores.length === 1 ? 'shop' : 'shops'}` +
+        (rest.length ? `, primary ${hostOf(primary.url)}` : ''),
+    );
+
+    return saved;
   }
 
   async create(ownerId: string, createProductDto: CreateProductDto): Promise<Product> {
@@ -653,5 +764,14 @@ export class ProductsService {
   private round(value: number, decimals = 2): number {
     const factor = 10 ** decimals;
     return Math.round((value + Number.EPSILON) * factor) / factor;
+  }
+}
+
+/** The host an address belongs to, for the competitor row. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
   }
 }

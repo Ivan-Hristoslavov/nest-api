@@ -614,17 +614,35 @@ export class EnvironmentVariables {
   /**
    * How long one supplier may take before the search continues without it.
    *
-   * Measured, not guessed: every configured shop but one answers inside six
-   * seconds, and the one — cablecommerce.bg — takes nineteen. Waiting for it
-   * made every other answer nineteen seconds old before anybody saw it. A
-   * supplier that overruns is reported as timed out, which is a true statement
-   * about that supplier and not a failure of the search.
+   * Measured, not guessed, and raised once the measuring was done properly.
+   *
+   * Nine seconds was the first answer, taken when the whole search waited for
+   * the slowest shop and every other answer arrived nineteen seconds stale. It
+   * cost more than it saved: kris06.bg needs the best part of forty seconds on
+   * a cold read and genuinely stocks articles nobody else does, so a tight
+   * budget turned "this supplier is slow" into "nobody sells this" — a wrong
+   * answer bought with a faster one.
+   *
+   * Results now stream as each shop lands, so a slow supplier no longer delays
+   * what the others found; the budget only has to bound the total, and the
+   * number people feel is when the first offer appears, not when the last shop
+   * gives up.
+   *
+   * The measured spread across configured shops: everything under seven
+   * seconds, cablecommerce.bg at sixteen to nineteen, kris06.bg at
+   * thirty-eight on a cold read. Forty covers all of them. It is deliberately
+   * generous — the failure it prevents is reporting that nobody stocks an
+   * article because the one supplier who does was still answering.
+   *
+   * An overrunning request is left running rather than aborted, so its answer
+   * lands in the cache and the next search for the same article gets that shop
+   * instantly.
    */
   @Transform(toNumber)
   @IsInt()
   @Min(1000)
   @IsOptional()
-  SEARCH_SUPPLIER_TIMEOUT_MS = 9000;
+  SEARCH_SUPPLIER_TIMEOUT_MS = 40000;
 
   /**
    * Hosted checkout links, one per plan.

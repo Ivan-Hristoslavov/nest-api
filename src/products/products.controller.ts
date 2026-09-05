@@ -33,6 +33,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { ApiPaginatedResponse } from '../common/swagger/api-paginated-response.decorator';
 import { BulkImportDto, BulkImportResultDto } from './dto/bulk-import.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { TrackProductDto } from './dto/track-product.dto';
 import { PriceCheckResultDto } from './dto/price-check-result.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
 import { RecordPriceDto } from './dto/record-price.dto';
@@ -70,6 +71,18 @@ export class ProductsController {
     await this.productsService.assertWithinLimit(owner);
 
     return this.productsService.create(owner.id, createProductDto);
+  }
+
+  @Post('track')
+  @ApiOperation({
+    summary: 'Watch a product at the shops you picked',
+    description:
+      'Where the discovery flow lands. Creates the product and every chosen shop in **one transaction** — the browser used to make a request per shop, so a failure halfway left a product watching three of the five you picked with nothing saying which two were missing.\n\nNothing new is monitored: this writes the same product and competitor rows the manual form always wrote, so the scraper, the alerts and the comparison pick it up without knowing it arrived by a different road. One monitoring engine, two ways of filling it.\n\nAt least one shop is required. A product watched nowhere is a row that can never change, and creating it quietly would look like the monitoring had started.',
+  })
+  @ApiCreatedResponse({ description: 'The product, now being watched.', type: Product })
+  @ApiBadRequestResponse({ description: 'Validation failed.', type: ErrorResponseDto })
+  track(@Owner() ownerId: string, @Body() dto: TrackProductDto): Promise<Product> {
+    return this.productsService.track(ownerId, dto);
   }
 
   @Post('bulk')

@@ -2198,7 +2198,9 @@
 
           <div id="basket-results" class="mt-4"></div>
             <div id="live-results" class="mt-3.5"></div>
-            <div id="catalogue-results" class="mt-3.5"></div>
+            <div id="search-history" class="mb-3"></div>
+
+          <div id="catalogue-results" class="mt-3.5"></div>
             <div id="catalogue-suggestions"></div>
           </div>
         </div>
@@ -3500,7 +3502,14 @@
 
 
     <!-- ================================================================== -->
-    <!-- MODAL — new product across several stores                           -->
+    <!-- MODAL — find a product, then choose where to watch it               -->
+    <!--                                                                    -->
+    <!-- Four steps, because the task genuinely has four and the old form    -->
+    <!-- pretended it had one. It asked for a name, an SKU, a brand, a model,-->
+    <!-- a category, a manufacturer, an EAN, a price and a threshold — and   -->
+    <!-- then for a URL per shop, pasted by hand. Everything above the URLs  -->
+    <!-- is knowable from the URLs, and the URLs are knowable from the name. -->
+    <!-- So the reader gives the name, and confirms what came back.          -->
     <!-- ================================================================== -->
     <div
       id="product-modal"
@@ -3509,279 +3518,197 @@
       aria-modal="true"
       aria-labelledby="product-modal-title"
     >
-      <!-- Capped at the viewport with its own scroll area: the dialog grew past
-           the fold, and a submit button you have to hunt for below the window
-           is a form people abandon. Title and actions stay put; only the middle
-           scrolls. -->
       <div
-        class="my-4 flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col rounded-xl border border-white/10 bg-ink-850 shadow-2xl"
+        class="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-ink-900 shadow-panel"
       >
-        <div class="flex items-start justify-between gap-3 border-b border-white/8 px-4 py-3.5">
-          <div>
+        <div class="flex items-start justify-between gap-3 border-b border-white/8 px-4 py-3">
+          <div class="min-w-0">
             <h3 id="product-modal-title" class="text-[14px] font-semibold text-slate-200">
-              Нов продукт за следене
+              Добавете продукт за следене
             </h3>
-            <p class="mt-1 text-[11.5px] leading-relaxed text-slate-400">
-              Поставете линка към <strong class="text-slate-200">един и същи артикул</strong> в
-              всеки магазин. Системата сравнява цените и ви казва къде е най-евтино.
-            </p>
+            <!-- The stepper is a label for where you are, not a control: the
+                 steps are not reachable out of order, so they are not buttons. -->
+            <ol id="track-steps" class="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+              <li data-step-label="1" class="text-slate-300">Продукт</li>
+              <li aria-hidden="true" class="text-slate-700">›</li>
+              <li data-step-label="2" class="text-slate-600">Съвпадения</li>
+              <li aria-hidden="true" class="text-slate-700">›</li>
+              <li data-step-label="3" class="text-slate-600">Следене</li>
+            </ol>
           </div>
           <button
             type="button"
-            data-close-modal="product-modal"
+            data-close="product-modal"
             aria-label="Затвори"
-            class="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+            class="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300"
           >
-            <i class="fa-solid fa-xmark"></i>
+            <i class="fa-solid fa-xmark text-[13px]"></i>
           </button>
         </div>
 
-        <form id="product-form" class="flex min-h-0 flex-1 flex-col" novalidate>
-          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3.5">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label for="product-name" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                Име на продукта <span class="text-accent-400">*</span>
-              </label>
-              <input
-                type="text"
-                id="product-name"
-                maxlength="255"
-                placeholder="Samsung QLED 55Q7F"
-                class="w-full rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-              />
-            </div>
-            <div>
-              <label for="product-sku" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                Вашият SKU
-              </label>
-              <input
-                type="text"
-                id="product-sku"
-                maxlength="64"
-                placeholder="TV-SAM-55Q7F"
-                class="w-full rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 font-mono text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-              />
-            </div>
-          </div>
-
-          <!-- Catalogue fields are optional and can be filled in later from the
-               edit dialog, so they start folded away. Five more inputs on the
-               first screen buried the two that are actually required. -->
-          <details class="group rounded-xl border border-white/8 bg-ink-900">
-            <summary
-              class="flex cursor-pointer list-none items-center justify-between px-3.5 py-2.5 text-[12.5px] font-medium text-slate-300"
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
+          <!-- STEP 1 — one field ------------------------------------------ -->
+          <section data-step="1" aria-labelledby="track-query-label">
+            <label
+              id="track-query-label"
+              for="track-query"
+              class="mb-1.5 block text-[13px] font-medium text-slate-200"
             >
-              <span>
-                <i class="fa-solid fa-tags mr-2 text-[11px] text-slate-500"></i>
-                Каталожни данни
-                <span class="ml-1 text-[11.5px] font-normal text-slate-500">по избор</span>
-              </span>
-              <i
-                class="fa-solid fa-chevron-down text-[11px] text-slate-500 transition group-open:rotate-180"
-              ></i>
-            </summary>
-
-            <div class="space-y-4 border-t border-white/8 px-3.5 py-4">
-              <div class="grid gap-3 sm:grid-cols-3">
-                <div>
-                  <label for="product-brand" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                    Марка
-                  </label>
-                  <input
-                    type="text"
-                    id="product-brand"
-                    maxlength="120"
-                    placeholder="Samsung"
-                    class="w-full rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                  />
-                </div>
-                <div>
-                  <label for="product-model" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                    Модел
-                  </label>
-                  <input
-                    type="text"
-                    id="product-model"
-                    maxlength="120"
-                    placeholder="QE55Q7F2AUXXH"
-                    class="w-full rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 font-mono text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                  />
-                </div>
-                <div>
-                  <label
-                    for="product-category"
-                    class="mb-1.5 block text-[12.5px] font-medium text-slate-300"
-                  >
-                    Категория
-                  </label>
-                  <input
-                    type="text"
-                    id="product-category"
-                    maxlength="120"
-                    list="category-suggestions"
-                    placeholder="Телевизори"
-                    class="w-full rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                  />
-                  <datalist id="category-suggestions"></datalist>
-                </div>
-              </div>
-
-              <div class="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label
-                    for="product-manufacturer"
-                    class="mb-1.5 block text-[12.5px] font-medium text-slate-300"
-                  >
-                    Производител
-                  </label>
-                  <input
-                    type="text"
-                    id="product-manufacturer"
-                    maxlength="160"
-                    placeholder="Samsung Electronics Co., Ltd."
-                    class="w-full rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                  />
-                </div>
-                <div>
-                  <label for="product-gtin" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                    Баркод (EAN / GTIN)
-                  </label>
-                  <input
-                    type="text"
-                    id="product-gtin"
-                    inputmode="numeric"
-                    maxlength="14"
-                    placeholder="8806095507415"
-                    class="num w-full rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 font-mono text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-                  />
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label for="product-our-price" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                Колко плащате сега (EUR)
-              </label>
-              <input
-                type="number"
-                id="product-our-price"
-                step="0.01"
-                min="0"
-                placeholder="0.70"
-                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-              />
-            </div>
-            <div>
-              <label for="product-target" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
-                Праг за аларма (EUR)
-                <button
-                  type="button"
-                  data-hover="alerts"
-                  tabindex="0"
-                  aria-label="Какво е праг за аларма"
-                  class="ml-0.5 cursor-help text-slate-500 transition hover:text-accent-400"
-                >
-                  <i class="fa-solid fa-circle-question text-[11px]"></i>
-                </button>
-              </label>
-              <input
-                type="number"
-                id="product-target"
-                step="0.01"
-                min="0"
-                placeholder="350.00"
-                class="num w-full rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-              />
-            </div>
-          </div>
-
-          <!-- The shops with a server-rendered search page can be queried by
-               name, so the links do not have to be hunted down by hand. Backed
-               by GET /discovery/shops and GET /discovery/search. -->
-          <div id="discovery-block" class="rounded-xl border border-white/8 bg-ink-900 p-3">
-            <div class="flex items-baseline justify-between gap-3">
-              <p class="text-[12.5px] font-medium text-slate-300">
-                <i class="fa-solid fa-magnifying-glass mr-1.5 text-[11px] text-slate-500"></i>
-                Намери в магазините
-              </p>
-              <span class="text-[11px] text-slate-500">по избор</span>
-            </div>
-            <p class="mt-1 text-[11.5px] leading-relaxed text-slate-500">
-              Търси едновременно в
-              <strong class="text-slate-400">индексираните ви каталози</strong> и в магазините,
-              които позволяват търсене на живо. Изберете верния артикул — адресът му влиза в полето
-              отдолу.
+              Какъв продукт искате да следите?
+            </label>
+            <input
+              type="text"
+              id="track-query"
+              autocomplete="off"
+              placeholder="Bosch GSR 18V-55"
+              aria-describedby="track-query-help"
+              class="w-full rounded-lg border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[13px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
+            />
+            <p id="track-query-help" class="mt-1.5 text-[11.5px] text-slate-500">
+              Име, модел, SKU или EAN. Ще намерим съответстващите артикули в магазините.
             </p>
 
-            <div id="discovery-shops" class="mt-3 flex flex-wrap gap-2"></div>
+            <fieldset class="mt-3">
+              <legend class="mb-1.5 text-[11.5px] font-medium text-slate-400">Търси в</legend>
+              <div class="flex flex-wrap gap-3 text-[12.5px] text-slate-300">
+                <label class="inline-flex items-center gap-1.5">
+                  <input type="radio" name="track-scope" value="my_suppliers" checked
+                    class="h-3.5 w-3.5 accent-accent-500" />
+                  Моите доставчици
+                </label>
+                <label class="inline-flex items-center gap-1.5">
+                  <input type="radio" name="track-scope" value="global"
+                    class="h-3.5 w-3.5 accent-accent-500" />
+                  Навсякъде
+                </label>
+              </div>
+            </fieldset>
 
-            <div class="mt-3 flex gap-2">
-              <input
-                type="search"
-                id="discovery-query"
-                placeholder="iPhone 17 Pro 256GB"
-                class="min-w-0 flex-1 rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
-              />
-              <button
-                type="button"
-                id="discovery-search"
-                class="inline-flex shrink-0 items-center gap-2 rounded-xl border border-accent-500/40 bg-accent-500/10 px-3.5 py-2 text-[12.5px] font-semibold text-accent-300 transition hover:bg-accent-500/20"
-              >
-                <i id="discovery-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[11px]"></i>
-                Търси
-              </button>
+            <!-- Real stages from the stream, not an invented bar. -->
+            <div id="track-progress" class="mt-3 hidden space-y-1" role="status" aria-live="polite"></div>
+            <p id="track-error" class="mt-2.5 hidden text-[12px] text-red-400" role="alert"></p>
+          </section>
+
+          <!-- STEP 2 — what came back ------------------------------------- -->
+          <section data-step="2" class="hidden" aria-labelledby="track-understood-title">
+            <div id="track-understood" class="mb-3"></div>
+            <h4 id="track-understood-title" class="sr-only">Намерени съвпадения</h4>
+            <div id="track-matches" class="space-y-2"></div>
+
+            <div class="mt-3.5 rounded-lg border border-dashed border-white/10 px-3 py-2.5">
+              <p class="text-[12px] text-slate-400">Не намирате магазина?</p>
+              <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <label for="track-manual-url" class="sr-only">Линк към продукта</label>
+                <input
+                  type="url"
+                  id="track-manual-url"
+                  placeholder="https://…"
+                  class="min-w-[200px] flex-1 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60"
+                />
+                <button
+                  type="button"
+                  id="track-manual-add"
+                  class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-ink-850 px-3 py-1.5 text-[12px] font-medium text-slate-300 transition hover:border-white/20 hover:text-slate-200"
+                >
+                  <i id="track-manual-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[10px]"></i>
+                  <i id="track-manual-icon" class="fa-solid fa-plus text-[10px]"></i>
+                  Добави магазин ръчно
+                </button>
+              </div>
+              <p id="track-manual-result" class="mt-1.5 hidden text-[11.5px]"></p>
+            </div>
+          </section>
+
+          <!-- STEP 3 — what to watch for ---------------------------------- -->
+          <section data-step="3" class="hidden">
+            <div id="track-chosen" class="mb-3 rounded-lg border border-white/8 bg-ink-850 px-3 py-2.5"></div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label for="track-our-price" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
+                  Вашата текуща цена
+                </label>
+                <input type="number" id="track-our-price" step="0.01" min="0" placeholder="по избор"
+                  class="w-full rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60" />
+              </div>
+              <div>
+                <label for="track-target" class="mb-1.5 block text-[12.5px] font-medium text-slate-300">
+                  Извести ме при цена под
+                </label>
+                <input type="number" id="track-target" step="0.01" min="0" placeholder="по избор"
+                  class="w-full rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60" />
+              </div>
             </div>
 
-            <div id="discovery-results" class="mt-3 space-y-2"></div>
-          </div>
+            <!-- The old form, kept and demoted. Prefilled from what was read;
+                 the reader corrects rather than supplies. -->
+            <details class="mt-3 rounded-lg border border-white/8 bg-ink-850">
+              <summary class="cursor-pointer px-3 py-2 text-[12.5px] text-slate-300 transition hover:text-slate-200">
+                Разширени данни
+              </summary>
+              <div class="grid gap-3 border-t border-white/8 px-3 py-3 sm:grid-cols-2">
+                <div>
+                  <label for="track-name" class="mb-1.5 block text-[12px] text-slate-400">Име на продукта</label>
+                  <input type="text" id="track-name" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                </div>
+                <div>
+                  <label for="track-sku" class="mb-1.5 block text-[12px] text-slate-400">Вашият SKU</label>
+                  <input type="text" id="track-sku" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                </div>
+                <div>
+                  <label for="track-brand" class="mb-1.5 block text-[12px] text-slate-400">Марка</label>
+                  <input type="text" id="track-brand" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                </div>
+                <div>
+                  <label for="track-model" class="mb-1.5 block text-[12px] text-slate-400">Модел</label>
+                  <input type="text" id="track-model" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                </div>
+                <div>
+                  <label for="track-category" class="mb-1.5 block text-[12px] text-slate-400">Категория</label>
+                  <input type="text" id="track-category" list="category-suggestions" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                  <!-- Filled from the categories already in use, by the same
+                       function that rebuilds the dashboard filters. It lived in
+                       the old modal and has to keep living beside the field
+                       that reads it. -->
+                  <datalist id="category-suggestions"></datalist>
+                </div>
+                <div>
+                  <label for="track-gtin" class="mb-1.5 block text-[12px] text-slate-400">EAN</label>
+                  <input type="text" id="track-gtin" inputmode="numeric" class="w-full rounded-lg border border-white/10 bg-ink-900 px-3 py-1.5 text-[12px] text-slate-200 outline-none focus:border-accent-500/60" />
+                </div>
+              </div>
+            </details>
 
-          <div>
-            <div class="mb-1.5 flex items-center justify-between">
-              <label for="product-urls" class="text-[12.5px] font-medium text-slate-300">
-                Линкове към магазините <span class="text-accent-400">*</span>
-              </label>
-              <span class="text-[11px] text-slate-500">по един на ред, до 10</span>
-            </div>
-            <textarea
-              id="product-urls"
-              rows="4"
-              spellcheck="false"
-              placeholder="https://www.emag.bg/televizor-samsung.../pd/DT3GRT3BM/&#10;https://www.technomarket.bg/televizori/samsung-...&#10;https://www.vario.bg/samsung-..."
-              class="w-full resize-y rounded-xl border border-white/10 bg-ink-900 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-slate-200 placeholder-slate-600 outline-none transition focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20"
-            ></textarea>
-            <div id="url-preview" class="mt-2 flex flex-wrap gap-1.5"></div>
-          </div>
+            <p id="track-status" class="mt-2.5 hidden text-[11.5px]" role="status" aria-live="polite"></p>
+          </section>
+        </div>
 
-          <p class="text-[11.5px] leading-relaxed text-slate-500">
-            <i class="fa-solid fa-circle-info mr-1.5 text-[11px]"></i>
-            За eMAG, Технómarket, Технополис и Vario цените се разпознават автоматично. За непознат
-            магазин добавете CSS селектор от реда на склада, ако структурираните данни не стигнат.
-          </p>
-
-          <p id="product-status" class="hidden text-[11.5px]"></p>
-          </div>
-
-          <div class="flex flex-col gap-2.5 border-t border-white/8 px-4 py-4 sm:flex-row">
-            <button
-              type="submit"
-              class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 py-3 text-[13px] font-semibold text-ink-950 transition hover:bg-accent-400"
-            >
-              <i id="product-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[12.5px]"></i>
-              <i id="product-icon" class="fa-solid fa-satellite-dish text-[12.5px]"></i>
-              Създай и провери сега
-            </button>
+        <div class="flex items-center justify-between gap-2 border-t border-white/8 px-4 py-3">
+          <button
+            type="button"
+            id="track-back"
+            class="hidden rounded-lg border border-white/10 bg-ink-850 px-3 py-2 text-[12.5px] font-medium text-slate-300 transition hover:border-white/20 hover:text-slate-200"
+          >
+            Назад
+          </button>
+          <div class="ml-auto flex items-center gap-2">
             <button
               type="button"
-              data-close-modal="product-modal"
-              class="rounded-xl border border-white/10 bg-ink-900 px-4 py-3 text-[13px] font-medium text-slate-300 transition hover:border-white/20"
+              data-close="product-modal"
+              class="rounded-lg px-3 py-2 text-[12.5px] font-medium text-slate-400 transition hover:text-slate-200"
             >
               Отказ
             </button>
+            <button
+              type="button"
+              id="track-next"
+              class="inline-flex items-center gap-2 rounded-lg border border-transparent bg-accent-500 px-4 py-2 text-[12.5px] font-semibold text-ink-950 transition hover:bg-accent-400 disabled:opacity-50"
+            >
+              <i id="track-spinner" class="fa-solid fa-circle-notch fa-spin hidden text-[11px]"></i>
+              <span id="track-next-label">Намери продукта</span>
+            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
 

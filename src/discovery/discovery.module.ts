@@ -6,12 +6,15 @@ import { DecisionsModule } from '../decisions/decisions.module';
 import { ManualPrice } from '../shops/entities/manual-price.entity';
 import { Shop } from '../shops/entities/shop.entity';
 import { ManualPricesService } from '../shops/manual-prices.service';
+import { SavedSearch } from './entities/saved-search.entity';
 import { SearchCache } from './entities/search-cache.entity';
+import { SearchSnapshot } from './entities/search-snapshot.entity';
 import { MatchingModule } from '../matching/matching.module';
 import { ScraperModule } from '../scraper/scraper.module';
 import { DiscoveryController } from './discovery.controller';
 import { DiscoveryService } from './discovery.service';
 import { SearchDetectorService } from './search-detector.service';
+import { SearchHistoryService } from './search-history.service';
 import { SearchMetricsService } from './search-metrics.service';
 import { ShopProbeService } from './shop-probe.service';
 import { SitemapLookupService } from './sitemap-lookup.service';
@@ -34,12 +37,13 @@ import { WebDiscoveryService } from './web-discovery.service';
     // One-way: matching knows nothing about shops or searching, which is what
     // lets the search run unchanged when AI matching is off.
     MatchingModule,
-    TypeOrmModule.forFeature([Shop, ManualPrice, SearchCache]),
+    TypeOrmModule.forFeature([Shop, ManualPrice, SearchCache, SavedSearch, SearchSnapshot]),
   ],
   controllers: [DiscoveryController],
   providers: [
     DiscoveryService,
     SearchDetectorService,
+    SearchHistoryService,
     SearchMetricsService,
     SitemapLookupService,
     ShopProbeService,
@@ -49,6 +53,7 @@ import { WebDiscoveryService } from './web-discovery.service';
   exports: [
     DiscoveryService,
     SearchDetectorService,
+    SearchHistoryService,
     SearchMetricsService,
     SitemapLookupService,
     ShopProbeService,
