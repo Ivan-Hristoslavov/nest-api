@@ -1147,6 +1147,17 @@ export class DiscoveryService {
     return result;
   }
 
+  /**
+   * One search, straight at the shop, for the health check.
+   *
+   * Bypasses the cache on purpose: the question is whether the shop answers
+   * *today*, and a six-hour-old success is exactly the evidence that would
+   * hide a search that broke this morning.
+   */
+  probeSearch(shop: Shop, query: string): Promise<ShopSearchResultDto> {
+    return this.searchShop(shop, query);
+  }
+
   private async searchShop(shop: Shop, query: string): Promise<ShopSearchResultDto> {
     // A supplier with no website is not searched at all — there is nothing to
     // fetch. What is known about them is what the buyer entered, and it counts

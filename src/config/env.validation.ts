@@ -318,6 +318,32 @@ export class EnvironmentVariables {
   @IsOptional()
   SCRAPER_CRON = '0 * * * *';
 
+  /**
+   * The daily check that every supplier's search still searches.
+   *
+   * Two probes per shop, once a day, at an hour when nobody is comparing:
+   * a known-good query and a different one. A shop that answers both with
+   * nothing, or both with the same tiles, has broken in the way that does not
+   * raise an error — and that is the way customers used to find out for us.
+   */
+  @Transform(toBoolean)
+  @IsBoolean()
+  @IsOptional()
+  SHOP_HEALTH_ENABLED = true;
+
+  @IsString()
+  @IsOptional()
+  SHOP_HEALTH_CRON = '0 6 * * *';
+
+  /**
+   * Who is told when a supplier's search stops working. Falls back to
+   * SUPPORT_EMAIL; with neither set the finding is logged and shown on the
+   * operator screen, and nobody is woken.
+   */
+  @IsString()
+  @IsOptional()
+  OPERATOR_EMAIL?: string;
+
   @Transform(toNumber)
   @IsInt()
   @Min(1)

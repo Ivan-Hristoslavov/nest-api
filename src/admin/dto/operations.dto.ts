@@ -52,6 +52,42 @@ export class ScrapeReportDto {
   stale!: StaleListingDto[];
 }
 
+/** One supplier host, as the daily search check last found it. */
+export class ShopHealthDto {
+  @ApiProperty({ example: 'elmarkstore.eu' }) host!: string;
+  @ApiProperty({ example: 'Elmark Store' }) name!: string;
+  @ApiProperty({ enum: ['live', 'sitemap', 'manual', 'none'], example: 'live' }) method!: string;
+
+  @ApiPropertyOptional({
+    enum: ['ok', 'empty', 'ignores_query', 'error'],
+    nullable: true,
+    description: 'Null until the first check has run.',
+  })
+  status!: 'ok' | 'empty' | 'ignores_query' | 'error' | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '„кабел" и „лампа" върнаха едни и същи 20 резултата' })
+  detail!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  checkedAt!: string | null;
+
+  @ApiProperty({ example: 3, description: 'Customers with this supplier on their list.' })
+  accounts!: number;
+}
+
+export class ShopHealthReportDto {
+  @ApiProperty() enabled!: boolean;
+  @ApiProperty({ example: '0 6 * * *' }) cron!: string;
+  @ApiProperty({ description: 'Whether a check is running right now.' }) running!: boolean;
+
+  @ApiProperty({
+    type: ShopHealthDto,
+    isArray: true,
+    description: 'Every searchable supplier across every account, worst first.',
+  })
+  hosts!: ShopHealthDto[];
+}
+
 /** One alert, with enough around it to be read without a second query. */
 export class AdminAlertDto {
   @ApiProperty({ format: 'uuid' }) id!: string;

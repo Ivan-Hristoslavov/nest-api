@@ -129,6 +129,8 @@ const ENDPOINTS = {
   adminOutreachPreview: API_BASE + '/admin/outreach/preview',
   adminScrape: API_BASE + '/admin/scrape',
   adminScrapeRun: API_BASE + '/admin/scrape/run',
+  adminShopHealth: API_BASE + '/admin/shops/health',
+  adminShopHealthRun: API_BASE + '/admin/shops/health/run',
   adminAlerts: API_BASE + '/admin/alerts',
   adminSearchQuality: API_BASE + '/admin/search/quality',
   adminSearchDebug: API_BASE + '/admin/search/debug',
@@ -9998,6 +10000,124 @@ async function loadOperatorScrape(quiet) {
     '</div>';
 
   $('#operator-sweep').addEventListener('click', runOperatorSweep);
+
+  await loadOperatorShopHealth(quiet);
+}
+
+/* --- Supplier searches ---------------------------------------------- */
+
+const SHOP_HEALTH_STYLE = {
+  ok: { label: 'отговаря', class: 'bg-emerald-500/12 text-emerald-400' },
+  empty: { label: 'без резултати', class: 'bg-amber-500/12 text-amber-300' },
+  ignores_query: { label: 'не чете заявката', class: 'bg-red-500/12 text-red-400' },
+  error: { label: 'грешка', class: 'bg-red-500/12 text-red-400' },
+};
+
+/**
+ * Which supplier searches still search.
+ *
+ * Beside the sweep because it is the same kind of fact — the sweep says
+ * which product pages stopped reading, this says which search pages did.
+ * The failure it shows that nothing else does is the search that answers
+ * every query with the same twenty tiles: no error anywhere, wrong products
+ * in every comparison, and until this ran the customer found it for us.
+ */
+async function loadOperatorShopHealth(quiet) {
+  const target = $('#operator-shop-health');
+  if (!target) return;
+
+  if (!quiet) {
+    target.innerHTML = '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Зареждам…</p>';
+  }
+
+  let report;
+  try {
+    const response = await fetch(ENDPOINTS.adminShopHealth, { headers: operatorHeaders() });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    report = await response.json();
+  } catch (error) {
+    target.innerHTML =
+      '<p class="px-4 py-6 text-center text-[12.5px] text-red-400">' +
+      escapeHtml(failureText(error, 'Търсачките не се заредиха')) + '</p>';
+    return;
+  }
+
+  const broken = report.hosts.filter((host) => host.status && host.status !== 'ok').length;
+  const unchecked = report.hosts.filter((host) => !host.status).length;
+
+  target.innerHTML =
+    '<div class="overflow-hidden rounded-xl border border-white/8 bg-ink-900 shadow-panel">' +
+    '<div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-2.5">' +
+    '<div><p class="text-[12.5px] font-semibold text-slate-200">Търсачки на доставчици' +
+    (broken ? ' <span class="ml-1 rounded-md bg-red-500/12 px-1.5 py-0.5 text-[10.5px] font-semibold text-red-400">' + broken + ' спрели</span>' : '') +
+    '</p><p class="mt-0.5 text-[11px] text-slate-500">' +
+    (report.enabled ? 'дневна проверка по график ' : 'проверката е спряна · графикът беше ') +
+    '<code class="font-mono text-slate-400">' + escapeHtml(report.cron) + '</code>' +
+    ' · два въпроса на всяка търсачка' +
+    (unchecked ? ' · ' + unchecked + ' още непроверени' : '') +
+    '</p></div>' +
+    '<button type="button" id="operator-shop-health-run" ' +
+    'class="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-ink-850 px-3.5 py-2.5 text-[12.5px] font-medium text-slate-300 transition hover:border-accent-500/40"' +
+    (report.running ? ' disabled' : '') + '>' +
+    '<i class="fa-solid ' + (report.running ? 'fa-spinner fa-spin' : 'fa-stethoscope') + ' text-[11px]"></i>' +
+    (report.running ? 'Проверявам…' : 'Провери сега') + '</button></div>' +
+    (report.hosts.length
+      ? '<div class="overflow-x-auto"><table class="op-table w-full text-left text-[12.5px]"><tbody>' +
+        report.hosts
+          .map((host) => {
+            const style = SHOP_HEALTH_STYLE[host.status] || {
+              label: 'непроверена',
+              class: 'bg-white/[0.06] text-slate-400',
+            };
+            return (
+              '<tr class="border-b border-white/5">' +
+              '<td data-label="Сайт" class="px-4 py-3"><span class="font-mono text-[11.5px] text-slate-300">' +
+              escapeHtml(host.host) + '</span><span class="ml-2 text-[11px] text-slate-500">' +
+              escapeHtml(host.method === 'sitemap' ? 'по картата' : 'търсачка') + ' · ' +
+              host.accounts + (host.accounts === 1 ? ' клиент' : ' клиента') + '</span></td>' +
+              '<td data-label="Състояние" class="px-4 py-3"><span class="rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ' +
+              style.class + '">' + style.label + '</span></td>' +
+              '<td data-label="Какво видя" class="px-4 py-3 text-[11.5px] text-slate-400">' +
+              escapeHtml(host.detail || '—') + '</td>' +
+              '<td data-label="Проверена" class="whitespace-nowrap px-4 py-3 text-[11.5px] text-slate-500">' +
+              escapeHtml(host.checkedAt ? formatRelative(host.checkedAt) : 'още не') +
+              '</td></tr>'
+            );
+          })
+          .join('') +
+        '</tbody></table></div>'
+      : '<p class="px-4 py-8 text-center text-[12.5px] text-slate-500">Никой клиент още няма доставчик с търсачка.</p>') +
+    '</div>';
+
+  const button = $('#operator-shop-health-run');
+  if (button) button.addEventListener('click', runOperatorShopHealth);
+}
+
+async function runOperatorShopHealth() {
+  const button = $('#operator-shop-health-run');
+  button.disabled = true;
+  button.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-[11px]"></i>Проверявам…';
+
+  try {
+    const response = await fetch(ENDPOINTS.adminShopHealthRun, {
+      method: 'POST',
+      headers: operatorHeaders(),
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const report = await response.json();
+    const broken = report.hosts.filter((host) => host.status && host.status !== 'ok').length;
+    toast(
+      broken
+        ? broken + ' от ' + report.hosts.length + ' търсачки не отговарят както трябва.'
+        : 'Всички ' + report.hosts.length + ' търсачки отговарят.',
+      broken ? 'error' : 'success',
+    );
+  } catch (error) {
+    toast(failureText(error, 'Проверката не тръгна'), 'error');
+  }
+
+  await loadOperatorShopHealth(true);
 }
 
 async function runOperatorSweep() {

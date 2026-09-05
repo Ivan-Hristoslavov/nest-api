@@ -35,8 +35,9 @@ import {
   CustomerPurchasingDto,
   DecisionAnalyticsDto,
 } from './dto/decisions-admin.dto';
-import { AdminAlertDto, ScrapeReportDto } from './dto/operations.dto';
+import { AdminAlertDto, ScrapeReportDto, ShopHealthReportDto } from './dto/operations.dto';
 import { OperationsService } from './operations.service';
+import { ShopHealthService } from './shop-health.service';
 import {
   OutreachDraftDto,
   PreviewOutreachDto,
@@ -74,7 +75,31 @@ export class AdminController {
     private readonly decisions: DecisionsAdminService,
     private readonly discovery: DiscoveryService,
     private readonly searchMetrics: SearchMetricsService,
+    private readonly shopHealth: ShopHealthService,
   ) {}
+
+  @Get('shops/health')
+  @ApiOperation({
+    summary: 'Which supplier searches still search',
+    description:
+      'The last verdict of the daily check, per host, worst first. **No supplier is contacted** — this reads what the check wrote.\n\nThe check asks each shop two different questions. `empty` means both came back with nothing; `ignores_query` means both came back with the same products, which is a search that has stopped reading its query — the failure that looks most like success; `error` means it could not be asked. A host that turns from `ok` to anything else is emailed to `OPERATOR_EMAIL` once.',
+  })
+  @ApiOkResponse({ type: ShopHealthReportDto })
+  shopHealthReport(): Promise<ShopHealthReportDto> {
+    return this.shopHealth.report();
+  }
+
+  @Post('shops/health/run')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Check every supplier search now',
+    description:
+      'The same two probes per shop the schedule runs, started by hand, and the report when they finish. A second call while one is running joins it rather than doubling the requests to every supplier.',
+  })
+  @ApiOkResponse({ type: ShopHealthReportDto })
+  runShopHealth(): Promise<ShopHealthReportDto> {
+    return this.shopHealth.run('manual');
+  }
 
   @Get('search/quality')
   @ApiOperation({

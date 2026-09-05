@@ -18,6 +18,8 @@ import { ScraperModule } from '../scraper/scraper.module';
 import { OperationsService } from './operations.service';
 import { OutreachService } from './outreach.service';
 import { DecisionsAdminService } from './decisions-admin.service';
+import { SearchCache } from '../discovery/entities/search-cache.entity';
+import { ShopHealthService } from './shop-health.service';
 
 @Module({
   imports: [
@@ -36,6 +38,9 @@ import { DecisionsAdminService } from './decisions-admin.service';
       ApiOutreach,
       PurchaseDecision,
       Order,
+      // For the search health check: a query a shop has answered before is a
+      // better probe than a guess.
+      SearchCache,
     ]),
     // For MailService, which already knows how to reach the mail server and
     // how to wrap a letter in the layout every other email uses.
@@ -48,6 +53,12 @@ import { DecisionsAdminService } from './decisions-admin.service';
     DiscoveryModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, OutreachService, OperationsService, DecisionsAdminService],
+  providers: [
+    AdminService,
+    OutreachService,
+    OperationsService,
+    DecisionsAdminService,
+    ShopHealthService,
+  ],
 })
 export class AdminModule {}

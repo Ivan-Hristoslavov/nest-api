@@ -66,6 +66,11 @@ export interface SupabaseConfig {
   jwksUrl?: string;
 }
 
+export interface ShopHealthConfig {
+  enabled: boolean;
+  cron: string;
+}
+
 export interface ScraperConfig {
   enabled: boolean;
   cron: string;
@@ -136,6 +141,8 @@ export interface MailConfig {
   /** Where the customer is told to go and paste their key. */
   appUrl: string;
   supportEmail?: string;
+  /** Where operational findings go — a supplier's search that stopped working. */
+  operatorEmail?: string;
 }
 
 export interface MatchingConfig {
@@ -211,6 +218,7 @@ export interface Configuration {
   database: DatabaseConfig;
   supabase: SupabaseConfig;
   scraper: ScraperConfig;
+  shopHealth: ShopHealthConfig;
   billing: BillingConfig;
   stripe: StripeConfig;
   mail: MailConfig;
@@ -321,6 +329,7 @@ export const configuration = (): Configuration => {
       resendApiKey: env.RESEND_API_KEY,
       appUrl: env.APP_PUBLIC_URL,
       supportEmail: env.SUPPORT_EMAIL,
+      operatorEmail: env.OPERATOR_EMAIL ?? env.SUPPORT_EMAIL,
     },
     database: {
       host: env.DB_HOST,
@@ -359,6 +368,10 @@ export const configuration = (): Configuration => {
       retryBaseDelayMs: env.SCRAPER_RETRY_BASE_DELAY_MS,
       hostDailyBudget: env.SCRAPER_HOST_DAILY_BUDGET,
       sharedFetchMs: env.SCRAPER_SHARED_FETCH_MS,
+    },
+    shopHealth: {
+      enabled: env.SHOP_HEALTH_ENABLED,
+      cron: env.SHOP_HEALTH_CRON,
     },
     alerts: {
       enabled: env.ALERTS_ENABLED,

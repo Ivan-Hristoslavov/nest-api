@@ -373,6 +373,14 @@ is much better to know before their traffic goes up.
 
 ---
 
+### The daily search check
+
+A supplier's search page breaks without an error: it starts answering every query with the same twenty tiles, or with none, and the customer's comparison quietly stops mentioning that supplier. Elmark and Technopolis were both found that way — by a person, months late.
+
+`ShopHealthService` runs once a day (`SHOP_HEALTH_CRON`, default 06:00) and asks every searchable shop two different questions: one it is known to have answered — the most recent cached search with results — and a generic one. Two answers with nothing in them is `empty`; two answers with the **same** products is `ignores_query`, the failure that looks most like success; a shop that could not be asked is `error`. The verdict is written on the shop row, shown on the operator screen under the sweep, and available at `GET /admin/shops/health`. `POST /admin/shops/health/run` runs it now.
+
+A host that turns from fine to broken is emailed to `OPERATOR_EMAIL` (falling back to `SUPPORT_EMAIL`) once. One that stays broken is not emailed again — the point is to be woken when something changes, not every morning it has not.
+
 ## 6c. Ordering
 
 The comparison answers "where should I buy this today". Without the next

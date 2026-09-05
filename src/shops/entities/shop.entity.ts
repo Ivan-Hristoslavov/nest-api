@@ -11,6 +11,9 @@ import {
 import { numericTransformer } from '../../common/transformers/numeric-column.transformer';
 import { VatState } from '../../pricing/effective-cost';
 
+/** What the scheduled check concluded about a shop's search. */
+export type ShopHealthStatus = 'ok' | 'empty' | 'ignores_query' | 'error';
+
 /**
  * A supplier we can ask.
  *
@@ -161,6 +164,26 @@ export class Shop {
   })
   @Column({ name: 'last_error', type: 'text', nullable: true })
   lastError!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'What the last scheduled health check concluded about this shop’s search. `ok` — it answers and the answers follow the query. `empty` — every probe came back with nothing. `ignores_query` — different questions get the same answer, which is a search that has stopped searching. `error` — it could not be asked at all. Null until the first check.',
+    enum: ['ok', 'empty', 'ignores_query', 'error'],
+    nullable: true,
+  })
+  @Column({ name: 'health_status', type: 'varchar', length: 16, nullable: true })
+  healthStatus!: ShopHealthStatus | null;
+
+  @ApiPropertyOptional({
+    description: 'The check’s finding in words: which queries were tried and what came back.',
+    nullable: true,
+  })
+  @Column({ name: 'health_detail', type: 'text', nullable: true })
+  healthDetail!: string | null;
+
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  @Column({ name: 'health_checked_at', type: 'timestamptz', nullable: true })
+  healthCheckedAt!: Date | null;
 
   @ApiProperty({ description: 'Readable name for the dashboard.', example: 'ТМТ ЕЛКОМ' })
   @Column({ type: 'varchar', length: 160 })
