@@ -104,9 +104,12 @@ export class TrialService {
     user.plan = UserPlan.Free;
     user.productLimit = freeLimit;
     user.aiMatchesLimit = PLAN_AI_MATCH_LIMIT[UserPlan.Free];
-    // Spent, not reset. The free allowance is a one-off, and the trial's three
-    // hundred comparisons were it — generously so.
-    user.aiMatchesUsed = Math.max(user.aiMatchesUsed, PLAN_AI_MATCH_LIMIT[UserPlan.Free]);
+    // A fresh month on the free plan. The trial's allowance was the trial's;
+    // carrying its spend across would hand the lapsed account a meter that
+    // reads "50 of 50" on its first free morning, which is a plan with the AI
+    // half off and a reason not to come back.
+    user.aiMatchesUsed = 0;
+    user.aiPeriodStartedAt = new Date();
 
     await this.users.save(user);
     await this.mail.sendTrialEnded(user, watched.length, parked.length);

@@ -305,7 +305,7 @@ AI_MATCH_TIMEOUT_MS=9000
 - **Deterministic first.** A catalogue with barcodes never pays.
 - **One call per search**, not one per candidate, and only for the shortlist that ranking already kept.
 - **Verdicts are cached** under `sha256(normalised query | normalised candidate | model | prompt version)`. "12 watt" and "12W" are one question; a new prompt or model asks again rather than inheriting an answer it never gave.
-- **Metered per account**, apart from price checks: a price check is one request to a shop, a comparison is tokens. Paid plans get 2 000 / 10 000 / 50 000 a month. The free plan gets **50 once, not monthly** — a renewing free allowance is worth opening mailboxes for, and no amount of password or phone verification changes that arithmetic, because one person legitimately owns several mailboxes. An account that runs out keeps searching with the AI half off.
+- **Metered per account**, apart from price checks: a price check is one request to a shop, a comparison is tokens. Paid plans get 2 000 / 10 000 / 50 000 a month. The free plan gets **50 a month** — fifty Haiku comparisons cost cents, registration is throttled and refuses disposable domains, and a free plan whose meter stays at "50 of 50" for ever is a demo, not a plan. An account that runs out keeps searching with the AI half off until the month turns.
 
 `GET /api/v1/discovery/compare` reports exactly what happened, so the cost is inspectable rather than assumed:
 

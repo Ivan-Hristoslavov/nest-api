@@ -3737,7 +3737,7 @@ function matchingSummaryHtml(matching) {
         ' от ' +
         matching.aiQuota.limit +
         ' AI сравнения' +
-        (matching.aiQuota.renews ? ' този месец' : ' (безплатен план)'),
+        ' този месец',
     );
   }
   if (matching.aiSkippedReason === 'quota' && matching.aiQuota) {
@@ -8019,7 +8019,7 @@ async function refreshPlanBar() {
       account.productLimit,
     );
     bar.querySelector('[data-plan-ai]').innerHTML = meterHtml(
-      account.aiMatchesRenew ? 'AI сравнения / месец' : 'AI сравнения (еднократно)',
+      'AI сравнения / месец',
       account.aiMatchesUsed,
       account.aiMatchesLimit,
       { topUp: true },
@@ -8092,16 +8092,11 @@ async function renderAccountPanel() {
 
     box.innerHTML =
       meterHtml(
-        account.aiMatchesRenew ? 'AI сравнения този месец' : 'AI сравнения (еднократно)',
+        'AI сравнения този месец',
         account.aiMatchesUsed,
         account.aiMatchesLimit,
         { topUp: true },
       ) +
-      (account.aiMatchesRenew
-        ? ''
-        : '<p class="text-[11.5px] leading-relaxed text-slate-500">Безплатният план дава ' +
-          account.aiMatchesLimit +
-          ' сравнения еднократно. Търсенето продължава и след това — по спецификации, без модел.</p>') +
       (account.apiKeyPrefix
         ? '<p class="text-[11.5px] text-slate-500">API ключ: <span class="font-mono text-slate-400">' +
           escapeHtml(account.apiKeyPrefix) +

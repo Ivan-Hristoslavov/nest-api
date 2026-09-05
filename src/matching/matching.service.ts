@@ -489,17 +489,14 @@ export class MatchingService {
     const { used, limit, renews } = effectiveAiUsage(user, now);
 
     // A period that has rolled over is one where the stored counter is higher
-    // than what now counts as spent; on a plan that never renews there is no
-    // such thing.
+    // than what now counts as spent.
     const periodRolledOver = renews && (used < user.aiMatchesUsed || !user.aiPeriodStartedAt);
     const remaining = Math.max(0, limit - used);
     const granted = Math.min(wanted, remaining);
 
     if (granted === 0) {
       this.logger.log(
-        `Account ${ownerId} has spent its ${limit} AI comparisons` +
-          (renews ? ' for this period' : ' (free plan, one-off allowance)') +
-          '; searching continues without AI.',
+        `Account ${ownerId} has spent its ${limit} AI comparisons for this period; searching continues without AI.`,
       );
       return 0;
     }

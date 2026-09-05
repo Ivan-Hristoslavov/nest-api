@@ -146,7 +146,8 @@ describe('ending a trial', () => {
     expect(saved.plan).toBe(UserPlan.Free);
     expect(saved.productLimit).toBe(PLAN_PRODUCT_LIMIT[UserPlan.Free]);
     expect(saved.trialEndsAt).not.toBeNull();
-    // The free allowance is a one-off and the trial's comparisons were it.
-    expect(saved.aiMatchesUsed).toBeGreaterThanOrEqual(PLAN_AI_MATCH_LIMIT[UserPlan.Free]);
+    // A fresh month, not the trial's spend carried across.
+    expect(saved.aiMatchesUsed).toBe(0);
+    expect(saved.aiPeriodStartedAt).toBeInstanceOf(Date);
   });
 });

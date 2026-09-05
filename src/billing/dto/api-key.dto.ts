@@ -112,7 +112,7 @@ export class MyAccountDto {
 
   @ApiProperty({
     description:
-      'Whether the allowance renews monthly. False on the free plan, where it is a one-off — a renewing free allowance is worth opening mailboxes for.',
+      'Whether the allowance renews monthly. Always true; kept for clients that display it.',
     example: true,
   })
   aiMatchesRenew!: boolean;

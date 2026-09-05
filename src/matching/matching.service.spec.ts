@@ -318,24 +318,29 @@ describe('MatchingService', () => {
       expect(run.aiQuota).toEqual({ used: 0, limit: 100, renews: true });
     });
 
-    it('never rolls the free allowance over, however long it has been', async () => {
-      const longAgo = new Date(Date.now() - 400 * 24 * 3600_000);
-      const { service, claude } = await build({
+    it('rolls the free allowance over once a month, like every other plan', async () => {
+      const longAgo = new Date(Date.now() - 40 * 24 * 3600_000);
+      const { service, claude, users } = await build({
         user: {
           plan: UserPlan.Free,
           aiMatchesUsed: 50,
           aiMatchesLimit: 50,
           aiPeriodStartedAt: longAgo,
         },
+        aiVerdicts: [],
       });
 
       const run = await service.match('acc-1', QUERY, ambiguous);
 
-      // A monthly free allowance is worth farming mailboxes for; a one-off one
-      // is worth farming once, for fifty comparisons.
-      expect(run.aiQuota).toEqual({ used: 50, limit: 50, renews: false });
-      expect(run.aiSkippedReason).toBe('quota');
-      expect(claude.matchCandidates).not.toHaveBeenCalled();
+      // A free plan whose meter reads "50 of 50" for ever is a demo. Fifty
+      // Haiku comparisons cost cents; the month turns and so does the meter.
+      expect(claude.matchCandidates).toHaveBeenCalled();
+      expect(run.aiQuota?.renews).toBe(true);
+      expect(run.aiQuota?.used).toBeLessThan(50);
+      expect(users.update).toHaveBeenCalledWith(
+        { id: expect.anything() },
+        expect.objectContaining({ aiPeriodStartedAt: expect.any(Date) }),
+      );
     });
 
     it('does not read the meter on a search that never touched it', async () => {

@@ -126,16 +126,17 @@ export function effectiveAiUsage(
   user: Pick<User, 'plan' | 'aiMatchesUsed' | 'aiMatchesLimit' | 'aiPeriodStartedAt'>,
   now = new Date(),
 ): { used: number; limit: number; renews: boolean } {
-  // The free allowance does not renew, and that is the whole anti-abuse
-  // design. A monthly free allowance is worth farming — open three mailboxes,
-  // get three allowances, every month, for ever. A one-off allowance is worth
-  // farming once, for a handful of comparisons, which is not worth anyone's
-  // morning. Paying customers get a monthly one because they are paying for it.
-  const renews = user.plan !== UserPlan.Free;
-
-  if (!renews) {
-    return { used: user.aiMatchesUsed, limit: user.aiMatchesLimit, renews };
-  }
+  // Every plan renews, the free one included. It was a one-off for a while,
+  // on the argument that a monthly free allowance is worth farming mailboxes
+  // for. The arithmetic did not hold: fifty Haiku comparisons cost a few
+  // cents, registration is already throttled per IP and refuses disposable
+  // domains, and the deterministic matcher answers most pairs without the
+  // model at all. What the one-off allowance reliably did was expire on the
+  // people who had spent a week evaluating the product, so the account that
+  // lapsed from the trial searched with the AI half off for ever — and the
+  // free plan is meant to be usable, not a demo. `renews` is kept in the
+  // answer for the callers that display it.
+  const renews = true;
 
   const started = user.aiPeriodStartedAt;
   const monthElapsed = !started || now.getTime() - started.getTime() > 30 * 24 * 3600_000;
@@ -169,8 +170,8 @@ export const TRIAL_PLAN = UserPlan.Pro;
 export const TRIAL_AI_MATCHES = 300;
 
 export const PLAN_AI_MATCH_LIMIT: Record<UserPlan, number> = {
-  // Once, not per month — enough to see what the model settles that arithmetic
-  // cannot, not enough to be worth opening mailboxes for.
+  // Per month, like every other plan — enough to see what the model settles
+  // that arithmetic cannot, and cheap enough that farming it is pointless.
   [UserPlan.Free]: 50,
   [UserPlan.Starter]: 2_000,
   [UserPlan.Pro]: 10_000,
