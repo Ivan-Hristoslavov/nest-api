@@ -105,12 +105,15 @@ export function parsePriceList(file: Buffer, filename: string): ParsedPriceList 
   if (spreadsheet) {
     const workbook = readWorkbook(file, { type: 'buffer', cellDates: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const grid = sheet
-      ? (xlsxUtils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as unknown[][])
+    // `header: 1` asks for rows as arrays rather than objects, which is the
+    // shape this reads. `raw: false` means every cell already arrives
+    // formatted as a string, so `cellText` only has to cope with the blanks.
+    const grid: unknown[][] = sheet
+      ? xlsxUtils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '' })
       : [];
 
     return interpret(
-      grid.map((row) => row.map((cell) => String(cell ?? '').trim())),
+      grid.map((row) => row.map(cellText)),
       { encoding: 'xlsx', delimiter: null },
     );
   }
@@ -134,7 +137,10 @@ export function parsePriceList(file: Buffer, filename: string): ParsedPriceList 
  * takes `,`; everything else exports with `,` or a tab.
  */
 export function detectDelimiter(text: string): string {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(0, 20);
+  const lines = text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .slice(0, 20);
   const candidates = [';', ',', '\t', '|'];
 
   let best = ';';
@@ -349,7 +355,12 @@ function normaliseHeader(cell: string): string {
 }
 
 function columnsFromHeader(header: string[]): ParsedPriceList['columns'] {
-  const columns: ParsedPriceList['columns'] = { name: null, price: null, shopCode: null, unit: null };
+  const columns: ParsedPriceList['columns'] = {
+    name: null,
+    price: null,
+    shopCode: null,
+    unit: null,
+  };
 
   header.forEach((cell, index) => {
     const role = headerRole(cell);
@@ -490,6 +501,19 @@ function currencyFromHeader(header: string | undefined): string | null {
   if (/лв|bgn/.test(lower)) return 'BGN';
   if (/ron|lei/.test(lower)) return 'RON';
   return null;
+}
+
+/**
+ * One spreadsheet cell as text.
+ *
+ * `raw: false` makes the library format every value, so anything that is not
+ * already a string is a blank or a shape this reader has no use for — and
+ * stringifying that would put "[object Object]" in a product name.
+ */
+function cellText(cell: unknown): string {
+  if (typeof cell === 'string') return cell.trim();
+  if (typeof cell === 'number' || typeof cell === 'boolean') return String(cell);
+  return '';
 }
 
 function looksLikeZip(file: Buffer): boolean {

@@ -33,7 +33,7 @@ function answer(urls: string[], ok = true, error: string | null = null): ShopSea
       host: 'shop.bg',
       shopName: 'Shop',
       availability: 'unknown',
-    })) as ShopSearchResultDto['products'],
+    })),
   };
 }
 
@@ -115,9 +115,7 @@ describe('the daily check', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
-        getOne: jest
-          .fn()
-          .mockResolvedValue(options.known ? { query: options.known } : null),
+        getOne: jest.fn().mockResolvedValue(options.known ? { query: options.known } : null),
       }),
     };
     const discovery = {
@@ -179,7 +177,10 @@ describe('the daily check', () => {
     const report = await service.run('manual');
 
     expect(shops.update).toHaveBeenCalledTimes(1);
-    expect(shops.update.mock.calls[0][1]).toMatchObject({ healthStatus: 'ignores_query' });
+    expect(shops.update).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ healthStatus: 'ignores_query' }),
+    );
 
     expect(report.hosts).toHaveLength(1);
     expect(report.hosts[0]).toMatchObject({
@@ -189,9 +190,12 @@ describe('the daily check', () => {
     });
 
     expect(mail.deliver).toHaveBeenCalledTimes(1);
-    const [to, subject] = mail.deliver.mock.calls[0];
-    expect(to).toBe('ops@stoclify.bg');
-    expect(subject).toContain('elmarkstore.eu');
+    expect(mail.deliver).toHaveBeenCalledWith(
+      'ops@stoclify.bg',
+      expect.stringContaining('elmarkstore.eu'),
+      expect.any(String),
+      expect.any(String),
+    );
   });
 
   it('does not email again for a host that was already broken yesterday', async () => {

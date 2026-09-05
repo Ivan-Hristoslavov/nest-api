@@ -107,9 +107,7 @@ describe('reading a supplier price list', () => {
   });
 
   it('reports the rows it could not read, with the row number', () => {
-    const parsed = csv(
-      'Наименование;Цена\nКабел СВТ;1,42\n;3,20\nЛампа;по запитване\nВинт;0,05\n',
-    );
+    const parsed = csv('Наименование;Цена\nКабел СВТ;1,42\n;3,20\nЛампа;по запитване\nВинт;0,05\n');
 
     expect(parsed.rows).toHaveLength(2);
     expect(parsed.skipped).toBe(2);
@@ -146,7 +144,10 @@ describe('reading a supplier price list', () => {
   });
 
   it('recognises a workbook by its bytes when the name does not say', () => {
-    const sheet = xlsxUtils.aoa_to_sheet([['Наименование', 'Цена'], ['Кабел', 1.42]]);
+    const sheet = xlsxUtils.aoa_to_sheet([
+      ['Наименование', 'Цена'],
+      ['Кабел', 1.42],
+    ]);
     const workbook = xlsxUtils.book_new();
     xlsxUtils.book_append_sheet(workbook, sheet, 'Лист1');
     const file = writeWorkbook(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;

@@ -270,7 +270,7 @@ export class ShopHealthService implements OnModuleInit {
     const known = await this.cache
       .createQueryBuilder('cache')
       .where('cache.shop_id = :shopId', { shopId: shop.id })
-      .andWhere("jsonb_array_length(cache.products) > 0")
+      .andWhere('jsonb_array_length(cache.products) > 0')
       .orderBy('cache.fetched_at', 'DESC')
       .getOne()
       .catch(() => null);
@@ -353,15 +353,15 @@ export class ShopHealthService implements OnModuleInit {
           'info',
         ),
       ],
-      footnotes: [
-        'Това писмо се праща само когато търсачка спре — не всеки ден, докато е спряла.',
-      ],
+      footnotes: ['Това писмо се праща само когато търсачка спре — не всеки ден, докато е спряла.'],
     });
 
     const sent = await this.mail.deliver(to, subject, html, text);
 
     if (!sent) {
-      this.logger.warn(`Could not email the operator about ${newlyBroken.length} broken search(es).`);
+      this.logger.warn(
+        `Could not email the operator about ${newlyBroken.length} broken search(es).`,
+      );
     }
   }
 }

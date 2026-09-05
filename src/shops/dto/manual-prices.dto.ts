@@ -108,7 +108,11 @@ export class PriceListReadDto {
 
   @ApiProperty({ description: 'Rows that did not.', example: 3 }) skipped!: number;
 
-  @ApiProperty({ type: String, isArray: true, description: 'The first few skipped rows, with why.' })
+  @ApiProperty({
+    type: String,
+    isArray: true,
+    description: 'The first few skipped rows, with why.',
+  })
   problems!: string[];
 
   @ApiProperty({ type: PriceListColumnsDto }) columns!: PriceListColumnsDto;
@@ -120,7 +124,8 @@ export class PriceListReadDto {
   @ApiProperty({ description: 'Whether the first row was read as headings.' }) headerRow!: boolean;
 
   @ApiProperty({
-    description: 'Currency the rows will be written in: the one the price column declared, or the shop’s.',
+    description:
+      'Currency the rows will be written in: the one the price column declared, or the shop’s.',
     example: 'EUR',
   })
   currency!: string;
@@ -128,7 +133,8 @@ export class PriceListReadDto {
   @ApiProperty({
     type: ManualPriceDto,
     isArray: true,
-    description: 'The first rows as they will be written, so a wrong reading is caught before it is.',
+    description:
+      'The first rows as they will be written, so a wrong reading is caught before it is.',
   })
   sample!: ManualPriceDto[];
 }

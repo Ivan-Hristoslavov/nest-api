@@ -196,7 +196,10 @@ export class ShopsController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'dryRun', required: false, example: true })
   @ApiOkResponse({ type: UploadPriceListResultDto })
-  @ApiBadRequestResponse({ description: 'No file, or one that holds no price list.', type: ErrorResponseDto })
+  @ApiBadRequestResponse({
+    description: 'No file, or one that holds no price list.',
+    type: ErrorResponseDto,
+  })
   @ApiNotFoundResponse({ description: 'No shop with this id.', type: ErrorResponseDto })
   async uploadPriceList(
     @Owner() ownerId: string,
