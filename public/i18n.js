@@ -82,11 +82,36 @@
    */
   var OPAQUE = { SCRIPT: 1, STYLE: 1 };
 
-  /** Screens that stay in the source language whatever is selected. */
-  var UNTRANSLATED = ['view-terms', 'view-privacy', 'view-gdpr', 'view-operator'];
+  /**
+   * Screens that stay in the source language whatever is selected.
+   *
+   * The legal pages because a translation of them is not the document anybody
+   * agreed to, and the operator's own screens because the operator is one
+   * person who reads Bulgarian. The last two are dialogs that belong to the
+   * operator screen but are rendered outside it: the command palette refuses
+   * to open unless that screen is showing, and the outreach letter is reachable
+   * only from its supplier table. Left off this list they came out half
+   * translated, which is worse than either language on its own.
+   */
+  var UNTRANSLATED = [
+    'view-terms',
+    'view-privacy',
+    'view-gdpr',
+    'view-operator',
+    'palette-modal',
+    'outreach-modal',
+  ];
 
+  /**
+   * Walks from the node itself, not from its parent.
+   *
+   * Text nodes have no id of their own so the distinction never showed there,
+   * but this is asked about elements too, for their attributes — and an
+   * excluded dialog's own `aria-label` belongs to the dialog. Starting at the
+   * parent translated the label of a screen whose every word stays untouched.
+   */
   function isExcluded(node) {
-    for (var element = node.parentElement; element; element = element.parentElement) {
+    for (var element = node.nodeType === 1 ? node : node.parentElement; element; element = element.parentElement) {
       if (OPAQUE[element.tagName]) return true;
       if (element.id && UNTRANSLATED.indexOf(element.id) !== -1) return true;
     }

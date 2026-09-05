@@ -1316,17 +1316,18 @@ function warehouseChipHtml(product, view) {
   const overflow = suppliers.length - shown.length;
   const tally = view.tally;
 
+  // Assembled through the message helpers rather than by concatenation: this
+  // is the label a screen reader reads out, and a sentence glued together from
+  // Bulgarian fragments stays Bulgarian however the page is set.
   const summary =
     tally.total === 0
-      ? 'няма складове'
-      : tally.total +
-        ' склада, ' +
-        tally.inStock +
-        ' налични, ' +
-        tally.outOfStock +
-        ' изчерпани, ' +
-        (tally.total - tally.priced) +
-        ' без цена';
+      ? translate('няма складове')
+      : formatMessage('{total} склада, {inStock} налични, {outOfStock} изчерпани, {unpriced} без цена', {
+          total: tally.total,
+          inStock: tally.inStock,
+          outOfStock: tally.outOfStock,
+          unpriced: tally.total - tally.priced,
+        });
 
   return (
     '<span class="wh-chip" tabindex="0" role="button" data-hover="warehouses" data-hover-id="' +
@@ -1985,8 +1986,8 @@ function renderTable() {
             toneFor(product.brand) +
             '" tabindex="0" role="button" data-hover="specs" data-hover-id="' +
             escapeHtml(product.id) +
-            '" aria-label="Данни за ' +
-            escapeHtml(product.brand) +
+            '" aria-label="' +
+            escapeHtml(formatMessage('Данни за {brand}', { brand: product.brand })) +
             '">' +
             escapeHtml(product.brand) +
             '<i class="fa-solid fa-circle-info text-[9px] opacity-60"></i></span>'
@@ -7944,6 +7945,7 @@ const COMPANY = {
   // A mailto: with a placeholder address opens an empty draft to nowhere,
   // so the link only becomes a link once there is an address to send to.
   const looksLikeEmail = COMPANY.email.indexOf('@') !== -1;
+  const NO_CONTACT_EMAIL = 'Имейлът за контакт още не е попълнен.';
 
   $$('[data-contact-email]').forEach(function (element) {
     if (looksLikeEmail) {
@@ -7955,8 +7957,20 @@ const COMPANY = {
 
     element.removeAttribute('href');
     element.classList.add('cursor-not-allowed', 'opacity-60');
-    element.setAttribute('title', 'Имейлът за контакт още не е попълнен.');
+    element.setAttribute('title', NO_CONTACT_EMAIL);
   });
+
+  // This attribute is written after i18n's pass over the document, and the
+  // observer that catches everything else watches for added nodes rather than
+  // for changed attributes — so this one is translated by hand, once the
+  // dictionary is there.
+  if (window.PG_I18N && window.PG_I18N.ready) {
+    void window.PG_I18N.ready.then(function () {
+      $$('[data-contact-email][title]').forEach(function (element) {
+        element.setAttribute('title', translate(NO_CONTACT_EMAIL));
+      });
+    });
+  }
 })();
 
 /* ------------------------------------------------------------------ *
